@@ -1,0 +1,12 @@
+README.md
+pyproject.toml
+type_fast/__init__.py
+type_fast/app.py
+type_fast/config.py
+type_fast/translator.py
+type_fast.egg-info/PKG-INFO
+type_fast.egg-info/SOURCES.txt
+type_fast.egg-info/dependency_links.txt
+type_fast.egg-info/entry_points.txt
+type_fast.egg-info/requires.txt
+type_fast.egg-info/top_level.txt

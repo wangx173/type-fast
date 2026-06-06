@@ -1,0 +1,54 @@
+# type-fast
+
+A simple macOS input tool that translates what you type, bidirectionally between
+English and Japanese, using the OpenAI API. Type in one box and the translation
+streams into the other.
+
+## Requirements
+
+- macOS
+- Python 3.10 or newer
+- An OpenAI API key
+
+## Setup
+
+```sh
+# 1. Create and activate a virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 2. Install the app and its dependencies
+pip install -e .
+
+# 3. Provide your OpenAI API key (read from the environment for this PoC)
+export OPENAI_API_KEY='sk-...'
+```
+
+## Run
+
+```sh
+python -m type_fast.app
+# or, via the installed entry point:
+type-fast
+```
+
+A small always-on-top window opens with:
+
+- a direction toggle (English → Japanese / Japanese → English),
+- an input box, and
+- an output box that streams the translation.
+
+Translation fires shortly after you stop typing, or immediately when your text
+ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
+
+## Configuration
+
+Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
+temperature, default language pair, and the debounce interval.
+
+## Roadmap (future work)
+
+- Store the API key in the macOS Keychain instead of an environment variable.
+- Package as a signed/notarized `.app` (via `py2app`) for easy installation.
+- Optional global hotkey + clipboard translation to use it inside other apps.
+- More language pairs and a menu-bar wrapper.
