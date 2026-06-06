@@ -2,9 +2,16 @@
 
 A small always-on-top window with an input box, a streamed output box, and an
 English <-> Japanese direction toggle. Typing triggers a translation after a
-short idle debounce, or immediately when the input ends in sentence-ending
-punctuation or Enter is pressed. Translation runs on a worker thread and streams
+short idle debounce, or immediately when a line ends (Enter) or the input ends
+in sentence-ending punctuation. Translation runs on a worker thread and streams
 results back to the UI via Qt signals so the interface never freezes.
+
+To keep cost down, only the *active* (current) line of the input is ever sent.
+Once you move to the next line, the finished line's translation is frozen and
+reused verbatim, so completed lines are never re-translated as you keep typing.
+Freezing on newline (rather than punctuation) is language-agnostic, so it works
+the same for English, Japanese, and future languages. Editing inside a frozen
+prefix transparently re-translates from that point.
 """
 
 from __future__ import annotations
@@ -12,6 +19,7 @@ from __future__ import annotations
 import threading
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -39,6 +47,7 @@ class Bridge(QObject):
 
     started = Signal(int)
     delta = Signal(int, str)
+    finished = Signal(int, str)
     error = Signal(int, str)
 
 
@@ -66,9 +75,28 @@ class MainWindow(QWidget):
         # superseded, slower in-flight translations are discarded.
         self._request_id = 0
 
+        # The last (frozen_src, active, source, target) actually sent, used to
+        # skip redundant requests when nothing relevant changed.
+        self._last_sent_key: tuple[str, str, str, str] | None = None
+
+        # Source prefix whose translation is finalized, and its translation.
+        # Only the input text *after* ``_frozen_src`` is ever sent to the API.
+        self._frozen_src = ""
+        self._frozen_out = ""
+        # Target language the frozen translation is written in; a direction
+        # change invalidates it.
+        self._frozen_target = _DIRECTIONS[0][2]
+
+        # Display prefix (frozen translations + separator) shown while the
+        # active line streams, plus how to freeze that line once it lands:
+        # (should_freeze, frozen_src_after_freeze, display_prefix).
+        self._active_prefix = ""
+        self._pending_freeze: tuple[bool, str, str] = (False, "", "")
+
         self.bridge = Bridge()
         self.bridge.started.connect(self._on_started)
         self.bridge.delta.connect(self._on_delta)
+        self.bridge.finished.connect(self._on_finished)
         self.bridge.error.connect(self._on_error)
 
         self.timer = QTimer(self)
@@ -81,18 +109,71 @@ class MainWindow(QWidget):
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
-        if text.rstrip().endswith(_SENTENCE_ENDINGS):
+        # Pressing Enter (line ends) or finishing a sentence translates now;
+        # otherwise wait for the idle debounce.
+        if text.endswith("\n") or text.rstrip().endswith(_SENTENCE_ENDINGS):
             self.timer.stop()
             self.run_translation()
         else:
             self.timer.start()
 
     def run_translation(self) -> None:
-        text = self.input.toPlainText().strip()
-        if not text:
+        full = self.input.toPlainText()
+        _, source, target = _DIRECTIONS[self.direction.currentIndex()]
+
+        # A direction change makes the frozen translation the wrong language.
+        if target != self._frozen_target:
+            self._frozen_src = ""
+            self._frozen_out = ""
+            self._frozen_target = target
+
+        # If the frozen prefix was edited, drop it and re-translate from there.
+        if not full.startswith(self._frozen_src):
+            self._frozen_src = ""
+            self._frozen_out = ""
+
+        if not full.strip():
+            self._frozen_src = ""
+            self._frozen_out = ""
+            self._last_sent_key = None
+            self.output.clear()
             return
 
-        _, source, target = _DIRECTIONS[self.direction.currentIndex()]
+        rest = full[len(self._frozen_src):]
+        newline = rest.find("\n")
+        if newline == -1:
+            # Still typing the current (last) line; not yet frozen.
+            active = rest.strip()
+            should_freeze = False
+            frozen_after = self._frozen_src
+        else:
+            # The current line is complete (a newline follows); freeze it.
+            active = rest[:newline].strip()
+            should_freeze = True
+            frozen_after = self._frozen_src + rest[: newline + 1]
+
+        if not active:
+            if should_freeze and frozen_after != self._frozen_src:
+                # Blank completed line: advance the boundary, preserve the gap,
+                # and continue with any following lines.
+                self._frozen_src = frozen_after
+                if self._frozen_out:
+                    self._frozen_out += "\n"
+                self._last_sent_key = None
+                self.output.setPlainText(self._frozen_out)
+                self.run_translation()
+            else:
+                self.output.setPlainText(self._frozen_out)
+            return
+
+        key = (self._frozen_src, active, source, target)
+        if key == self._last_sent_key:
+            return
+        self._last_sent_key = key
+
+        # Frozen lines are joined to the active line with a newline.
+        self._active_prefix = self._frozen_out + ("\n" if self._frozen_out else "")
+        self._pending_freeze = (should_freeze, frozen_after, self._active_prefix)
 
         self._request_id += 1
         request_id = self._request_id
@@ -100,7 +181,7 @@ class MainWindow(QWidget):
 
         thread = threading.Thread(
             target=self._translate_worker,
-            args=(request_id, text, source, target),
+            args=(request_id, active, source, target),
             daemon=True,
         )
         thread.start()
@@ -111,27 +192,51 @@ class MainWindow(QWidget):
         def superseded() -> bool:
             return request_id != self._request_id
 
+        chunks: list[str] = []
         try:
             for chunk in translate_stream(
                 text, source, target, should_cancel=superseded
             ):
                 if superseded():
                     return
+                chunks.append(chunk)
                 self.bridge.delta.emit(request_id, chunk)
+            if not superseded():
+                self.bridge.finished.emit(request_id, "".join(chunks))
         except Exception as exc:  # surface API/network errors in the UI
             self.bridge.error.emit(request_id, str(exc))
 
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
-            self.output.clear()
+            self.output.setPlainText(self._active_prefix)
+            self.output.moveCursor(QTextCursor.End)
 
     def _on_delta(self, request_id: int, chunk: str) -> None:
         if request_id == self._request_id:
             self.output.insertPlainText(chunk)
 
+    def _on_finished(self, request_id: int, translation: str) -> None:
+        if request_id != self._request_id:
+            return
+        should_freeze, frozen_after, prefix = self._pending_freeze
+        if should_freeze:
+            self._frozen_src = frozen_after
+            self._frozen_out = prefix + translation
+            # Continue translating any lines after the one just frozen.
+            if len(self.input.toPlainText()) > len(self._frozen_src):
+                self.run_translation()
+                return
+        # Nothing left to translate: auto-copy the finished translation.
+        self._copy_output_to_clipboard()
+
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
             self.output.setPlainText(f"[error] {message}")
+
+    def _copy_output_to_clipboard(self) -> None:
+        text = self.output.toPlainText()
+        if text:
+            QApplication.clipboard().setText(text)
 
 
 def main() -> None:
