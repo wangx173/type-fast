@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=61.0"]
+requires = ["setuptools>=77.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,15 +8,26 @@ version = "0.1.0"
 description = "A simple macOS input tool that translates typed text bidirectionally (English <-> Japanese) using the OpenAI API."
 readme = "README.md"
 requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Xiang Wang" }]
+keywords = ["translation", "openai", "macos", "japanese", "pyside6"]
+classifiers = [
+    "Environment :: MacOS X",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Topic :: Utilities",
+]
 dependencies = [
     "openai>=1.40.0",
     "PySide6>=6.6.0",
 ]
 
-# Phase 2 (future) extras, intentionally left commented until implemented:
-#   keyring   -> store the API key in the macOS Keychain
-#   pynput    -> global hotkey support
-#   pyperclip -> clipboard read/write for in-place translation
+[project.urls]
+Homepage = "https://github.com/wangx173/type-fast"
+Repository = "https://github.com/wangx173/type-fast"
+Issues = "https://github.com/wangx173/type-fast/issues"
 
 [project.scripts]
 type-fast = "type_fast.app:main"

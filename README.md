@@ -1,8 +1,22 @@
-# type-fast
+# Type Fast
 
 A simple macOS input tool that translates what you type, bidirectionally between
 English and Japanese, using the OpenAI API. Type in one box and the translation
 streams into the other.
+
+## Download
+
+Grab the latest `Type-Fast-macos-arm64.zip` from the
+[Releases page](https://github.com/wangx173/type-fast/releases), unzip it, and
+drag `Type Fast.app` into `/Applications`.
+
+The app is ad-hoc signed (not notarized), so on first launch macOS will warn it
+is from an unidentified developer. To open it the first time: right-click the
+app → **Open** → **Open**, or allow it under **System Settings → Privacy &
+Security**. After that it launches normally.
+
+Before using it, set your OpenAI API key in the app: **Settings → Set OpenAI API
+Key…** (⌘,).
 
 ## Requirements
 

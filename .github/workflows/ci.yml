@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  smoke:
+    runs-on: macos-14
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      - name: Import check
+        run: python -c "import type_fast.app, type_fast.translator, type_fast.config; print('imports OK')"
+
+      - name: Headless window smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'PY'
+          from PySide6.QtWidgets import QApplication
+          from type_fast.app import MainWindow
+          app = QApplication([])
+          w = MainWindow()
+          assert w.windowTitle() == "Type Fast"
+          assert w.direction.count() == 2
+          print("window OK")
+          PY

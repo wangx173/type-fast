@@ -1,6 +1,8 @@
 .copilot-tracking/
-*.egg-info
-*/__pycache__/*
+*.egg-info/
+__pycache__/
+*.pyc
 .venv/
 build/
 dist/
+.DS_Store

@@ -1,0 +1,55 @@
+name: Release macOS app
+
+# Build the .app and attach it to a GitHub Release whenever you push a version
+# tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`). You can also run it
+# manually from the Actions tab.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14 # Apple Silicon (arm64)
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build the .app
+        run: pyinstaller --noconfirm "Type Fast.spec"
+
+      - name: Ad-hoc code sign
+        run: codesign --force --deep --sign - "dist/Type Fast.app"
+
+      - name: Zip the .app
+        run: |
+          cd dist
+          ditto -c -k --keepParent "Type Fast.app" "Type-Fast-macos-arm64.zip"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Type-Fast-macos-arm64
+          path: dist/Type-Fast-macos-arm64.zip
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/Type-Fast-macos-arm64.zip
+          generate_release_notes: true

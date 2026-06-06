@@ -1,2 +1,0 @@
-[console_scripts]
-type-fast = type_fast.app:main
