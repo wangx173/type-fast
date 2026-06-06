@@ -19,10 +19,14 @@ from __future__ import annotations
 import threading
 
 from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QTextCursor
+from PySide6.QtGui import QAction, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
     QPlainTextEdit,
     QTextEdit,
     QVBoxLayout,
@@ -30,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import config
-from .translator import translate_stream
+from .translator import reset_client, translate_stream
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
@@ -51,33 +55,53 @@ class Bridge(QObject):
     error = Signal(int, str)
 
 
-class MainWindow(QWidget):
+class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("type-fast")
+        self.setWindowTitle("Type Fast")
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
         self.direction = QComboBox()
         self.direction.addItems([label for label, _, _ in _DIRECTIONS])
 
+        self.input_label = QLabel()
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Type here\u2026")
 
+        self.output_label = QLabel()
         self.output = QTextEdit()
         self.output.setReadOnly(True)
         self.output.setPlaceholderText("Translation appears here\u2026")
 
-        layout = QVBoxLayout(self)
-        for widget in (self.direction, self.input, self.output):
-            layout.addWidget(widget)
+        self.status = QLabel()
+        self.status.setAlignment(Qt.AlignRight)
+        self.status.setStyleSheet("color: gray;")
+
+        central = QWidget()
+        layout = QVBoxLayout(central)
+        layout.setContentsMargins(16, 16, 16, 12)
+        layout.setSpacing(8)
+        layout.addWidget(self.direction)
+        layout.addWidget(self.input_label)
+        layout.addWidget(self.input)
+        layout.addWidget(self.output_label)
+        layout.addWidget(self.output)
+        layout.addWidget(self.status)
+        self.setCentralWidget(central)
+
+        self._build_menu()
+        self._update_labels()
+        self._reflect_key_status()
 
         # Monotonic id identifying the most recent translation request so that
         # superseded, slower in-flight translations are discarded.
         self._request_id = 0
 
-        # The last (frozen_src, active, source, target) actually sent, used to
-        # skip redundant requests when nothing relevant changed.
-        self._last_sent_key: tuple[str, str, str, str] | None = None
+        # The last (frozen_src, active, source, target, should_freeze) actually
+        # sent, used to skip redundant requests when nothing relevant changed.
+        # ``should_freeze`` is part of the key so that adding a newline (which
+        # must advance the freeze boundary) is never skipped as a duplicate.
+        self._last_sent_key: tuple[str, str, str, str, bool] | None = None
 
         # Source prefix whose translation is finalized, and its translation.
         # Only the input text *after* ``_frozen_src`` is ever sent to the API.
@@ -106,6 +130,50 @@ class MainWindow(QWidget):
 
         self.input.textChanged.connect(self._on_text_changed)
         self.direction.currentIndexChanged.connect(self._on_text_changed)
+        self.direction.currentIndexChanged.connect(self._update_labels)
+
+    def _build_menu(self) -> None:
+        # On macOS this becomes part of the global menu bar at the top of the
+        # screen. "Set OpenAI API Key…" lands in the app menu automatically
+        # because of its role-like text, so we add it to a Settings menu too.
+        menu = self.menuBar().addMenu("Settings")
+        self.set_key_action = QAction("Set OpenAI API Key\u2026", self)
+        self.set_key_action.setShortcut(QKeySequence("Ctrl+,"))
+        self.set_key_action.triggered.connect(self._set_api_key)
+        menu.addAction(self.set_key_action)
+
+    def _reflect_key_status(self) -> None:
+        if config.has_api_key():
+            self.status.setText("")
+        else:
+            self.status.setText("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
+
+    def _set_api_key(self) -> None:
+        current = ""
+        try:
+            current = config.get_api_key()
+        except config.MissingAPIKeyError:
+            pass
+        key, ok = QInputDialog.getText(
+            self,
+            "Set OpenAI API Key",
+            "Enter your OpenAI API key (stored in ~/.type-fast/api_key):",
+            QLineEdit.Password,
+            current,
+        )
+        if not ok:
+            return
+        key = key.strip()
+        if not key:
+            return
+        config.save_api_key(key)
+        reset_client()  # so the next translation uses the new key
+        self._reflect_key_status()
+
+    def _update_labels(self) -> None:
+        _, source, target = _DIRECTIONS[self.direction.currentIndex()]
+        self.input_label.setText(source)
+        self.output_label.setText(target)
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
@@ -166,7 +234,7 @@ class MainWindow(QWidget):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target)
+        key = (self._frozen_src, active, source, target, should_freeze)
         if key == self._last_sent_key:
             return
         self._last_sent_key = key
@@ -208,6 +276,7 @@ class MainWindow(QWidget):
 
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
+            self.status.setText("Translating\u2026")
             self.output.setPlainText(self._active_prefix)
             self.output.moveCursor(QTextCursor.End)
 
@@ -231,18 +300,22 @@ class MainWindow(QWidget):
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
+            self.status.setText("")
             self.output.setPlainText(f"[error] {message}")
 
     def _copy_output_to_clipboard(self) -> None:
         text = self.output.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
+            self.status.setText("Copied to clipboard \u2713")
 
 
 def main() -> None:
     app = QApplication.instance() or QApplication([])
+    app.setApplicationName("Type Fast")
+    app.setApplicationDisplayName("Type Fast")
     window = MainWindow()
-    window.resize(420, 320)
+    window.resize(460, 380)
     window.show()
     app.exec()
 

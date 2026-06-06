@@ -26,6 +26,12 @@ def _get_client() -> OpenAI:
     return _client
 
 
+def reset_client() -> None:
+    """Discard the cached client so the next call picks up a new API key."""
+    global _client
+    _client = None
+
+
 def system_prompt(source: str, target: str) -> str:
     """Build a strict translation system prompt for the given language pair."""
     src = "the source language (auto-detect it)" if source == "auto" else source

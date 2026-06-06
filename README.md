@@ -20,9 +20,21 @@ source .venv/bin/activate
 # 2. Install the app and its dependencies
 pip install -e .
 
-# 3. Provide your OpenAI API key (read from the environment for this PoC)
+# 3. Provide your OpenAI API key (environment variable, or a key file — see below)
 export OPENAI_API_KEY='sk-...'
 ```
+
+The key is read from `OPENAI_API_KEY`, or, if that is not set, from
+`~/.type-fast/api_key`. The key file is what the packaged app uses, since an app
+launched from Finder does not inherit your shell environment:
+
+```sh
+mkdir -p ~/.type-fast
+echo 'sk-...' > ~/.type-fast/api_key
+```
+
+You can also set the key from inside the app: **Settings → Set OpenAI API Key…**
+(⌘,). It is saved to `~/.type-fast/api_key` and applied immediately.
 
 ## Run
 
@@ -46,9 +58,25 @@ ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
 temperature, default language pair, and the debounce interval.
 
+## Build a native macOS app
+
+Package Type Fast as a standalone `.app` bundle (no Python or terminal needed to
+run it) with PyInstaller:
+
+```sh
+pip install pyinstaller
+pyinstaller --noconfirm "Type Fast.spec"
+
+# Optional: ad-hoc sign so it launches without extra Gatekeeper friction
+codesign --force --deep --sign - "dist/Type Fast.app"
+```
+
+The bundle is created at `dist/Type Fast.app` — drag it into `/Applications`.
+Make sure your key is in `~/.type-fast/api_key` (see Setup) so the app can reach
+the API when launched from Finder.
+
 ## Roadmap (future work)
 
-- Store the API key in the macOS Keychain instead of an environment variable.
-- Package as a signed/notarized `.app` (via `py2app`) for easy installation.
-- Optional global hotkey + clipboard translation to use it inside other apps.
-- More language pairs and a menu-bar wrapper.
+- Store the API key in the macOS Keychain instead of a key file.
+- Sign and notarize the `.app` with a Developer ID for distribution to others.
+- A menu-bar wrapper and more language pairs.
