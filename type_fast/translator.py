@@ -4,32 +4,16 @@ The core entry point is :func:`translate_stream`, a generator that yields chunks
 of the translated text as they arrive. The source and target languages are
 configurable so the same function supports English -> Japanese, Japanese ->
 English, and additional language pairs in the future.
+
+The underlying client (OpenAI or Microsoft Azure AI Foundry) is built by
+:mod:`type_fast.providers`.
 """
 
 from __future__ import annotations
 
 from typing import Callable, Iterator, Optional
 
-from openai import OpenAI
-
-from . import config
-
-# The client is created lazily so importing this module never fails when the
-# API key is absent (e.g. during import checks or tests).
-_client: Optional[OpenAI] = None
-
-
-def _get_client() -> OpenAI:
-    global _client
-    if _client is None:
-        _client = OpenAI(api_key=config.get_api_key())
-    return _client
-
-
-def reset_client() -> None:
-    """Discard the cached client so the next call picks up a new API key."""
-    global _client
-    _client = None
+from . import config, providers
 
 
 def system_prompt(source: str, target: str) -> str:
@@ -67,9 +51,9 @@ def translate_stream(
     if not text:
         return
 
-    client = _get_client()
+    client = providers.get_client()
     with client.responses.stream(
-        model=config.DEFAULT_MODEL,
+        model=providers.get_model(),
         input=[
             {"role": "system", "content": system_prompt(source, target)},
             {"role": "user", "content": text},

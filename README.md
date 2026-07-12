@@ -22,7 +22,7 @@ Key…** (⌘,).
 
 - macOS
 - Python 3.10 or newer
-- An OpenAI API key
+- An OpenAI API key, or a Microsoft (Azure AI) Foundry endpoint + API key
 
 ## Setup
 
@@ -50,6 +50,35 @@ echo 'sk-...' > ~/.type-fast/api_key
 You can also set the key from inside the app: **Settings → Set OpenAI API Key…**
 (⌘,). It is saved to `~/.type-fast/api_key` and applied immediately.
 
+### Use Microsoft (Azure AI) Foundry instead of OpenAI
+
+To route translations through a Microsoft (Azure AI) Foundry model, set the
+Foundry endpoint and API key as environment variables:
+
+```sh
+export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
+export AZURE_AI_API_KEY='<your-foundry-key>'
+# Optional: pick a specific model/deployment (defaults to gpt-4.1-mini)
+export AZURE_AI_MODEL='gpt-4.1-mini'
+```
+
+When both `AZURE_AI_ENDPOINT` and `AZURE_AI_API_KEY` are set, Foundry takes
+precedence over OpenAI. The endpoint may be the bare resource URL (shown above)
+or already include the `/openai/v1` path — either works, and requests use
+Foundry's OpenAI-compatible Responses API.
+
+As with the OpenAI key, each variable has a `~/.type-fast/` fallback file so the
+packaged app works when launched from Finder (which does not inherit your shell
+environment):
+
+```sh
+mkdir -p ~/.type-fast
+echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
+echo '<your-foundry-key>' > ~/.type-fast/azure_ai_api_key
+# Optional model/deployment override:
+echo 'gpt-4.1-mini' > ~/.type-fast/azure_ai_model
+```
+
 ## Run
 
 ```sh
@@ -70,7 +99,9 @@ ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
 ## Configuration
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
-temperature, default language pair, and the debounce interval.
+the default Foundry model, temperature, default language pair, and the debounce
+interval. Provider selection (OpenAI vs. Azure AI Foundry) is driven by the
+environment variables described under [Setup](#setup).
 
 ## Build a native macOS app
 

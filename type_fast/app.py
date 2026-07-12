@@ -33,8 +33,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import config
-from .translator import reset_client, translate_stream
+from . import config, providers
+from .providers import openai as openai_provider
+from .translator import translate_stream
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
@@ -143,7 +144,7 @@ class MainWindow(QMainWindow):
         menu.addAction(self.set_key_action)
 
     def _reflect_key_status(self) -> None:
-        if config.has_api_key():
+        if providers.has_credentials():
             self.status.setText("")
         else:
             self.status.setText("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
@@ -151,8 +152,8 @@ class MainWindow(QMainWindow):
     def _set_api_key(self) -> None:
         current = ""
         try:
-            current = config.get_api_key()
-        except config.MissingAPIKeyError:
+            current = openai_provider.get_api_key()
+        except openai_provider.MissingAPIKeyError:
             pass
         key, ok = QInputDialog.getText(
             self,
@@ -166,8 +167,8 @@ class MainWindow(QMainWindow):
         key = key.strip()
         if not key:
             return
-        config.save_api_key(key)
-        reset_client()  # so the next translation uses the new key
+        openai_provider.save_api_key(key)
+        providers.reset_client()  # so the next translation uses the new key
         self._reflect_key_status()
 
     def _update_labels(self) -> None:
