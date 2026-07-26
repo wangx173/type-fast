@@ -22,6 +22,9 @@ classifiers = [
 dependencies = [
     "openai>=1.40.0",
     "PySide6>=6.6.0",
+    "pyobjc-framework-Cocoa>=10.0",
+    "pyobjc-framework-Quartz>=10.0",
+    "pyobjc-framework-ApplicationServices>=10.0",
 ]
 
 [project.urls]

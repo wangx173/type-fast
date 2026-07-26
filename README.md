@@ -96,6 +96,25 @@ A small always-on-top window opens with:
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
 
+## Keyboard-like workflow: global hotkey + auto-paste
+
+Press **⌥⌘Space** from anywhere on macOS to summon the Type Fast window.
+When you press the hotkey, Type Fast remembers whichever app was frontmost;
+once your translation finishes, it re-activates that app and simulates
+**⌘V** so the translated text is pasted straight into whatever you were
+typing into, then auto-hides itself — no manual app-switching or paste
+required.
+
+This requires granting Type Fast **Accessibility** access (macOS needs this
+for any app that monitors global keystrokes or sends synthetic ones):
+**Settings → Grant Accessibility Access…**, then enable "Type Fast" (or your
+terminal/Python, if running from source) under **System Settings → Privacy &
+Security → Accessibility**.
+
+Without Accessibility access, the hotkey and auto-paste are simply inert —
+translations still stream normally and are still copied to the clipboard, so
+you can fall back to a manual paste.
+
 ## Configuration
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,

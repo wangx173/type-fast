@@ -25,7 +25,12 @@ jobs:
           pip install -e .
 
       - name: Import check
-        run: python -c "import type_fast.app, type_fast.translator, type_fast.config; print('imports OK')"
+        run: |
+          python -c "
+          import type_fast.app, type_fast.translator, type_fast.config
+          import type_fast.accessibility, type_fast.focus, type_fast.hotkey
+          print('imports OK')
+          "
 
       - name: Headless window smoke test
         env:
@@ -38,5 +43,47 @@ jobs:
           w = MainWindow()
           assert w.windowTitle() == "Type Fast"
           assert w.direction.count() == 2
+          # Hotkey monitor installs even without Accessibility trust; it just
+          # won't receive events until the user grants access.
+          assert w._hotkey_active is True
+          w._hotkey.stop()
           print("window OK")
+          PY
+
+      - name: Accessibility/hotkey module smoke test
+        run: |
+          python - <<'PY'
+          from type_fast import accessibility
+          from type_fast.hotkey import GlobalHotkey, _DEFAULT_MODIFIER_MASK, _KEYCODE_SPACE
+
+          # These APIs must never raise, even when the process is untrusted
+          # (the CI runner never grants Accessibility access).
+          assert isinstance(accessibility.is_trusted(), bool)
+
+          # GlobalHotkey's matching logic should fire only on the exact
+          # configured chord, without needing a real event tap installed.
+          class FakeEvent:
+              def __init__(self, key_code, modifier_flags):
+                  self._key_code = key_code
+                  self._modifier_flags = modifier_flags
+
+              def keyCode(self):
+                  return self._key_code
+
+              def modifierFlags(self):
+                  return self._modifier_flags
+
+          triggered = []
+          hk = GlobalHotkey(lambda: triggered.append(True))
+
+          hk._handle_event(FakeEvent(_KEYCODE_SPACE, _DEFAULT_MODIFIER_MASK))
+          assert triggered == [True], "expected exact chord to trigger"
+
+          hk._handle_event(FakeEvent(_KEYCODE_SPACE, 0))
+          assert triggered == [True], "bare space must not trigger"
+
+          hk._handle_event(FakeEvent(0x00, _DEFAULT_MODIFIER_MASK))
+          assert triggered == [True], "wrong keycode must not trigger"
+
+          print("accessibility/hotkey OK")
           PY

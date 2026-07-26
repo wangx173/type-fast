@@ -33,7 +33,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import config, providers
+from . import accessibility, config, focus, providers
+from .hotkey import GlobalHotkey
 from .providers import openai as openai_provider
 from .translator import translate_stream
 
@@ -94,6 +95,14 @@ class MainWindow(QMainWindow):
         self._update_labels()
         self._reflect_key_status()
 
+        # PID of the app that was frontmost when the global hotkey last showed
+        # this window, so a finished translation can be auto-pasted back into
+        # it. None until the hotkey has been used at least once.
+        self._previous_app_pid: int | None = None
+
+        self._hotkey = GlobalHotkey(self._toggle_via_hotkey)
+        self._hotkey_active = self._hotkey.start()
+
         # Monotonic id identifying the most recent translation request so that
         # superseded, slower in-flight translations are discarded.
         self._request_id = 0
@@ -143,11 +152,43 @@ class MainWindow(QMainWindow):
         self.set_key_action.triggered.connect(self._set_api_key)
         menu.addAction(self.set_key_action)
 
+        self.grant_access_action = QAction(
+            "Grant Accessibility Access\u2026 (for hotkey \u0026 auto-paste)", self
+        )
+        self.grant_access_action.triggered.connect(self._request_accessibility_access)
+        menu.addAction(self.grant_access_action)
+
     def _reflect_key_status(self) -> None:
-        if providers.has_credentials():
-            self.status.setText("")
-        else:
+        if not providers.has_credentials():
             self.status.setText("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
+        elif accessibility.available() and not accessibility.is_trusted():
+            self.status.setText(
+                "Accessibility access not granted \u2014 hotkey/auto-paste disabled"
+            )
+        else:
+            self.status.setText("")
+
+    def _request_accessibility_access(self) -> None:
+        # Triggers the system permission dialog (if not already trusted) and
+        # opens the Accessibility settings pane so the user can flip it on;
+        # macOS only applies the change after it is granted there.
+        accessibility.prompt_for_trust()
+        accessibility.open_settings()
+        self._reflect_key_status()
+
+    def _toggle_via_hotkey(self) -> None:
+        # NSEvent global monitor callbacks land on the main run loop, but Qt
+        # widget calls should still go through Qt's own thread affinity, so we
+        # only touch Qt objects here (no cross-thread bridging needed since
+        # this runs on the same run loop Qt is integrated with).
+        if self.isVisible() and self.isActiveWindow():
+            self.hide()
+            return
+        self._previous_app_pid = focus.frontmost_app_pid()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        self.input.setFocus()
 
     def _set_api_key(self) -> None:
         current = ""
@@ -296,8 +337,10 @@ class MainWindow(QMainWindow):
             if len(self.input.toPlainText()) > len(self._frozen_src):
                 self.run_translation()
                 return
-        # Nothing left to translate: auto-copy the finished translation.
+        # Nothing left to translate: auto-copy the finished translation, then
+        # try to hand it straight back to whichever app the user came from.
         self._copy_output_to_clipboard()
+        self._auto_paste_into_previous_app()
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
@@ -309,6 +352,20 @@ class MainWindow(QMainWindow):
         if text:
             QApplication.clipboard().setText(text)
             self.status.setText("Copied to clipboard \u2713")
+
+    def _auto_paste_into_previous_app(self) -> None:
+        # Only attempt this if the window was summoned via the hotkey (so we
+        # know which app to paste back into) and Accessibility access has
+        # been granted; otherwise the clipboard copy above is the fallback.
+        if self._previous_app_pid is None:
+            return
+        if not (accessibility.available() and accessibility.is_trusted()):
+            return
+        pasted = focus.paste_into_pid(self._previous_app_pid)
+        self._previous_app_pid = None
+        if pasted:
+            self.status.setText("Pasted \u2713")
+            self.hide()
 
 
 def main() -> None:
