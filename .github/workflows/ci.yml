@@ -222,3 +222,60 @@ jobs:
           w._hotkey.stop()
           print("ax_focus wiring OK")
           PY
+
+      - name: IME bridge smoke test (Phase 3)
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.request
+
+          from type_fast import ime_bridge, translator
+
+          # Never make a real network/API call in CI: monkeypatch the
+          # streaming translator with a deterministic fake.
+          translator.translate_stream = lambda text, source, target, **kw: iter(["Hel", "lo"])
+          ime_bridge.translate_stream = translator.translate_stream
+
+          srv = ime_bridge.TranslateBridgeServer(port=0)
+          port = srv.start()
+          assert port > 0
+          # The bridge must only ever bind to loopback, never 0.0.0.0.
+          assert srv._httpd.server_address[0] == "127.0.0.1"
+
+          req = urllib.request.Request(
+              f"http://127.0.0.1:{port}/translate",
+              data=json.dumps({"text": "hi", "source": "auto", "target": "Japanese"}).encode(),
+              headers={"Content-Type": "application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=5) as resp:
+              lines = [json.loads(l) for l in resp.read().decode().splitlines()]
+          assert lines == [{"delta": "Hel"}, {"delta": "lo"}], lines
+
+          req2 = urllib.request.Request(f"http://127.0.0.1:{port}/nope", method="POST", data=b"{}")
+          try:
+              urllib.request.urlopen(req2, timeout=5)
+              raise AssertionError("expected HTTPError for unknown path")
+          except urllib.error.HTTPError as e:
+              assert e.code == 404
+
+          # start() must be idempotent.
+          assert srv.start() == port
+
+          srv.stop()
+          print("ime_bridge OK")
+          PY
+
+  ime-swift:
+    runs-on: macos-14
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: swift build
+        working-directory: ime/TypeFastIME
+        run: swift build
+
+      - name: swift test
+        working-directory: ime/TypeFastIME
+        run: swift test

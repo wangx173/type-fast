@@ -1,0 +1,151 @@
+"""Local-only HTTP bridge exposing :func:`translate_stream` for Phase 3.
+
+Phase 3's goal is a native macOS Input Method (IMKit) so translated text can
+be typed directly into any focused field, system-wide, without the
+Accessibility-based injection used in Phase 1/2. IMKit input methods are
+implemented in Swift/Objective-C, but ``type_fast``'s translation logic
+(provider credentials, streaming, language config) is Python.
+
+Rather than reimplementing that logic in Swift, this module runs a small
+HTTP server bound to ``127.0.0.1`` only (never ``0.0.0.0``) that the Swift
+side calls into as a local subprocess. It never listens on any external
+interface and every request is a same-machine, same-user call — it does not
+introduce a new attack surface beyond what running the Python app already
+has.
+
+This module intentionally does *not* install, register, or otherwise touch
+a real macOS Input Source. Doing so packages/signs an app bundle and mutates
+``~/Library/Input Methods`` plus system Input Source registration — that is
+a manual, machine-specific step documented in the README instead of being
+performed automatically (see the module docstring rationale in the project
+README's Phase 3 section).
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from typing import Optional
+
+from . import config
+from .translator import translate_stream
+
+#: Only bind to loopback; this must never be reachable from other machines.
+BIND_HOST = "127.0.0.1"
+
+
+class _Handler(BaseHTTPRequestHandler):
+    # Silence the default per-request stderr logging; the bridge is meant to
+    # run quietly as a local helper process.
+    def log_message(self, format, *args):  # noqa: A002 - stdlib signature
+        return
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib handler naming
+        if self.path != "/translate":
+            self.send_response(404)
+            self.end_headers()
+            return
+
+        length = int(self.headers.get("Content-Length", "0"))
+        raw = self.rfile.read(length) if length else b"{}"
+        try:
+            payload = json.loads(raw or b"{}")
+        except json.JSONDecodeError:
+            self.send_response(400)
+            self.end_headers()
+            return
+
+        text = payload.get("text", "")
+        source = payload.get("source", config.DEFAULT_SOURCE)
+        target = payload.get("target", config.DEFAULT_TARGET)
+
+        self.send_response(200)
+        self.send_header("Content-Type", "application/x-ndjson")
+        self.end_headers()
+
+        try:
+            for chunk in translate_stream(text, source, target):
+                self.wfile.write(
+                    (json.dumps({"delta": chunk}) + "\n").encode("utf-8")
+                )
+                self.wfile.flush()
+        except Exception as exc:  # pragma: no cover - defensive, never crash
+            self.wfile.write(
+                (json.dumps({"error": str(exc)}) + "\n").encode("utf-8")
+            )
+            self.wfile.flush()
+
+
+class TranslateBridgeServer:
+    """A local-only HTTP server exposing streamed translation over loopback.
+
+    Runs the stdlib ``HTTPServer`` on a background thread so callers (tests,
+    or the app itself) are never blocked waiting on it. Binding port ``0``
+    picks an ephemeral free port, which is what tests use so parallel CI runs
+    never collide on a fixed port.
+    """
+
+    def __init__(self, port: int = 0) -> None:
+        self._port = port
+        self._httpd: Optional[HTTPServer] = None
+        self._thread: Optional[threading.Thread] = None
+
+    @property
+    def port(self) -> int:
+        if self._httpd is None:
+            raise RuntimeError("server is not running")
+        return self._httpd.server_address[1]
+
+    def start(self) -> int:
+        """Start the server (if not already running) and return its port."""
+        if self._httpd is not None:
+            return self.port
+
+        self._httpd = HTTPServer((BIND_HOST, self._port), _Handler)
+        self._thread = threading.Thread(
+            target=self._httpd.serve_forever, daemon=True
+        )
+        self._thread.start()
+        return self.port
+
+    def stop(self) -> None:
+        if self._httpd is None:
+            return
+        self._httpd.shutdown()
+        self._httpd.server_close()
+        if self._thread is not None:
+            self._thread.join(timeout=2)
+        self._httpd = None
+        self._thread = None
+
+
+def _main() -> None:  # pragma: no cover - thin CLI wrapper, manually run
+    """Run the bridge server in the foreground on a fixed, discoverable port.
+
+    Intended to be launched by whatever process hosts the native input
+    method; prints the bound port so the caller can pick it up even if a
+    fixed port is unavailable.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--port", type=int, default=8765, help="Port to bind on 127.0.0.1"
+    )
+    args = parser.parse_args()
+
+    server = TranslateBridgeServer(port=args.port)
+    bound_port = server.start()
+    print(f"type-fast IME bridge listening on http://127.0.0.1:{bound_port}")
+    try:
+        while True:
+            threading.Event().wait(3600)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.stop()
+
+
+if __name__ == "__main__":  # pragma: no cover
+    _main()
