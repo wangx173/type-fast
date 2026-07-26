@@ -133,9 +133,12 @@ Method — there's an experimental IMKit-based input method under
 - [`type_fast/ime_bridge.py`](type_fast/ime_bridge.py) runs a small HTTP
   server bound to `127.0.0.1` only, exposing `translate_stream` as
   newline-delimited JSON so a native process can call into Type Fast's
-  existing translation/provider logic.
+  existing translation/provider logic. Since loopback binding alone doesn't
+  stop other local processes/users from reaching it, every launch requires
+  a random bearer token (printed alongside the port when run via
+  `python -m type_fast.ime_bridge`) on every request.
 - `ime/TypeFastIME` is a Swift package with the composing-buffer state
-  machine and bridge client (`swift test` covers both), plus an
+  machine and a streaming bridge client (`swift test` covers both), plus an
   `IMKInputController` subclass that wires them together.
 
 **This repository does not install or register a real macOS Input Source**
