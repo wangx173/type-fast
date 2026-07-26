@@ -59,6 +59,7 @@ jobs:
           # These APIs must never raise, even when the process is untrusted
           # (the CI runner never grants Accessibility access).
           assert isinstance(accessibility.is_trusted(), bool)
+          assert accessibility.prompt_for_trust() is False
 
           # GlobalHotkey's matching logic should fire only on the exact
           # configured chord, without needing a real event tap installed.
@@ -76,6 +77,11 @@ jobs:
           triggered = []
           hk = GlobalHotkey(lambda: triggered.append(True))
 
+          # start() is idempotent: calling it again while already running
+          # still reports success instead of False.
+          assert hk.start() is True
+          assert hk.start() is True
+
           hk._handle_event(FakeEvent(_KEYCODE_SPACE, _DEFAULT_MODIFIER_MASK))
           assert triggered == [True], "expected exact chord to trigger"
 
@@ -85,5 +91,31 @@ jobs:
           hk._handle_event(FakeEvent(0x00, _DEFAULT_MODIFIER_MASK))
           assert triggered == [True], "wrong keycode must not trigger"
 
+          hk.stop()
           print("accessibility/hotkey OK")
           PY
+
+      - name: Hotkey-hide clears stale auto-paste target
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'PY'
+          from PySide6.QtWidgets import QApplication
+          from type_fast.app import MainWindow
+
+          app = QApplication([])
+          w = MainWindow()
+
+          # Simulate "window visible+active, hotkey pressed again to hide":
+          # the previously captured PID must be forgotten so a later,
+          # non-hotkey translation session can't auto-paste into it.
+          w._previous_app_pid = 12345
+          w.isVisible = lambda: True
+          w.isActiveWindow = lambda: True
+          w._toggle_via_hotkey()
+          assert w._previous_app_pid is None, "expected PID cleared on hotkey-hide"
+
+          w._hotkey.stop()
+          print("hotkey-hide clearing OK")
+          PY
+

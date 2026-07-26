@@ -63,9 +63,18 @@ class GlobalHotkey:
         self._on_trigger()
 
     def start(self) -> bool:
-        """Install the global monitor. Returns False if unsupported."""
-        if not _AVAILABLE or self._monitor is not None:
+        """Install the global monitor if not already running.
+
+        Returns True if the monitor is installed and running (whether it was
+        just installed by this call or already running from a previous
+        call), or False if unsupported on this platform. Calling this
+        multiple times is safe and treated as "ensure started" rather than
+        "start once, fail thereafter".
+        """
+        if not _AVAILABLE:
             return False
+        if self._monitor is not None:
+            return True
         self._monitor = NSEvent.addGlobalMonitorForEventsMatchingMask_handler_(
             NSEventMaskKeyDown, self._handle_event
         )

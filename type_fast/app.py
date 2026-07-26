@@ -183,6 +183,10 @@ class MainWindow(QMainWindow):
         # this runs on the same run loop Qt is integrated with).
         if self.isVisible() and self.isActiveWindow():
             self.hide()
+            # The user explicitly dismissed the overlay: forget the captured
+            # target so a translation that finishes afterward (or a later
+            # non-hotkey session) never auto-pastes into a stale app.
+            self._previous_app_pid = None
             return
         self._previous_app_pid = focus.frontmost_app_pid()
         self.show()

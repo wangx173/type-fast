@@ -46,18 +46,25 @@ def prompt_for_trust() -> bool:
     access in System Settings, so callers should re-check with
     :func:`is_trusted` afterward rather than relying on this return value
     reflecting the eventual outcome).
+
+    Never raises: PyObjC bridging calls here can fail in unexpected ways, and
+    this is meant to be a safe wrapper callers can use from UI code without a
+    try/except of their own.
     """
     if not _AVAILABLE:
         return False
-    options = CFDictionaryCreate(
-        None,
-        ["AXTrustedCheckOptionPrompt"],
-        [True],
-        1,
-        None,
-        None,
-    )
-    return bool(AXIsProcessTrustedWithOptions(options))
+    try:
+        options = CFDictionaryCreate(
+            None,
+            ["AXTrustedCheckOptionPrompt"],
+            [True],
+            1,
+            None,
+            None,
+        )
+        return bool(AXIsProcessTrustedWithOptions(options))
+    except Exception:
+        return False
 
 
 SETTINGS_URL = (
@@ -67,10 +74,19 @@ SETTINGS_URL = (
 
 
 def open_settings() -> None:
-    """Open System Settings directly to the Accessibility privacy pane."""
+    """Open System Settings directly to the Accessibility privacy pane.
+
+    Never raises: the lazy AppKit/Foundation imports and URL-opening calls
+    below can fail (missing extras, Objective-C bridging errors), and this
+    should degrade to a no-op rather than crash the caller.
+    """
     if not _AVAILABLE:
         return
-    from AppKit import NSWorkspace
-    from Foundation import NSURL
+    try:
+        from AppKit import NSWorkspace
+        from Foundation import NSURL
 
-    NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(SETTINGS_URL))
+        NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(SETTINGS_URL))
+    except Exception:
+        pass
+
