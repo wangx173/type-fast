@@ -198,8 +198,9 @@ class MainWindow(QMainWindow):
             self.hide()
             # The user explicitly dismissed the overlay: forget the captured
             # target so a translation that finishes afterward (or a later
-            # non-hotkey session) never auto-pastes into a stale app.
-            self._previous_app_pid = None
+            # non-hotkey session) never auto-pastes/live-injects into a
+            # stale app or field.
+            self._forget_previous_target()
             return
 
         # Capture the frontmost app and its focused UI element *before* we
@@ -382,15 +383,16 @@ class MainWindow(QMainWindow):
         # try to hand it straight back to whichever app the user came from —
         # live injection if the focused field supports it (already up to
         # date, just needs a final sync + auto-hide), otherwise clipboard +
-        # simulated paste.
+        # simulated paste. Either way, this hotkey session is now finished,
+        # so forget the captured target regardless of outcome — otherwise a
+        # later, non-hotkey translation could act on stale state.
         self._copy_output_to_clipboard()
         if self._live_inject_into_focused_field():
             self.status.setText("Live-updated \u2713")
-            self._previous_ax_element = None
-            self._live_inject_supported = False
             self.hide()
         else:
             self._auto_paste_into_previous_app()
+        self._forget_previous_target()
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
@@ -402,6 +404,14 @@ class MainWindow(QMainWindow):
         if text:
             QApplication.clipboard().setText(text)
             self.status.setText("Copied to clipboard \u2713")
+
+    def _forget_previous_target(self) -> None:
+        # Clears everything captured from the last hotkey invocation, so a
+        # later translation (whether from a later hotkey session or from the
+        # window being opened some other way) never acts on stale state.
+        self._previous_app_pid = None
+        self._previous_ax_element = None
+        self._live_inject_supported = False
 
     def _live_inject_into_focused_field(self) -> bool:
         # Mirrors the streaming output box into the field the user was
@@ -423,7 +433,9 @@ class MainWindow(QMainWindow):
         if not (accessibility.available() and accessibility.is_trusted()):
             return
         pasted = focus.paste_into_pid(self._previous_app_pid)
-        self._previous_app_pid = None
+        if pasted:
+            self.status.setText("Pasted \u2713")
+            self.hide()
         if pasted:
             self.status.setText("Pasted \u2713")
             self.hide()

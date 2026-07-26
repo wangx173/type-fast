@@ -206,12 +206,18 @@ jobs:
 
           w._previous_ax_element = "fake-element"
           w._live_inject_supported = True
+          w._previous_app_pid = 999  # must also be cleared once handled
           w.output.setPlainText("hello")
           assert w._live_inject_into_focused_field() is True
           assert calls == [("fake-element", "hello")]
 
-          w._live_inject_supported = False
-          assert w._live_inject_into_focused_field() is False
+          # Finalizing a translation via live injection must forget the
+          # *entire* captured target (PID included), not just the AX fields,
+          # so a later, non-hotkey translation can't act on stale state.
+          w._on_finished(w._request_id, "hello")
+          assert w._previous_app_pid is None
+          assert w._previous_ax_element is None
+          assert w._live_inject_supported is False
 
           w._hotkey.stop()
           print("ax_focus wiring OK")
