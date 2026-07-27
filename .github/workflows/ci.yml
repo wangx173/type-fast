@@ -29,6 +29,7 @@ jobs:
           python -c "
           import type_fast.app, type_fast.translator, type_fast.config
           import type_fast.accessibility, type_fast.focus, type_fast.hotkey
+          import type_fast.ax_focus
           print('imports OK')
           "
 
@@ -46,6 +47,8 @@ jobs:
           # Hotkey monitor installs even without Accessibility trust; it just
           # won't receive events until the user grants access.
           assert w._hotkey_active is True
+          assert w._previous_ax_element is None
+          assert w._live_inject_supported is False
           w._hotkey.stop()
           print("window OK")
           PY
@@ -178,3 +181,44 @@ jobs:
           print("hotkey-hide clearing OK")
           PY
 
+      - name: AX focus/injection smoke test
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: |
+          python - <<'PY'
+          from PySide6.QtWidgets import QApplication
+          from type_fast import ax_focus
+          from type_fast.app import MainWindow
+
+          # Read-only AX calls must never raise, even when untrusted (as on
+          # this CI runner, which never grants Accessibility access).
+          assert ax_focus.focused_element() is None
+          assert ax_focus.element_bounds(None) is None
+          assert ax_focus.is_value_settable(None) is False
+
+          app = QApplication([])
+          w = MainWindow()
+
+          # Exercise MainWindow's live-injection wiring without touching real
+          # Accessibility APIs, by monkeypatching ax_focus.set_value.
+          calls = []
+          ax_focus.set_value = lambda element, text: (calls.append((element, text)), True)[1]
+
+          w._previous_ax_element = "fake-element"
+          w._live_inject_supported = True
+          w._previous_app_pid = 999  # must also be cleared once handled
+          w.output.setPlainText("hello")
+          assert w._live_inject_into_focused_field() is True
+          assert calls == [("fake-element", "hello")]
+
+          # Finalizing a translation via live injection must forget the
+          # *entire* captured target (PID included), not just the AX fields,
+          # so a later, non-hotkey translation can't act on stale state.
+          w._on_finished(w._request_id, "hello")
+          assert w._previous_app_pid is None
+          assert w._previous_ax_element is None
+          assert w._live_inject_supported is False
+
+          w._hotkey.stop()
+          print("ax_focus wiring OK")
+          PY

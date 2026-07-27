@@ -33,10 +33,17 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import accessibility, config, focus, providers
+from . import accessibility, ax_focus, config, focus, providers
 from .hotkey import GlobalHotkey
 from .providers import openai as openai_provider
 from .translator import translate_stream
+
+# Overlay window size, used when we anchor near a focused field instead of
+# using the default fixed position/size.
+_OVERLAY_WIDTH = 420
+_OVERLAY_HEIGHT = 260
+# Gap between the focused field's bottom edge and the overlay's top edge.
+_OVERLAY_GAP = 8
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
@@ -99,6 +106,12 @@ class MainWindow(QMainWindow):
         # this window, so a finished translation can be auto-pasted back into
         # it. None until the hotkey has been used at least once.
         self._previous_app_pid: int | None = None
+        # AXUIElement for that app's focused field, if the Accessibility APIs
+        # were able to resolve one; used to anchor the overlay near it and,
+        # when the field supports it, inject text into it live instead of
+        # falling back to clipboard + simulated paste.
+        self._previous_ax_element: object | None = None
+        self._live_inject_supported = False
 
         self._hotkey = GlobalHotkey(self._toggle_via_hotkey)
         self._hotkey_active = self._hotkey.start()
@@ -185,14 +198,38 @@ class MainWindow(QMainWindow):
             self.hide()
             # The user explicitly dismissed the overlay: forget the captured
             # target so a translation that finishes afterward (or a later
-            # non-hotkey session) never auto-pastes into a stale app.
-            self._previous_app_pid = None
+            # non-hotkey session) never auto-pastes/live-injects into a
+            # stale app or field.
+            self._forget_previous_target()
             return
+
+        # Capture the frontmost app and its focused UI element *before* we
+        # steal focus by showing our own window — this is our only chance to
+        # see what the user was actually typing into.
         self._previous_app_pid = focus.frontmost_app_pid()
+        self._previous_ax_element = ax_focus.focused_element()
+        self._live_inject_supported = ax_focus.is_value_settable(
+            self._previous_ax_element
+        )
+
+        self._position_overlay_near_focus()
         self.show()
         self.raise_()
         self.activateWindow()
         self.input.setFocus()
+
+    def _position_overlay_near_focus(self) -> None:
+        # When the focused field's screen bounds are available, anchor the
+        # overlay just below it so it reads as an extension of that field
+        # rather than an unrelated window; otherwise keep the default
+        # fixed-position/size behavior from a plain window.show().
+        bounds = ax_focus.element_bounds(self._previous_ax_element)
+        if bounds is None:
+            return
+        x, y, _width, height = bounds
+        self.resize(_OVERLAY_WIDTH, _OVERLAY_HEIGHT)
+        self.move(int(x), int(y + height + _OVERLAY_GAP))
+
 
     def _set_api_key(self) -> None:
         current = ""
@@ -329,6 +366,7 @@ class MainWindow(QMainWindow):
     def _on_delta(self, request_id: int, chunk: str) -> None:
         if request_id == self._request_id:
             self.output.insertPlainText(chunk)
+            self._live_inject_into_focused_field()
 
     def _on_finished(self, request_id: int, translation: str) -> None:
         if request_id != self._request_id:
@@ -342,9 +380,19 @@ class MainWindow(QMainWindow):
                 self.run_translation()
                 return
         # Nothing left to translate: auto-copy the finished translation, then
-        # try to hand it straight back to whichever app the user came from.
+        # try to hand it straight back to whichever app the user came from —
+        # live injection if the focused field supports it (already up to
+        # date, just needs a final sync + auto-hide), otherwise clipboard +
+        # simulated paste. Either way, this hotkey session is now finished,
+        # so forget the captured target regardless of outcome — otherwise a
+        # later, non-hotkey translation could act on stale state.
         self._copy_output_to_clipboard()
-        self._auto_paste_into_previous_app()
+        if self._live_inject_into_focused_field():
+            self.status.setText("Live-updated \u2713")
+            self.hide()
+        else:
+            self._auto_paste_into_previous_app()
+        self._forget_previous_target()
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
@@ -357,6 +405,25 @@ class MainWindow(QMainWindow):
             QApplication.clipboard().setText(text)
             self.status.setText("Copied to clipboard \u2713")
 
+    def _forget_previous_target(self) -> None:
+        # Clears everything captured from the last hotkey invocation, so a
+        # later translation (whether from a later hotkey session or from the
+        # window being opened some other way) never acts on stale state.
+        self._previous_app_pid = None
+        self._previous_ax_element = None
+        self._live_inject_supported = False
+
+    def _live_inject_into_focused_field(self) -> bool:
+        # Mirrors the streaming output box into the field the user was
+        # editing before the overlay took focus, when that field's AXValue is
+        # directly settable (typically native macOS text fields). Returns
+        # False (without side effects) for fields that don't support this —
+        # e.g. many web/Electron/canvas-based text areas — so callers fall
+        # back to the Phase 1 clipboard/auto-paste flow instead.
+        if not self._live_inject_supported or self._previous_ax_element is None:
+            return False
+        return ax_focus.set_value(self._previous_ax_element, self.output.toPlainText())
+
     def _auto_paste_into_previous_app(self) -> None:
         # Only attempt this if the window was summoned via the hotkey (so we
         # know which app to paste back into) and Accessibility access has
@@ -366,10 +433,13 @@ class MainWindow(QMainWindow):
         if not (accessibility.available() and accessibility.is_trusted()):
             return
         pasted = focus.paste_into_pid(self._previous_app_pid)
-        self._previous_app_pid = None
         if pasted:
             self.status.setText("Pasted \u2713")
             self.hide()
+        if pasted:
+            self.status.setText("Pasted \u2713")
+            self.hide()
+
 
 
 def main() -> None:

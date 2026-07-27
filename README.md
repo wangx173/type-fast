@@ -115,6 +115,14 @@ Without Accessibility access, the hotkey and auto-paste are simply inert —
 translations still stream normally and are still copied to the clipboard, so
 you can fall back to a manual paste.
 
+When the field you were typing into supports it (most native macOS text
+fields), Type Fast goes a step further: it anchors its window just below
+that field and streams the translation directly into it as you type, so it
+reads like an extension of the field itself rather than a separate app —
+auto-hiding once the translation finishes. Fields that don't expose a
+settable Accessibility value (common in some web/Electron apps) transparently
+fall back to the clipboard/auto-paste flow above instead.
+
 ## Configuration
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
