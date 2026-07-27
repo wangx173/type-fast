@@ -123,6 +123,49 @@ auto-hiding once the translation finishes. Fields that don't expose a
 settable Accessibility value (common in some web/Electron apps) transparently
 fall back to the clipboard/auto-paste flow above instead.
 
+## Native input method (experimental, manual setup required)
+
+For a truly system-wide keyboard-like experience — no hotkey, no target app
+tracking, just type and get translated text in-place like any other Input
+Method — there's an experimental IMKit-based input method under
+[`ime/TypeFastIME`](ime/TypeFastIME):
+
+- [`type_fast/ime_bridge.py`](type_fast/ime_bridge.py) runs a small HTTP
+  server bound to `127.0.0.1` only, exposing `translate_stream` as
+  newline-delimited JSON so a native process can call into Type Fast's
+  existing translation/provider logic. Since loopback binding alone doesn't
+  stop other local processes/users from reaching it, every launch requires
+  a random bearer token (printed alongside the port when run via
+  `python -m type_fast.ime_bridge`) on every request.
+- `ime/TypeFastIME` is a Swift package with the composing-buffer state
+  machine and a streaming bridge client (`swift test` covers both), plus an
+  `IMKInputController` subclass that wires them together.
+
+**This repository does not install or register a real macOS Input Source**
+— doing so requires packaging a signed `.app` bundle and mutating
+`~/Library/Input Methods` plus the system's registered input sources, which
+is a manual, machine-specific, one-time setup step you need to perform
+yourself:
+
+1. Build the Swift package in release mode: `cd ime/TypeFastIME && swift
+   build -c release`.
+2. Package the built binary into an Input Method `.app` bundle whose
+   `Info.plist` declares the `InputMethodKit`-required keys (an
+   `InputMethodConnectionName`, `tsInputMethodIconFileKey`, etc. — see
+   Apple's Input Method Kit documentation) and code-sign it, e.g. with
+   `codesign --deep --force --sign - Type\ Fast\ IME.app` for local/ad-hoc
+   use.
+3. Copy the signed bundle into `~/Library/Input Methods/`.
+4. Log out and back in (or run `killall imklaunchagent`) so macOS picks up
+   the new Input Method, then enable it under **System Settings → Keyboard
+   → Input Sources**.
+5. Separately run the Python bridge (`python -m type_fast.ime_bridge`, or
+   have the input method spawn it) so the Swift side has something to call.
+
+Because this mutates system-level Input Source registration on whatever
+machine it's installed on, it is intentionally left as a manual step rather
+than something this project or an automated agent performs on your behalf.
+
 ## Configuration
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,

@@ -222,3 +222,79 @@ jobs:
           w._hotkey.stop()
           print("ax_focus wiring OK")
           PY
+
+      - name: IME bridge smoke test (Phase 3)
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.error
+          import urllib.request
+
+          from type_fast import ime_bridge, translator
+
+          # Never make a real network/API call in CI: monkeypatch the
+          # streaming translator with a deterministic fake.
+          translator.translate_stream = lambda text, source, target, **kw: iter(["Hel", "lo"])
+          ime_bridge.translate_stream = translator.translate_stream
+
+          srv = ime_bridge.TranslateBridgeServer(port=0)
+          port = srv.start()
+          token = srv.token
+          assert port > 0
+          assert token and len(token) > 10
+          # The bridge must only ever bind to loopback, never 0.0.0.0.
+          assert srv._httpd.server_address[0] == "127.0.0.1"
+
+          def post(path, body, headers=None):
+              data = body if isinstance(body, (bytes, bytearray)) else json.dumps(body).encode()
+              req = urllib.request.Request(
+                  f"http://127.0.0.1:{port}{path}", data=data, headers=headers or {}, method="POST"
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=5) as resp:
+                      return resp.status, resp.read().decode()
+              except urllib.error.HTTPError as e:
+                  return e.code, e.read().decode()
+
+          auth = {"Authorization": f"Bearer {token}"}
+
+          # Requests without (or with the wrong) bearer token must be rejected.
+          status, _ = post("/translate", {"text": "hi"})
+          assert status == 401, status
+          status, _ = post("/translate", {"text": "hi"}, {"Authorization": "Bearer wrong"})
+          assert status == 401, status
+
+          status, body = post("/translate", {"text": "hi", "source": "auto", "target": "Japanese"}, auth)
+          assert status == 200
+          lines = [json.loads(l) for l in body.splitlines()]
+          assert lines == [{"delta": "Hel"}, {"delta": "lo"}], lines
+
+          # Non-dict JSON and malformed JSON must be 400, not a 500.
+          status, _ = post("/translate", [1, 2, 3], auth)
+          assert status == 400, status
+          status, _ = post("/translate", b"not json", auth)
+          assert status == 400, status
+
+          status, _ = post("/nope", {}, auth)
+          assert status == 404, status
+
+          # start() must be idempotent.
+          assert srv.start() == port
+
+          srv.stop()
+          print("ime_bridge OK")
+          PY
+
+  ime-swift:
+    runs-on: macos-14
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: swift build
+        working-directory: ime/TypeFastIME
+        run: swift build
+
+      - name: swift test
+        working-directory: ime/TypeFastIME
+        run: swift test
