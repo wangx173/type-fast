@@ -99,6 +99,61 @@ jobs:
           print("accessibility/hotkey OK")
           PY
 
+      - name: Configurable hotkey smoke test
+        run: |
+          python - <<'PY'
+          import os
+
+          from type_fast import config, hotkey
+
+          # Human-readable spec parsing: modifiers in any order/case, exactly
+          # one key.
+          assert hotkey.parse_hotkey("option+command+space") == (
+              hotkey._KEYCODE_SPACE, hotkey._DEFAULT_MODIFIER_MASK
+          )
+          assert hotkey.parse_hotkey("CTRL+Shift+t") == (
+              0x11, hotkey._MOD_CONTROL | hotkey._MOD_SHIFT
+          )
+          assert hotkey.parse_hotkey(" opt + cmd + space ") == (
+              hotkey._KEYCODE_SPACE, hotkey._DEFAULT_MODIFIER_MASK
+          )
+
+          # Invalid specs (empty, no key, multiple keys, unknown key) must
+          # raise ValueError rather than silently misbehaving.
+          for bad in ("", "   ", "option+command", "space+t", "option+command+zzz"):
+              try:
+                  hotkey.parse_hotkey(bad)
+                  raise AssertionError(f"expected ValueError for {bad!r}")
+              except ValueError:
+                  pass
+
+          # With no override, config.hotkey_spec() reports the default, and
+          # GlobalHotkey resolves to the same keycode/modifier as before.
+          assert config.hotkey_spec() == config.DEFAULT_HOTKEY
+          hk = hotkey.GlobalHotkey(lambda: None)
+          assert hk._keycode == hotkey._KEYCODE_SPACE
+          assert hk._modifier_mask == hotkey._DEFAULT_MODIFIER_MASK
+          hk.stop()
+
+          # TYPE_FAST_HOTKEY overrides the shortcut end-to-end.
+          os.environ["TYPE_FAST_HOTKEY"] = "control+shift+t"
+          hk2 = hotkey.GlobalHotkey(lambda: None)
+          assert hk2._keycode == 0x11
+          assert hk2._modifier_mask == (hotkey._MOD_CONTROL | hotkey._MOD_SHIFT)
+          hk2.stop()
+
+          # An invalid override must never crash construction; it falls back
+          # to the default shortcut instead (with a warning on stderr).
+          os.environ["TYPE_FAST_HOTKEY"] = "not a valid spec"
+          hk3 = hotkey.GlobalHotkey(lambda: None)
+          assert hk3._keycode == hotkey._KEYCODE_SPACE
+          assert hk3._modifier_mask == hotkey._DEFAULT_MODIFIER_MASK
+          hk3.stop()
+
+          del os.environ["TYPE_FAST_HOTKEY"]
+          print("configurable hotkey OK")
+          PY
+
       - name: Hotkey-hide clears stale auto-paste target
         env:
           QT_QPA_PLATFORM: offscreen

@@ -98,12 +98,12 @@ ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
 
 ## Keyboard-like workflow: global hotkey + auto-paste
 
-Press **⌥⌘Space** from anywhere on macOS to summon the Type Fast window.
-When you press the hotkey, Type Fast remembers whichever app was frontmost;
-once your translation finishes, it re-activates that app and simulates
-**⌘V** so the translated text is pasted straight into whatever you were
-typing into, then auto-hides itself — no manual app-switching or paste
-required.
+Press **⌥⌘Space** (the default; [configurable](#configuration)) from anywhere
+on macOS to summon the Type Fast window. When you press the hotkey, Type Fast
+remembers whichever app was frontmost; once your translation finishes, it
+re-activates that app and simulates **⌘V** so the translated text is pasted
+straight into whatever you were typing into, then auto-hides itself — no
+manual app-switching or paste required.
 
 This requires granting Type Fast **Accessibility** access (macOS needs this
 for any app that monitors global keystrokes or sends synthetic ones):
@@ -121,6 +121,26 @@ Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
 the default Foundry model, temperature, default language pair, and the debounce
 interval. Provider selection (OpenAI vs. Azure AI Foundry) is driven by the
 environment variables described under [Setup](#setup).
+
+### Custom hotkey
+
+The default global hotkey is **⌥⌘Space** (Option+Command+Space). Override it
+with the `TYPE_FAST_HOTKEY` environment variable, or — for the packaged
+`.app`, which doesn't inherit your shell environment — a `~/.type-fast/hotkey`
+file (same fallback pattern as the API key). The value is a `+`-separated
+spec of modifiers plus exactly one key, e.g.:
+
+```sh
+export TYPE_FAST_HOTKEY="control+shift+t"
+# or
+echo "control+shift+t" > ~/.type-fast/hotkey
+```
+
+Supported modifiers: `cmd`/`command`, `opt`/`option`/`alt`, `ctrl`/`control`,
+`shift`. Supported keys: letters, digits, and `space`, `tab`,
+`return`/`enter`, `escape`/`esc`, `delete`. An invalid or unparseable spec is
+reported on stderr and Type Fast falls back to the default shortcut rather
+than failing to start.
 
 ## Build a native macOS app
 
