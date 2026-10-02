@@ -140,15 +140,12 @@ class TranslateStreamTests(unittest.TestCase):
             self.assertNotIn("temperature", self._run(model))
 
     def test_retries_without_temperature_when_rejected(self) -> None:
-        import httpx
         import openai
 
-        request = httpx.Request("POST", "https://example.test/responses")
-        rejection = openai.BadRequestError(
-            "Unsupported parameter: 'temperature'",
-            response=httpx.Response(400, request=request),
-            body=None,
-        )
+        # Build the error without an HTTP response object so the test does not
+        # depend on the openai SDK's transport library.
+        rejection = openai.BadRequestError.__new__(openai.BadRequestError)
+        Exception.__init__(rejection, "Unsupported parameter: 'temperature'")
         def ok_cm() -> mock.MagicMock:
             cm = mock.MagicMock()
             cm.__enter__.return_value = iter(
