@@ -3,7 +3,9 @@
 A small window, summoned on demand Spotlight-style with a configurable global
 hotkey (⌥Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
 hotkey again, or Esc, dismisses it and hands focus back to the previous app.
-While shown it stays on top of other windows. It has an input box, a streamed
+While shown it stays on top of other windows. Summoned by the hotkey it is
+compact: only the boxes and a one-line "English → Japanese" direction, which
+expands to the full pickers when clicked. It has an input box, a streamed
 output box, and source/target language pickers (any pair from :data:`config.LANGUAGES`, with
 optional auto-detection of the source) plus a swap button. Typing triggers a translation after a
 short idle debounce, or immediately when a line ends (Enter) or the input ends
@@ -210,12 +212,30 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
         layout.setContentsMargins(16, 16, 16, 12)
         layout.setSpacing(8)
-        controls = QHBoxLayout()
+        # Language and tone pickers; hidden in compact mode (see set_compact).
+        self.options_bar = QWidget()
+        controls = QHBoxLayout(self.options_bar)
+        controls.setContentsMargins(0, 0, 0, 0)
         controls.addWidget(self.source_lang, 1)
         controls.addWidget(self.swap_button)
         controls.addWidget(self.target_lang, 1)
         controls.addWidget(self.tone)
-        layout.addLayout(controls)
+        layout.addWidget(self.options_bar)
+
+        # Compact mode shows only the direction, e.g. "English → Japanese";
+        # clicking it brings the pickers back.
+        self.pair_button = QToolButton()
+        self.pair_button.setAutoRaise(True)
+        self.pair_button.setFocusPolicy(Qt.NoFocus)
+        self.pair_button.setCursor(Qt.PointingHandCursor)
+        self.pair_button.setStyleSheet(
+            "QToolButton { color: gray; border: none; padding: 0; }"
+            "QToolButton:hover { text-decoration: underline; }"
+        )
+        self.pair_button.setToolTip("Show language and tone options")
+        self.pair_button.clicked.connect(lambda: self.set_compact(False))
+        self.pair_button.hide()
+        layout.addWidget(self.pair_button, 0, Qt.AlignLeft)
         layout.addWidget(self.input_label)
         layout.addWidget(self.input)
         layout.addWidget(self.output_label)
@@ -242,6 +262,7 @@ class MainWindow(QMainWindow):
         # that the window was hidden on purpose (hotkey or Esc), so that
         # reactivating the app (Dock icon, ⌘Tab) brings it back.
         self._dismissed = False
+        self.compact = False
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         self._register_hotkey()
@@ -316,7 +337,10 @@ class MainWindow(QMainWindow):
     # --- Show/hide --------------------------------------------------------
 
     def toggle_visibility(self) -> None:
-        """Hide the window if it is shown and focused, otherwise summon it."""
+        """Hide the window if it is shown and focused, otherwise summon it.
+
+        A window summoned this way (by the global hotkey) is compact.
+        """
         modal = QApplication.activeModalWidget()
         if modal is not None:
             # Don't hide the window out from under an open dialog.
@@ -327,11 +351,16 @@ class MainWindow(QMainWindow):
         if self.isVisible() and self.isActiveWindow() and not self.isMinimized():
             self.dismiss()
         else:
-            self.summon()
+            self.summon(compact=True)
 
-    def summon(self) -> None:
-        """Show, raise, and focus the window, Spotlight-style."""
+    def summon(self, compact: bool = False) -> None:
+        """Show, raise, and focus the window, Spotlight-style.
+
+        With ``compact``, only the input and output boxes and the language
+        direction are shown (see :meth:`set_compact`).
+        """
         self._dismissed = False
+        self.set_compact(compact)
         if not self.isVisible():
             self._center_on_cursor_screen()
         if self.isMinimized():
@@ -342,6 +371,18 @@ class MainWindow(QMainWindow):
         hotkey.activate_app()
         self.input.setFocus()
         self.input.moveCursor(QTextCursor.End)
+
+    def set_compact(self, compact: bool) -> None:
+        """Switch between the minimal and the full layout.
+
+        The minimal layout hides the language and tone pickers, the box labels,
+        and the model/hotkey hints, showing just the direction instead.
+        """
+        self.compact = compact
+        self.options_bar.setVisible(not compact)
+        self.pair_button.setVisible(compact)
+        for widget in (self.input_label, self.output_label, self.model_label, self.hotkey_label):
+            widget.setVisible(not compact)
 
     def dismiss(self) -> None:
         """Hide the window and return focus to the previously active app."""
@@ -639,6 +680,9 @@ class MainWindow(QMainWindow):
             _AUTO_LABEL if source == config.AUTO_SOURCE else _language_label(source)
         )
         self.output_label.setText(_language_label(target))
+        self.pair_button.setText(
+            f"{_AUTO_LABEL if source == config.AUTO_SOURCE else source} \u2192 {target}"
+        )
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()

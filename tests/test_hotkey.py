@@ -257,6 +257,39 @@ class WindowHotkeyTests(unittest.TestCase):
         w._on_app_state_changed(Qt.ApplicationActive)
         self.assertTrue(w.isVisible())
 
+    def test_hotkey_summons_compact_ui(self) -> None:
+        w = self.window
+        w.toggle_visibility()
+        self.assertTrue(w.compact)
+        self.assertFalse(w.options_bar.isVisibleTo(w))
+        for label in (w.input_label, w.output_label, w.model_label, w.hotkey_label):
+            self.assertFalse(label.isVisibleTo(w))
+        self.assertTrue(w.pair_button.isVisibleTo(w))
+        self.assertEqual(w.pair_button.text(), "English \u2192 Japanese")
+        self.assertTrue(w.input.isVisibleTo(w))
+        self.assertTrue(w.output.isVisibleTo(w))
+
+    def test_compact_ui_expands_on_click(self) -> None:
+        w = self.window
+        w.toggle_visibility()
+        w.pair_button.click()
+        self.assertFalse(w.compact)
+        self.assertTrue(w.options_bar.isVisibleTo(w))
+        self.assertFalse(w.pair_button.isVisibleTo(w))
+
+    def test_non_hotkey_summon_shows_full_ui(self) -> None:
+        w = self.window
+        w.toggle_visibility()
+        w.dismiss()
+        w._on_app_state_changed(Qt.ApplicationActive)  # Dock icon / Cmd-Tab
+        self.assertFalse(w.compact)
+        self.assertTrue(w.options_bar.isVisibleTo(w))
+
+    def test_pair_label_follows_languages(self) -> None:
+        w = self.window
+        w._apply_languages(config.AUTO_SOURCE, "Korean")
+        self.assertEqual(w.pair_button.text(), "Auto-detect \u2192 Korean")
+
     def test_summon_puts_cursor_at_end(self) -> None:
         w = self.window
         w.input.setPlainText("hello")

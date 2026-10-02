@@ -113,6 +113,12 @@ puts the cursor in the input box. Press the hotkey again, or **Esc**, to hide it
 and return to the app you were using. The current hotkey is shown at the bottom
 of the window.
 
+A window opened with the hotkey uses a minimal layout: just the input and output
+boxes under a one-line direction such as **English → Japanese**, with no
+language or tone pickers. Click the direction to show the pickers. When the
+window opens any other way (at launch, from the Dock, or with ⌘Tab) it shows the
+full layout.
+
 To change it, choose **Settings → Set Show/Hide Hotkey…** and press the new
 combination. It must include ⌘ Command, ⌃ Control, or ⌥ Option (F-keys work on
 their own). **Reset to Default** restores ⌥Space and **Disable** turns the
