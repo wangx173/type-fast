@@ -142,7 +142,7 @@ QToolButton#pairChip:focus {
     border: 1px solid palette(highlight);
 }
 QToolButton#swapButton {
-    border: none;
+    border: 1px solid transparent;
     border-radius: 12px;
     min-width: 24px;
     min-height: 24px;
@@ -150,6 +150,9 @@ QToolButton#swapButton {
 }
 QToolButton#swapButton:hover {
     background: rgba(128, 128, 128, 0.18);
+}
+QToolButton#swapButton:focus {
+    border: 1px solid palette(highlight);
 }
 QToolButton#swapButton:pressed {
     background: rgba(128, 128, 128, 0.3);
