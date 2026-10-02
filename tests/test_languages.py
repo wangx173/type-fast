@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -86,6 +87,16 @@ class PromptTests(unittest.TestCase):
         self.assertIn("auto-detect", prompt)
 
 
+class _InlineThread:
+    """Stand-in for ``threading.Thread`` that runs its target on ``start()``."""
+
+    def __init__(self, target, args=(), daemon=None) -> None:
+        self._target, self._args = target, args
+
+    def start(self) -> None:
+        self._target(*self._args)
+
+
 @unittest.skipUnless(
     os.environ.get("QT_QPA_PLATFORM") == "offscreen",
     "set QT_QPA_PLATFORM=offscreen to run the headless window tests",
@@ -104,6 +115,13 @@ class WindowLanguageTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         patcher = mock.patch.object(
             settings, "SETTINGS_FILE", Path(self.tmp.name) / "settings.json"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Run the translation "thread" inline so recorded calls are visible
+        # as soon as run_translation() returns (no race with a real thread).
+        patcher = mock.patch.object(
+            app, "threading", types.SimpleNamespace(Thread=_InlineThread)
         )
         patcher.start()
         self.addCleanup(patcher.stop)
