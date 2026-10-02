@@ -33,6 +33,7 @@ Transparency and remembered too.
 
 from __future__ import annotations
 
+import string
 import threading
 
 from PySide6.QtCore import (
@@ -96,6 +97,8 @@ _HOVER_POLL_MS = 120
 # dark mode; ``palette(...)`` colors follow the system appearance and accent
 # color, so the sheet is re-applied when the color scheme changes. Only named
 # widgets are styled, so the language and tone pickers keep their native look.
+# ``$muted``, ``$busy``, and ``$done`` are small-text colors picked per light
+# or dark mode (see _TEXT_COLORS) to keep at least 4.5:1 contrast.
 _STYLE_SHEET = """
 QPlainTextEdit#inputBox, QTextEdit#outputBox {
     border: 1px solid rgba(128, 128, 128, 0.3);
@@ -112,20 +115,20 @@ QPlainTextEdit#inputBox:focus, QTextEdit#outputBox:focus {
     border: 1px solid palette(highlight);
 }
 QLabel#caption {
-    color: rgba(128, 128, 128, 0.95);
+    color: $muted;
     font-size: 11px;
     font-weight: 600;
     padding-left: 2px;
 }
 QLabel#footnote, QLabel#status {
-    color: rgba(128, 128, 128, 0.95);
+    color: $muted;
     font-size: 11px;
 }
 QLabel#status[state="busy"] {
-    color: palette(highlight);
+    color: $busy;
 }
 QLabel#status[state="done"] {
-    color: #30b158;
+    color: $done;
 }
 QToolButton#pairChip {
     color: palette(text);
@@ -161,6 +164,27 @@ QToolButton#swapButton:disabled {
     color: rgba(128, 128, 128, 0.4);
 }
 """
+
+# Small-text colors for light and dark mode. Each keeps at least 4.5:1 contrast
+# against the window background (about #ececec light, #323232 dark).
+_TEXT_COLORS = {
+    "light": {"muted": "#5c5c60", "busy": "#0a5bc4", "done": "#1b7a33"},
+    "dark": {"muted": "#a8a8ad", "busy": "#6cb6ff", "done": "#5fd47c"},
+}
+
+
+def _is_dark_mode() -> bool:
+    """Whether the app is using a dark appearance."""
+    app = QGuiApplication.instance()
+    if app is None:
+        return False
+    hints = app.styleHints()
+    scheme = hints.colorScheme() if hasattr(hints, "colorScheme") else None
+    if scheme == Qt.ColorScheme.Dark:
+        return True
+    if scheme == Qt.ColorScheme.Light:
+        return False
+    return app.palette().window().color().lightness() < 128
 
 
 def _language_label(name: str) -> str:
@@ -510,7 +534,8 @@ class MainWindow(QMainWindow):
 
     def _apply_style(self, *_args: object) -> None:
         """(Re-)apply the style sheet so ``palette(...)`` colors stay current."""
-        self.centralWidget().setStyleSheet(_STYLE_SHEET)
+        colors = _TEXT_COLORS["dark" if _is_dark_mode() else "light"]
+        self.centralWidget().setStyleSheet(string.Template(_STYLE_SHEET).substitute(colors))
 
     def _set_status(self, text: str, state: str = "") -> None:
         """Show ``text`` in the status line; ``state`` is "", "busy", or "done"."""

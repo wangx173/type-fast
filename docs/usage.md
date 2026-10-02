@@ -85,8 +85,9 @@ disables it.
 
 ## Transparency
 
-The window floats above your other apps, so it is slightly see-through and
-never fully hides what you are working on.
+The window floats above your other apps, so by default it is slightly
+see-through and doesn't fully hide what you are working on. You can turn this
+off.
 
 - It fades in when it appears.
 - While you use it, it is almost opaque so the text stays easy to read.

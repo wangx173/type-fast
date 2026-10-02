@@ -99,6 +99,9 @@ class WindowAppearanceTests(unittest.TestCase):
         self.assertEqual(w.input.objectName(), "inputBox")
         self.assertEqual(w.output.objectName(), "outputBox")
         self.assertEqual(w.pair_button.objectName(), "pairChip")
+        self.assertNotIn("$", w.centralWidget().styleSheet())  # colors filled in
+        for colors in self.app_module._TEXT_COLORS.values():
+            self.assertEqual(set(colors), {"muted", "busy", "done"})
         # Re-applying (e.g. on a light/dark switch) is safe.
         w._apply_style(None)
         self.assertIn("#outputBox", w.centralWidget().styleSheet())
