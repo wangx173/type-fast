@@ -1,8 +1,10 @@
-"""Persistent user preferences: language pair and translation tone.
+"""Persistent user preferences: language pair, translation tone, and hotkey.
 
 Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
-and any custom tone instruction survive restarts. A missing, unreadable, or
-invalid file (or field) falls back to the defaults in :mod:`type_fast.config`.
+any custom tone instruction, and the global show/hide hotkey survive restarts. A
+missing, unreadable, or invalid file (or field) falls back to the defaults in
+:mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
+``"Option+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, dataclass
 
-from . import config
+from . import config, hotkey as hotkey_module
 from .providers._common import CONFIG_DIR
 
 SETTINGS_FILE = CONFIG_DIR / "settings.json"
@@ -18,12 +20,14 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 @dataclass
 class Settings:
-    """The selected language pair, tone preset, and custom tone instruction."""
+    """The selected language pair, tone, custom tone, and show/hide hotkey."""
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
     tone: str = config.DEFAULT_TONE
     custom_tone: str = ""
+    # Canonical hotkey text; "" means the global hotkey is disabled.
+    hotkey: str = config.DEFAULT_HOTKEY
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
@@ -35,6 +39,17 @@ class Settings:
 
 def _pick(value: object, valid: set[str], default: str) -> str:
     return value if isinstance(value, str) and value in valid else default
+
+
+def _pick_hotkey(value: object) -> str:
+    """Return the canonical hotkey text, "" if disabled, else the default."""
+    if isinstance(value, str):
+        if not value.strip():
+            return ""
+        parsed = hotkey_module.parse(value)
+        if parsed is not None:
+            return str(parsed)
+    return config.DEFAULT_HOTKEY
 
 
 def load() -> Settings:
@@ -67,6 +82,7 @@ def load() -> Settings:
             config.DEFAULT_TONE,
         ),
         custom_tone=custom if isinstance(custom, str) else "",
+        hotkey=_pick_hotkey(data.get("hotkey")),
     )
 
 

@@ -1,8 +1,9 @@
 """Shared, provider-agnostic configuration for type-fast.
 
 Holds the default model, temperature, supported languages and the default
-language pair, translation tone presets, and the input debounce interval so they are easy to change in one
-place. Provider-specific credential handling and client construction live in
+language pair, translation tone presets, the input debounce interval, and the
+default show/hide hotkey so they are easy to change in one place.
+Provider-specific credential handling and client construction live in
 :mod:`type_fast.providers` (one module per provider).
 """
 
@@ -85,3 +86,8 @@ CUSTOM_TONE = "Custom"
 
 # Milliseconds of idle time after typing stops before a translation fires.
 DEBOUNCE_MS = 500
+
+# Default global show/hide hotkey (see :mod:`type_fast.hotkey` for the format).
+# ⌘Space is Spotlight's own shortcut, so we don't default to it; users can pick
+# any combination in Settings › Set Show/Hide Hotkey….
+DEFAULT_HOTKEY = "Option+Space"

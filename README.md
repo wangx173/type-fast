@@ -88,7 +88,7 @@ python -m type_fast.app
 type-fast
 ```
 
-A small always-on-top window opens with:
+A small window opens with:
 
 - source and target language pickers with a ⇄ swap button (see
   [Languages](#languages)),
@@ -99,6 +99,34 @@ A small always-on-top window opens with:
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`).
+
+The window is shown when the app launches; after that, summon and dismiss it
+with the [show/hide hotkey](#showhide-hotkey) so it doesn't take up screen
+space while you're not using it.
+
+### Show/hide hotkey
+
+Like Spotlight, Type Fast pops up on demand with a global hotkey —
+**⌥Space** (Option+Space) by default — from any app. It appears centered near
+the top of the screen under the mouse pointer, stays on top while shown, and
+puts the cursor in the input box. Press the hotkey again, or **Esc**, to hide it
+and return to the app you were using. The current hotkey is shown at the bottom
+of the window.
+
+To change it, choose **Settings → Set Show/Hide Hotkey…** and press the new
+combination. It must include ⌘ Command, ⌃ Control, or ⌥ Option (F-keys work on
+their own). **Reset to Default** restores ⌥Space and **Disable** turns the
+hotkey off. If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type
+Fast tells you and keeps the previous one. Another app's global shortcut can't
+always be detected, so if the new hotkey does nothing, pick a different one.
+
+⌘Space is Spotlight's shortcut. To use it for Type Fast instead, first change
+or turn off Spotlight's shortcut in **System Settings → Keyboard → Keyboard
+Shortcuts → Spotlight**.
+
+The hotkey needs no Accessibility permission. It is saved to
+`~/.type-fast/settings.json` (as `"hotkey": "Option+Space"`; an empty string
+disables it).
 
 ### Languages
 
@@ -133,8 +161,8 @@ instruction) is saved to `~/.type-fast/settings.json` and restored on launch.
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the default
 model, the models suggested in the model picker, temperature, supported
-languages and the default language pair, tone presets, and the debounce
-interval. Provider selection (OpenAI vs.
+languages and the default language pair, tone presets, the debounce
+interval, and the default show/hide hotkey. Provider selection (OpenAI vs.
 Azure AI Foundry) is driven by the environment variables described under
 [Setup](#setup).
 
@@ -177,4 +205,5 @@ the API when launched from Finder.
 
 - Store the API key in the macOS Keychain instead of a key file.
 - Sign and notarize the `.app` with a Developer ID for distribution to others.
-- A menu-bar wrapper.
+- A menu-bar wrapper (and hiding the Dock icon), now that the window can be
+  summoned with the show/hide hotkey.
