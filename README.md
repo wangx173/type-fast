@@ -1,223 +1,93 @@
+<div align="center">
+
 # Type Fast
 
-A simple macOS input tool that translates what you type between many languages
-(English, Japanese, Chinese, Korean, Spanish, French, German, and more) using
-the OpenAI API. Type in one box and the translation
-streams into the other.
+**Type in one language. Get it in another — as you type.**
 
-## Download
+A tiny macOS translator that pops up with a hotkey, streams translations from
+OpenAI or Azure AI Foundry, and copies the result for you.
 
-Grab the latest `Type-Fast-macos-arm64.zip` from the
-[Releases page](https://github.com/wangx173/type-fast/releases), unzip it, and
-drag `Type Fast.app` into `/Applications`.
+[![CI](https://github.com/wangx173/type-fast/actions/workflows/ci.yml/badge.svg)](https://github.com/wangx173/type-fast/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/wangx173/type-fast)](https://github.com/wangx173/type-fast/releases/latest)
+[![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#install)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-The app is ad-hoc signed (not notarized), so on first launch macOS will warn it
-is from an unidentified developer. To open it the first time: right-click the
-app → **Open** → **Open**, or allow it under **System Settings → Privacy &
-Security**. After that it launches normally.
+<img src="docs/images/main.png" alt="Type Fast translating an English message into polite Japanese" width="600">
 
-Before using it, set your OpenAI API key in the app: **Settings → Set OpenAI API
-Key…** (⌘,).
+</div>
 
-## Requirements
+## Features
 
-- macOS
-- Python 3.10 or newer
-- An OpenAI API key, or a Microsoft (Azure AI) Foundry endpoint + API key
+- ⚡ **Live translation** — the translation streams in as you type, and
+  finished lines are never re-translated.
+- ⌨️ **Spotlight-style hotkey** — press **⇧⌘Space** in any app to pop up a
+  minimal window; press it again or **Esc** to go back.
+- 📋 **Auto-copy** — the finished translation is copied to your clipboard,
+  ready to paste.
+- 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
+  Spanish, French, German, and [more](docs/usage.md#languages).
+- 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral, or
+  your own custom instruction.
+- 🔌 **OpenAI or Azure AI Foundry** — bring your own key and pick any model.
 
-## Setup
+## Screenshots
 
-```sh
-# 1. Create and activate a virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <img src="docs/images/hotkey.png" alt="Minimal window summoned with the hotkey, translating Japanese to English">
+      <br><sub><b>Summon anywhere</b> — a minimal popup with ⇧⌘Space</sub>
+    </td>
+    <td align="center" width="50%">
+      <img src="docs/images/languages.png" alt="Auto-detected English translated into Spanish with a Business tone">
+      <br><sub><b>Pick a language and tone</b> — or let it auto-detect</sub>
+    </td>
+  </tr>
+</table>
 
-# 2. Install the app and its dependencies
-pip install -e .
+## Install
 
-# 3. Provide your OpenAI API key (environment variable, or a key file — see below)
-export OPENAI_API_KEY='sk-...'
-```
+1. Download `Type-Fast-macos-arm64.zip` from the
+   [latest release](https://github.com/wangx173/type-fast/releases/latest),
+   unzip it, and drag **Type Fast.app** into `/Applications`.
+2. The app is ad-hoc signed, not notarized, so macOS warns that it is from an
+   unidentified developer. Open it the first time with right-click → **Open** →
+   **Open**, or allow it under **System Settings → Privacy & Security** →
+   **Open Anyway** (required on macOS 15 and later).
+3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
 
-The key is read from `OPENAI_API_KEY`, or, if that is not set, from
-`~/.type-fast/api_key`. The key file is what the packaged app uses, since an app
-launched from Finder does not inherit your shell environment:
+To use Azure AI Foundry instead, or to run from source, see
+[Configuration](docs/configuration.md) and [Development](docs/development.md).
 
-```sh
-mkdir -p ~/.type-fast
-echo 'sk-...' > ~/.type-fast/api_key
-```
+## Usage
 
-You can also set the key from inside the app: **Settings → Set OpenAI API Key…**
-(⌘,). It is saved to `~/.type-fast/api_key` and applied immediately.
+Type in the top box. The translation appears below shortly after you pause, or
+right away when you end a sentence or press Return.
 
-### Use Microsoft (Azure AI) Foundry instead of OpenAI
+| Shortcut                   | Action                                    |
+|----------------------------|-------------------------------------------|
+| **⇧⌘Space**                | Show or hide Type Fast from any app       |
+| **Esc**                    | Hide the window                           |
+| **⌘L**                     | Show the language and tone pickers        |
+| **⌘,**                     | Set your OpenAI API key                   |
 
-To route translations through a Microsoft (Azure AI) Foundry model, set the
-Foundry endpoint and API key as environment variables:
+The **Settings** menu also lets you change the model, the hotkey, and the
+custom tone. See the [usage guide](docs/usage.md) for details.
 
-```sh
-export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
-export AZURE_AI_API_KEY='<your-foundry-key>'
-# Optional: pick a specific model/deployment (defaults to gpt-4.1-mini)
-export AZURE_AI_MODEL='gpt-4.1-mini'
-```
+## Documentation
 
-When both `AZURE_AI_ENDPOINT` and `AZURE_AI_API_KEY` are set, Foundry takes
-precedence over OpenAI. The endpoint may be the bare resource URL (shown above)
-or already include the `/openai/v1` path — either works, and requests use
-Foundry's OpenAI-compatible Responses API.
+| Guide                                    | What's inside                                            |
+|------------------------------------------|----------------------------------------------------------|
+| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone    |
+| [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
+| [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
 
-As with the OpenAI key, each variable has a `~/.type-fast/` fallback file so the
-packaged app works when launched from Finder (which does not inherit your shell
-environment):
-
-```sh
-mkdir -p ~/.type-fast
-echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
-echo '<your-foundry-key>' > ~/.type-fast/azure_ai_api_key
-# Optional model/deployment override:
-echo 'gpt-4.1-mini' > ~/.type-fast/azure_ai_model
-```
-
-## Run
-
-```sh
-python -m type_fast.app
-# or, via the installed entry point:
-type-fast
-```
-
-A small window opens with:
-
-- source and target language pickers with a ⇄ swap button (see
-  [Languages](#languages)),
-- a tone selector for the translation (see [Tone](#tone)),
-- an input box,
-- an output box that streams the translation, and
-- the active model, shown at the bottom left.
-
-Translation fires shortly after you stop typing, or immediately when your text
-ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`).
-
-The window is shown when the app launches; after that, summon and dismiss it
-with the [show/hide hotkey](#showhide-hotkey) so it doesn't take up screen
-space while you're not using it.
-
-### Show/hide hotkey
-
-Like Spotlight, Type Fast pops up on demand with a global hotkey —
-**⇧⌘Space** (Shift+Command+Space) by default — from any app. It appears centered near
-the top of the screen under the mouse pointer, stays on top while shown, and
-puts the cursor in the input box. Press the hotkey again, or **Esc**, to hide it
-and return to the app you were using. The current hotkey is shown at the bottom
-of the window.
-
-A window opened with the hotkey uses a minimal layout: just the input and output
-boxes under a one-line direction such as **English → Japanese**, with no
-language or tone pickers. Click the direction, or press **⌘L** (**Settings →
-Show Language & Tone Options**), to show the pickers. When the
-window opens any other way (at launch, from the Dock, or with ⌘Tab) it shows the
-full layout.
-
-To change it, choose **Settings → Set Show/Hide Hotkey…** and press the new
-combination. It must include ⌘ Command, ⌃ Control, or ⌥ Option (F-keys work on
-their own). **Reset to Default** restores ⇧⌘Space and **Disable** turns the
-hotkey off. If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type
-Fast tells you and keeps the previous one. Another app's global shortcut can't
-always be detected, so if the new hotkey does nothing, pick a different one.
-
-The default avoids the shortcuts macOS already uses for Space: ⌘Space and
-⌥⌘Space (Spotlight), and ⌃Space and ⌃⌥Space (switching input sources). It
-also avoids ⌥Space, which types a non-breaking space and is the default for
-launchers such as Alfred, Raycast, and ChatGPT. To use ⌘Space for Type Fast
-anyway, first change or turn off Spotlight's shortcut in **System Settings →
-Keyboard → Keyboard Shortcuts → Spotlight**.
-
-Hotkeys are tied to the physical key you press, so they keep working if you
-switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
-is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
-
-The hotkey needs no Accessibility permission. It is saved to
-`~/.type-fast/settings.json` (as `"hotkey": "Shift+Cmd+Space"`; an empty string
-disables it).
-
-### Languages
-
-Choose the language you type in on the left and the language to translate into
-on the right. Supported languages: English, Japanese, Chinese (Simplified),
-Chinese (Traditional), Korean, Spanish, French, German, Italian, Portuguese,
-Russian, Vietnamese, Thai, Indonesian, Hindi, and Arabic.
-
-- **Auto-detect** as the source lets the model work out the input language.
-- **⇄** swaps the source and target. It is disabled while the source is
-  Auto-detect.
-- Picking the same language on both sides swaps the pair instead.
-- Changing either language re-translates the current text.
-
-The pair is saved to `~/.type-fast/settings.json` (with the tone) and restored
-on launch. To add a language, add an entry to `LANGUAGES` in
-[`type_fast/config.py`](type_fast/config.py).
-
-### Tone
-
-Pick the tone of the translated text from the selector next to the language
-pickers: **Polite** (default), **Casual**, **Formal**, **Business**,
-**Friendly**, or **Neutral** (mirror the original). Choose **Custom…** — or
-**Settings → Set Custom Tone…** — to write your own instruction, such as
-"Humble keigo (謙譲語) for a client" or "Playful, with a light touch of humor".
-The instruction is added to the translation prompt.
-
-Changing the tone re-translates the current text. Your choice (and custom
-instruction) is saved to `~/.type-fast/settings.json` and restored on launch.
-
-## Configuration
-
-Defaults live in [`type_fast/config.py`](type_fast/config.py): the default
-model, the models suggested in the model picker, temperature, supported
-languages and the default language pair, tone presets, the debounce
-interval, and the default show/hide hotkey. Provider selection (OpenAI vs.
-Azure AI Foundry) is driven by the environment variables described under
-[Setup](#setup).
-
-### Switch the model
-
-Choose **Settings → Set Model…** to pick a model from the list or type any
-model/deployment name. Leave it blank to go back to the default
-(`gpt-4.1-mini`). The choice applies to the active provider and is saved to a
-file under `~/.type-fast/`. You can also set it by hand or with an environment
-variable, which takes precedence over the file:
-
-| Provider         | Environment variable | Fallback file                   |
-|------------------|----------------------|---------------------------------|
-| OpenAI           | `OPENAI_MODEL`       | `~/.type-fast/openai_model`     |
-| Azure AI Foundry | `AZURE_AI_MODEL`     | `~/.type-fast/azure_ai_model`   |
-
-Reasoning models (`gpt-5*`, `o1`, `o3`, `o4` families) do not accept a
-`temperature` setting, so it is omitted for them automatically. If a
-custom-named deployment rejects `temperature`, the request is retried without
-it and that deployment is remembered for the rest of the session.
-
-## Build a native macOS app
-
-Package Type Fast as a standalone `.app` bundle (no Python or terminal needed to
-run it) with PyInstaller:
-
-```sh
-pip install pyinstaller
-pyinstaller --noconfirm "Type Fast.spec"
-
-# Optional: ad-hoc sign so it launches without extra Gatekeeper friction
-codesign --force --deep --sign - "dist/Type Fast.app"
-```
-
-The bundle is created at `dist/Type Fast.app` — drag it into `/Applications`.
-Make sure your key is in `~/.type-fast/api_key` (see Setup) so the app can reach
-the API when launched from Finder.
-
-## Roadmap (future work)
+## Roadmap
 
 - Store the API key in the macOS Keychain instead of a key file.
-- Sign and notarize the `.app` with a Developer ID for distribution to others.
-- A menu-bar wrapper (and hiding the Dock icon), now that the window can be
-  summoned with the show/hide hotkey.
+- Sign and notarize the app with a Developer ID.
+- A menu-bar wrapper (and hiding the Dock icon).
+
+## License
+
+[MIT](LICENSE) © Xiang Wang
