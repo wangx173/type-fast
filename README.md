@@ -115,7 +115,8 @@ of the window.
 
 A window opened with the hotkey uses a minimal layout: just the input and output
 boxes under a one-line direction such as **English → Japanese**, with no
-language or tone pickers. Click the direction to show the pickers. When the
+language or tone pickers. Click the direction, or press **⌘L** (**Settings →
+Show Language & Tone Options**), to show the pickers. When the
 window opens any other way (at launch, from the Dock, or with ⌘Tab) it shows the
 full layout.
 
@@ -129,6 +130,10 @@ always be detected, so if the new hotkey does nothing, pick a different one.
 ⌘Space is Spotlight's shortcut. To use it for Type Fast instead, first change
 or turn off Spotlight's shortcut in **System Settings → Keyboard → Keyboard
 Shortcuts → Spotlight**.
+
+Hotkeys are tied to the physical key you press, so they keep working if you
+switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
+is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
 
 The hotkey needs no Accessibility permission. It is saved to
 `~/.type-fast/settings.json` (as `"hotkey": "Option+Space"`; an empty string

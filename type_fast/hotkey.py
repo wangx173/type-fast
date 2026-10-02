@@ -70,6 +70,8 @@ KEYCODES: dict[str, int] = {
     "F18": 0x4F, "F19": 0x50, "F20": 0x5A,
 }
 
+_KEY_FOR_KEYCODE = {code: name for name, code in KEYCODES.items()}
+
 FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 21))
 _ARROW_KEYS = frozenset({"Left", "Right", "Up", "Down"})
 
@@ -246,6 +248,16 @@ def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
     return Hotkey(modifiers, name)
 
 
+def key_for_keycode(keycode: int) -> str | None:
+    """Return the canonical key name for a macOS virtual keycode, if supported.
+
+    Keycodes identify *physical* keys, named here after the U.S. layout. Use
+    this with ``QKeyEvent.nativeVirtualKey()`` so a hotkey recorded on another
+    layout (Dvorak, AZERTY, ...) registers the key that was actually pressed.
+    """
+    return _KEY_FOR_KEYCODE.get(keycode)
+
+
 def to_qt(hotkey: Hotkey) -> QKeySequence:
     """Return a :class:`QKeySequence` for ``hotkey`` (inverse of :func:`from_qt`)."""
     mods = Qt.KeyboardModifier.NoModifier
@@ -264,6 +276,11 @@ def _is_cocoa() -> bool:
         return False
     app = QGuiApplication.instance()
     return app is not None and QGuiApplication.platformName() == "cocoa"
+
+
+def uses_native_keycodes() -> bool:
+    """True when ``QKeyEvent.nativeVirtualKey()`` holds macOS virtual keycodes."""
+    return _is_cocoa()
 
 
 def _fourcc(code: str) -> int:

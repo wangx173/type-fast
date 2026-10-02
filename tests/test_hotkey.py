@@ -277,6 +277,17 @@ class WindowHotkeyTests(unittest.TestCase):
         self.assertTrue(w.options_bar.isVisibleTo(w))
         self.assertFalse(w.pair_button.isVisibleTo(w))
 
+    def test_compact_ui_is_keyboard_reachable(self) -> None:
+        w = self.window
+        w.toggle_visibility()
+        self.assertTrue(w.pair_button.focusPolicy() & Qt.TabFocus)
+        self.assertEqual(
+            w.show_options_action.shortcut(), QKeySequence("Ctrl+L")
+        )
+        w.show_options_action.trigger()
+        self.assertFalse(w.compact)
+        self.assertTrue(w.options_bar.isVisibleTo(w))
+
     def test_non_hotkey_summon_shows_full_ui(self) -> None:
         w = self.window
         w.toggle_visibility()
@@ -375,6 +386,39 @@ class WindowHotkeyTests(unittest.TestCase):
         dialog.accept()
         self.assertEqual(dialog.chosen, "Option+Cmd+K")
         self.assertEqual(dialog.result(), dialog.DialogCode.Accepted)
+
+    def _record(self, dialog, mods, key, native_key: int) -> None:
+        from PySide6.QtGui import QKeyEvent
+        from PySide6.QtWidgets import QApplication
+
+        for kind in (QKeyEvent.KeyPress, QKeyEvent.KeyRelease):
+            event = QKeyEvent(kind, key, mods, 0, native_key, 0, "")
+            QApplication.sendEvent(dialog.editor, event)
+
+    def test_dialog_registers_physical_key_on_other_layouts(self) -> None:
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        # Dvorak: the key that types "T" sits where U.S. "K" is (kVK_ANSI_K).
+        with mock.patch.object(hotkey, "uses_native_keycodes", return_value=True):
+            self._record(dialog, Qt.AltModifier, Qt.Key_T, 0x28)
+        self.assertEqual(hotkey.from_qt(dialog.editor.keySequence()), hotkey.parse("Option+T"))
+        dialog.accept()
+        self.assertEqual(dialog.chosen, "Option+K")
+
+    def test_dialog_rejects_unknown_physical_key(self) -> None:
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        with mock.patch.object(hotkey, "uses_native_keycodes", return_value=True):
+            self._record(dialog, Qt.AltModifier, Qt.Key_T, 0x5D)  # JIS ¥ key
+        with mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
+            dialog.accept()
+        warning.assert_called_once()
+        self.assertNotEqual(dialog.result(), dialog.DialogCode.Accepted)
+
+    def test_dialog_ignores_native_keys_off_cocoa(self) -> None:
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        with mock.patch.object(hotkey, "uses_native_keycodes", return_value=False):
+            self._record(dialog, Qt.AltModifier, Qt.Key_T, 0x28)
+        dialog.accept()
+        self.assertEqual(dialog.chosen, "Option+T")
 
     def test_dialog_cancel_restores_registration(self) -> None:
         w = self.window

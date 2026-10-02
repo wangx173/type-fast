@@ -30,7 +30,7 @@ from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal, QObject
 from PySide6.QtGui import (
     QAction,
     QCursor,
@@ -89,6 +89,10 @@ class HotkeyDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Set Show/Hide Hotkey")
         self.chosen = current
+        # macOS virtual keycode of the last key pressed in the recorder. Carbon
+        # registers physical keys, while Qt reports layout-dependent keys, so
+        # this keeps non-U.S. layouts (Dvorak, AZERTY, ...) correct.
+        self._native_key: int | None = None
 
         info = QLabel(
             "Press the key combination that shows and hides Type Fast from any "
@@ -118,11 +122,28 @@ class HotkeyDialog(QDialog):
         self.reset_button.clicked.connect(lambda: self._finish(config.DEFAULT_HOTKEY))
         self.disable_button.clicked.connect(lambda: self._finish(""))
 
+        self.editor.installEventFilter(self)
+        for child in self.editor.findChildren(QWidget):
+            child.installEventFilter(self)
+
         layout = QVBoxLayout(self)
         layout.addWidget(info)
         layout.addWidget(self.editor)
         layout.addWidget(buttons)
         self.editor.setFocus()
+
+    _MODIFIER_KEYS = frozenset(
+        {Qt.Key_Shift, Qt.Key_Control, Qt.Key_Meta, Qt.Key_Alt, Qt.Key_AltGr, Qt.Key_CapsLock}
+    )
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.KeyPress
+            and event.key() not in self._MODIFIER_KEYS
+            and hotkey.uses_native_keycodes()
+        ):
+            self._native_key = event.nativeVirtualKey()
+        return super().eventFilter(watched, event)
 
     def _finish(self, text: str) -> None:
         self.chosen = text
@@ -134,6 +155,9 @@ class HotkeyDialog(QDialog):
             self._finish("")
             return
         parsed = hotkey.from_qt(sequence)
+        if parsed is not None and self._native_key is not None:
+            physical = hotkey.key_for_keycode(self._native_key)
+            parsed = hotkey.Hotkey(parsed.modifiers, physical) if physical else None
         if parsed is None:
             QMessageBox.warning(
                 self, "Set Show/Hide Hotkey", "That key can\u2019t be used as a hotkey."
@@ -226,13 +250,14 @@ class MainWindow(QMainWindow):
         # clicking it brings the pickers back.
         self.pair_button = QToolButton()
         self.pair_button.setAutoRaise(True)
-        self.pair_button.setFocusPolicy(Qt.NoFocus)
+        # Reachable with Tab, but clicking it doesn't pull focus from the input.
+        self.pair_button.setFocusPolicy(Qt.TabFocus)
         self.pair_button.setCursor(Qt.PointingHandCursor)
         self.pair_button.setStyleSheet(
             "QToolButton { color: gray; border: none; padding: 0; }"
-            "QToolButton:hover { text-decoration: underline; }"
+            "QToolButton:hover, QToolButton:focus { text-decoration: underline; }"
         )
-        self.pair_button.setToolTip("Show language and tone options")
+        self.pair_button.setToolTip("Show language and tone options (\u2318L)")
         self.pair_button.clicked.connect(lambda: self.set_compact(False))
         self.pair_button.hide()
         layout.addWidget(self.pair_button, 0, Qt.AlignLeft)
@@ -329,6 +354,12 @@ class MainWindow(QMainWindow):
         self.set_custom_tone_action = QAction("Set Custom Tone\u2026", self)
         self.set_custom_tone_action.triggered.connect(self._set_custom_tone)
         menu.addAction(self.set_custom_tone_action)
+
+        # Keyboard route out of the compact layout (see set_compact).
+        self.show_options_action = QAction("Show Language && Tone Options", self)
+        self.show_options_action.setShortcut(QKeySequence("Ctrl+L"))  # ⌘L on macOS
+        self.show_options_action.triggered.connect(lambda: self.set_compact(False))
+        menu.addAction(self.show_options_action)
 
         self.set_hotkey_action = QAction("Set Show/Hide Hotkey\u2026", self)
         self.set_hotkey_action.triggered.connect(self._set_hotkey)
