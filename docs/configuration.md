@@ -78,7 +78,7 @@ Everything lives in `~/.type-fast/`:
 
 | File                                 | Contents                                         |
 |--------------------------------------|--------------------------------------------------|
-| `settings.json`                      | Language pair, tone, custom tone, and hotkey     |
+| `settings.json`                      | Languages, tone, hotkey, and transparency        |
 | `api_key`                            | OpenAI API key                                   |
 | `openai_model`                       | OpenAI model override                            |
 | `azure_ai_endpoint`                  | Azure AI Foundry endpoint                        |
@@ -86,5 +86,6 @@ Everything lives in `~/.type-fast/`:
 | `azure_ai_model`                     | Azure AI Foundry model or deployment override    |
 
 Built-in defaults, such as the default model, suggested models, temperature,
-languages, tone presets, debounce interval, and default hotkey, live in
+languages, tone presets, debounce interval, default hotkey, and transparency
+presets, live in
 [`type_fast/config.py`](../type_fast/config.py).

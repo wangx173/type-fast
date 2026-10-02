@@ -24,15 +24,29 @@ translation (polite, casual, business, ... or a custom instruction), and the
 model can be switched from Settings › Set Model…. Changing the languages, tone,
 or model re-translates everything with the new settings. The language pair and
 tone (and the hotkey) are remembered across launches.
+
+Because the window floats above other apps, it is slightly see-through, fades
+in when summoned, and fades further while you work in another app (hovering or
+returning to it brings it back). The strength is chosen in Settings › Window
+Transparency and remembered too.
 """
 
 from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import QEvent, Qt, QTimer, Signal, QObject
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QObject,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtGui import (
     QAction,
+    QActionGroup,
     QCursor,
     QGuiApplication,
     QKeySequence,
@@ -70,6 +84,80 @@ _SENTENCE_ENDINGS = (
 )
 
 _AUTO_LABEL = "Auto-detect"
+
+# How long the window takes to fade between opacities, in milliseconds.
+_FADE_MS = 160
+
+# How often to check whether the pointer is over the window while another app
+# is active, in milliseconds.
+_HOVER_POLL_MS = 120
+
+# Styles for the main window. Neutral gray tints read well in both light and
+# dark mode; ``palette(...)`` colors follow the system appearance and accent
+# color, so the sheet is re-applied when the color scheme changes. Only named
+# widgets are styled, so the language and tone pickers keep their native look.
+_STYLE_SHEET = """
+QPlainTextEdit#inputBox, QTextEdit#outputBox {
+    border: 1px solid rgba(128, 128, 128, 0.3);
+    border-radius: 10px;
+    padding: 6px 8px;
+    font-size: 15px;
+    background: palette(base);
+    selection-background-color: palette(highlight);
+}
+QTextEdit#outputBox {
+    background: rgba(128, 128, 128, 0.08);
+}
+QPlainTextEdit#inputBox:focus, QTextEdit#outputBox:focus {
+    border: 1px solid palette(highlight);
+}
+QLabel#caption {
+    color: rgba(128, 128, 128, 0.95);
+    font-size: 11px;
+    font-weight: 600;
+    padding-left: 2px;
+}
+QLabel#footnote, QLabel#status {
+    color: rgba(128, 128, 128, 0.95);
+    font-size: 11px;
+}
+QLabel#status[state="busy"] {
+    color: palette(highlight);
+}
+QLabel#status[state="done"] {
+    color: #30b158;
+}
+QToolButton#pairChip {
+    color: palette(text);
+    background: rgba(128, 128, 128, 0.14);
+    border: 1px solid transparent;
+    border-radius: 10px;
+    padding: 2px 10px;
+    font-size: 12px;
+}
+QToolButton#pairChip:hover {
+    background: rgba(128, 128, 128, 0.24);
+}
+QToolButton#pairChip:focus {
+    border: 1px solid palette(highlight);
+}
+QToolButton#swapButton {
+    border: none;
+    border-radius: 12px;
+    min-width: 24px;
+    min-height: 24px;
+    font-size: 15px;
+}
+QToolButton#swapButton:hover {
+    background: rgba(128, 128, 128, 0.18);
+}
+QToolButton#swapButton:pressed {
+    background: rgba(128, 128, 128, 0.3);
+}
+QToolButton#swapButton:disabled {
+    color: rgba(128, 128, 128, 0.4);
+}
+"""
 
 
 def _language_label(name: str) -> str:
@@ -209,8 +297,10 @@ class MainWindow(QMainWindow):
             self.source_lang.addItem(_language_label(name), name)
             self.target_lang.addItem(_language_label(name), name)
         self.swap_button = QToolButton()
+        self.swap_button.setObjectName("swapButton")
         self.swap_button.setText("\u21c4")
         self.swap_button.setToolTip("Swap languages")
+        self.swap_button.setCursor(Qt.PointingHandCursor)
         self._select_languages(self.prefs.source, self.prefs.target)
 
         self.tone = QComboBox()
@@ -222,32 +312,40 @@ class MainWindow(QMainWindow):
         self._update_tone_tooltip()
 
         self.input_label = QLabel()
+        self.input_label.setObjectName("caption")
         self.input = QPlainTextEdit()
+        self.input.setObjectName("inputBox")
         self.input.setPlaceholderText("Type here\u2026")
 
         self.output_label = QLabel()
+        self.output_label.setObjectName("caption")
         self.output = QTextEdit()
+        self.output.setObjectName("outputBox")
         self.output.setReadOnly(True)
         self.output.setPlaceholderText("Translation appears here\u2026")
+        for box in (self.input, self.output):
+            # The rounded border highlights focus; skip the square macOS ring.
+            box.setAttribute(Qt.WA_MacShowFocusRect, False)
 
         self.status = QLabel()
-        self.status.setAlignment(Qt.AlignRight)
-        self.status.setStyleSheet("color: gray;")
+        self.status.setObjectName("status")
+        self.status.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
 
         self.model_label = QLabel()
-        self.model_label.setStyleSheet("color: gray;")
+        self.model_label.setObjectName("footnote")
 
         self.hotkey_label = QLabel()
-        self.hotkey_label.setStyleSheet("color: gray;")
+        self.hotkey_label.setObjectName("footnote")
 
         central = QWidget()
         layout = QVBoxLayout(central)
-        layout.setContentsMargins(16, 16, 16, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(14, 12, 14, 10)
+        layout.setSpacing(6)
         # Language and tone pickers; hidden in compact mode (see set_compact).
         self.options_bar = QWidget()
         controls = QHBoxLayout(self.options_bar)
-        controls.setContentsMargins(0, 0, 0, 0)
+        controls.setContentsMargins(0, 0, 0, 4)
+        controls.setSpacing(6)
         controls.addWidget(self.source_lang, 1)
         controls.addWidget(self.swap_button)
         controls.addWidget(self.target_lang, 1)
@@ -257,28 +355,47 @@ class MainWindow(QMainWindow):
         # Compact mode shows only the direction, e.g. "English → Japanese";
         # clicking it brings the pickers back.
         self.pair_button = QToolButton()
-        self.pair_button.setAutoRaise(True)
+        self.pair_button.setObjectName("pairChip")
         # Reachable with Tab, but clicking it doesn't pull focus from the input.
         self.pair_button.setFocusPolicy(Qt.TabFocus)
         self.pair_button.setCursor(Qt.PointingHandCursor)
-        self.pair_button.setStyleSheet(
-            "QToolButton { color: gray; border: none; padding: 0; }"
-            "QToolButton:hover, QToolButton:focus { text-decoration: underline; }"
-        )
         self.pair_button.setToolTip("Show language and tone options (\u2318L)")
         self.pair_button.clicked.connect(lambda: self.set_compact(False))
         self.pair_button.hide()
         layout.addWidget(self.pair_button, 0, Qt.AlignLeft)
         layout.addWidget(self.input_label)
-        layout.addWidget(self.input)
+        layout.addWidget(self.input, 1)
+        layout.addSpacing(2)
         layout.addWidget(self.output_label)
-        layout.addWidget(self.output)
+        layout.addWidget(self.output, 1)
         footer = QHBoxLayout()
+        footer.setContentsMargins(2, 2, 2, 0)
+        footer.setSpacing(12)
         footer.addWidget(self.model_label)
         footer.addWidget(self.hotkey_label)
         footer.addWidget(self.status, 1)
         layout.addLayout(footer)
         self.setCentralWidget(central)
+        self._apply_style()
+        app = QGuiApplication.instance()
+        hints = app.styleHints() if app is not None else None
+        if hints is not None and hasattr(hints, "colorSchemeChanged"):
+            hints.colorSchemeChanged.connect(self._apply_style)
+
+        # The window floats above other apps, so it is slightly see-through and
+        # fades further while you work elsewhere (see _update_opacity).
+        self._hovered = False
+        self._opacity_anim = QPropertyAnimation(self, b"windowOpacity", self)
+        self._opacity_anim.setDuration(_FADE_MS)
+        self._opacity_anim.setEasingCurve(QEasingCurve.OutCubic)
+        # macOS sends no Enter/Leave events while another app is active, so
+        # hover is detected by polling the pointer while in the background.
+        self._hover_timer = QTimer(self)
+        self._hover_timer.setInterval(_HOVER_POLL_MS)
+        self._hover_timer.timeout.connect(self._poll_hover)
+        if app is not None:
+            app.focusWindowChanged.connect(self._on_focus_window_changed)
+        self.setWindowOpacity(self._target_opacity())
 
         self._build_menu()
         self._update_labels()
@@ -373,6 +490,121 @@ class MainWindow(QMainWindow):
         self.set_hotkey_action.triggered.connect(self._set_hotkey)
         menu.addAction(self.set_hotkey_action)
 
+        transparency_menu = menu.addMenu("Window Transparency")
+        self.transparency_group = QActionGroup(self)
+        self.transparency_group.setExclusive(True)
+        for name in config.TRANSPARENCY:
+            action = QAction(name, self, checkable=True)
+            action.setData(name)
+            action.setChecked(name == self.prefs.transparency)
+            self.transparency_group.addAction(action)
+            transparency_menu.addAction(action)
+        self.transparency_group.triggered.connect(
+            lambda action: self._apply_transparency(action.data())
+        )
+
+    # --- Appearance -------------------------------------------------------
+
+    def _apply_style(self, *_args: object) -> None:
+        """(Re-)apply the style sheet so ``palette(...)`` colors stay current."""
+        self.centralWidget().setStyleSheet(_STYLE_SHEET)
+
+    def _set_status(self, text: str, state: str = "") -> None:
+        """Show ``text`` in the status line; ``state`` is "", "busy", or "done"."""
+        self.status.setText(text)
+        if self.status.property("state") != state:
+            self.status.setProperty("state", state)
+            # Dynamic properties only restyle after a re-polish.
+            self.status.style().unpolish(self.status)
+            self.status.style().polish(self.status)
+
+    def _opacities(self) -> tuple[float, float]:
+        return config.TRANSPARENCY.get(
+            self.prefs.transparency, config.TRANSPARENCY[config.DEFAULT_TRANSPARENCY]
+        )
+
+    def _is_engaged(self) -> bool:
+        """Whether you are using the window: it or one of its dialogs is focused, or it is hovered."""
+        return (
+            self._hovered
+            or self.isActiveWindow()
+            or QApplication.activeWindow() is not None
+        )
+
+    def _target_opacity(self, engaged: bool | None = None) -> float:
+        focused, background = self._opacities()
+        if engaged is None:
+            engaged = self._is_engaged()
+        return focused if engaged else background
+
+    def _update_opacity(self, start: float | None = None, engaged: bool | None = None) -> None:
+        """Fade to the opacity for the current state, optionally from ``start``.
+
+        ``engaged`` overrides the detected state, e.g. while summoning, before
+        macOS has finished activating the window.
+        """
+        target = self._target_opacity(engaged)
+        animation = self._opacity_anim
+        if animation.state() == QPropertyAnimation.Running and animation.endValue() == target:
+            return
+        animation.stop()
+        current = self.windowOpacity() if start is None else start
+        if not self.isVisible() or abs(current - target) < 0.005:
+            self.setWindowOpacity(target)
+            return
+        animation.setStartValue(current)
+        animation.setEndValue(target)
+        animation.start()
+
+    def _on_focus_window_changed(self, _window: object) -> None:
+        self._sync_hover_tracking()
+        self._update_opacity()
+
+    def _sync_hover_tracking(self) -> None:
+        """Poll for hover only while the window is shown and the app is inactive."""
+        if self.isVisible() and QApplication.activeWindow() is None:
+            if not self._hover_timer.isActive():
+                self._poll_hover()
+                self._hover_timer.start()
+        else:
+            self._hover_timer.stop()
+
+    def _poll_hover(self) -> None:
+        hovered = self.isVisible() and self.frameGeometry().contains(QCursor.pos())
+        if hovered != self._hovered:
+            self._hovered = hovered
+            self._update_opacity()
+
+    def _apply_transparency(self, name: str) -> None:
+        if name not in config.TRANSPARENCY:
+            return
+        self.prefs.transparency = name
+        for action in self.transparency_group.actions():
+            action.setChecked(action.data() == name)
+        self._update_opacity()
+        self._save_prefs("Window Transparency", "window transparency")
+
+    def enterEvent(self, event: QEvent) -> None:
+        self._hovered = True
+        self._update_opacity()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:
+        self._hovered = False
+        self._update_opacity()
+        super().leaveEvent(event)
+
+    def changeEvent(self, event: QEvent) -> None:
+        if event.type() == QEvent.ActivationChange:
+            self._sync_hover_tracking()
+            self._update_opacity()
+        super().changeEvent(event)
+
+    def hideEvent(self, event: QEvent) -> None:
+        self._hover_timer.stop()
+        self._hovered = False
+        super().hideEvent(event)
+
     # --- Show/hide --------------------------------------------------------
 
     def toggle_visibility(self) -> None:
@@ -400,16 +632,22 @@ class MainWindow(QMainWindow):
         """
         self._dismissed = False
         self.set_compact(compact)
-        if not self.isVisible():
+        appearing = not self.isVisible()
+        if appearing:
             self._center_on_cursor_screen()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        if appearing:
+            self.setWindowOpacity(0.0)
         self.show()
         self.raise_()
         self.activateWindow()
         hotkey.activate_app()
         self.input.setFocus()
         self.input.moveCursor(QTextCursor.End)
+        # Fade in, Spotlight-style. Activation may land a moment later; the
+        # focus change then retargets the fade.
+        self._update_opacity(start=0.0 if appearing else None, engaged=True)
 
     def set_compact(self, compact: bool) -> None:
         """Switch between the minimal and the full layout.
@@ -686,9 +924,9 @@ class MainWindow(QMainWindow):
 
     def _reflect_key_status(self) -> None:
         if providers.has_credentials():
-            self.status.setText("")
+            self._set_status("")
         else:
-            self.status.setText("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
+            self._set_status("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
 
     def _set_api_key(self) -> None:
         current = ""
@@ -838,7 +1076,7 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
-            self.status.setText("Translating\u2026")
+            self._set_status("Translating\u2026", "busy")
             self.output.setPlainText(self._active_prefix)
             self.output.moveCursor(QTextCursor.End)
 
@@ -862,14 +1100,14 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
-            self.status.setText("")
+            self._set_status("")
             self.output.setPlainText(f"[error] {message}")
 
     def _copy_output_to_clipboard(self) -> None:
         text = self.output.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
-            self.status.setText("Copied to clipboard \u2713")
+            self._set_status("Copied to clipboard \u2713", "done")
 
 
 def main() -> None:

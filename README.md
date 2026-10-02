@@ -22,6 +22,8 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   typing, finished lines aren't re-translated.
 - ⌨️ **Spotlight-style hotkey** — press **⇧⌘Space** in any app to pop up a
   minimal window; press it again or **Esc** to go back.
+- 🪟 **Stays out of your way** — the window is slightly see-through and fades
+  further while you work in another app.
 - 📋 **Auto-copy** — the finished translation is copied to your clipboard,
   ready to paste.
 - 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
@@ -73,8 +75,9 @@ right away when you end a sentence or press Return.
 | **⌘L**                     | Show the language and tone pickers        |
 | **⌘,**                     | Set your OpenAI API key                   |
 
-The **Settings** menu also lets you change the model, the hotkey, and the
-custom tone. See the [usage guide](docs/usage.md) for details.
+The **Settings** menu also lets you change the model, the hotkey, the window
+transparency, and the custom tone. See the [usage guide](docs/usage.md) for
+details.
 
 ## Documentation
 
