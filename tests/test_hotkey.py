@@ -404,6 +404,14 @@ class WindowHotkeyTests(unittest.TestCase):
         dialog.accept()
         self.assertEqual(dialog.chosen, "Option+K")
 
+    def test_dialog_ignores_focus_traversal_keys(self) -> None:
+        dialog = self.app_module.HotkeyDialog("Option+Space", self.window)
+        with mock.patch.object(hotkey, "uses_native_keycodes", return_value=True):
+            self._record(dialog, Qt.NoModifier, Qt.Key_Tab, 0x30)
+        self.assertIsNone(dialog._native_key)
+        dialog.accept()
+        self.assertEqual(dialog.chosen, "Option+Space")
+
     def test_dialog_rejects_unknown_physical_key(self) -> None:
         dialog = self.app_module.HotkeyDialog("", self.window)
         with mock.patch.object(hotkey, "uses_native_keycodes", return_value=True):

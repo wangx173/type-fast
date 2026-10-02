@@ -93,6 +93,7 @@ class HotkeyDialog(QDialog):
         # registers physical keys, while Qt reports layout-dependent keys, so
         # this keeps non-U.S. layouts (Dvorak, AZERTY, ...) correct.
         self._native_key: int | None = None
+        self._pending_native_key: int | None = None
 
         info = QLabel(
             "Press the key combination that shows and hides Type Fast from any "
@@ -125,6 +126,9 @@ class HotkeyDialog(QDialog):
         self.editor.installEventFilter(self)
         for child in self.editor.findChildren(QWidget):
             child.installEventFilter(self)
+        # Only keys that change the recorded sequence count; e.g. Tab moves
+        # focus out of the editor without being recorded.
+        self.editor.keySequenceChanged.connect(self._on_sequence_changed)
 
         layout = QVBoxLayout(self)
         layout.addWidget(info)
@@ -142,8 +146,12 @@ class HotkeyDialog(QDialog):
             and event.key() not in self._MODIFIER_KEYS
             and hotkey.uses_native_keycodes()
         ):
-            self._native_key = event.nativeVirtualKey()
+            self._pending_native_key = event.nativeVirtualKey()
         return super().eventFilter(watched, event)
+
+    def _on_sequence_changed(self, sequence: QKeySequence) -> None:
+        self._native_key = None if sequence.isEmpty() else self._pending_native_key
+        self._pending_native_key = None
 
     def _finish(self, text: str) -> None:
         self.chosen = text
