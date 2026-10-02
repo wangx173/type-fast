@@ -13,17 +13,33 @@ from __future__ import annotations
 
 from typing import Callable, Iterator, Optional
 
+import openai
+
 from . import config, providers
 
+# Models (or deployments) that rejected ``temperature`` at runtime. Lets custom
+# Azure deployment names backed by reasoning models work despite not matching
+# :data:`config.NO_TEMPERATURE_MODEL_PREFIXES`.
+_models_without_temperature: set[str] = set()
 
-def system_prompt(source: str, target: str) -> str:
-    """Build a strict translation system prompt for the given language pair."""
+
+def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
+    """Build a strict translation system prompt for the given language pair.
+
+    Args:
+        source: Source language name, or ``"auto"`` to auto-detect.
+        target: Target language name.
+        tone: Instruction describing the desired tone/register of the
+            translation. Defaults to the :data:`config.DEFAULT_TONE` preset.
+    """
     src = "the source language (auto-detect it)" if source == "auto" else source
+    tone = (tone or "").strip() or config.TONES[config.DEFAULT_TONE]
     return (
         f"You are a translation engine. Translate the user's text from {src} "
         f"into natural {target}. Output ONLY the {target} translation. "
         "Do not add romaji, transliteration, explanations, notes, or quotes. "
-        "Preserve meaning and tone, and default to a polite register."
+        "Preserve the original meaning. "
+        f"Tone for the translation: {tone}"
     )
 
 
@@ -32,14 +48,20 @@ def translate_stream(
     source: str = config.DEFAULT_SOURCE,
     target: str = config.DEFAULT_TARGET,
     *,
+    tone: Optional[str] = None,
+    model: Optional[str] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> Iterator[str]:
-    """Yield translated text chunks for ``text`` as they stream from OpenAI.
+    """Yield translated text chunks for ``text`` as they stream from the model.
 
     Args:
         text: The text to translate.
         source: Source language name, or ``"auto"`` to auto-detect.
         target: Target language name.
+        tone: Tone/register instruction for the translation (see
+            :func:`system_prompt`).
+        model: Model/deployment to use; defaults to the active provider's
+            configured model.
         should_cancel: Optional callback polled between chunks; when it returns
             ``True`` the stream is abandoned. Useful when a newer translation
             supersedes this one on a worker thread.
@@ -52,13 +74,41 @@ def translate_stream(
         return
 
     client = providers.get_client()
+    model = model or providers.get_model()
+    use_temperature = (
+        config.supports_temperature(model)
+        and model not in _models_without_temperature
+    )
+    try:
+        yield from _stream(client, model, text, source, target, tone,
+                           use_temperature, should_cancel)
+    except openai.BadRequestError as exc:
+        # The request is rejected before any output streams, so retrying is safe.
+        if not use_temperature or "temperature" not in str(exc).lower():
+            raise
+        _models_without_temperature.add(model)
+        yield from _stream(client, model, text, source, target, tone,
+                           False, should_cancel)
+
+
+def _stream(
+    client: openai.OpenAI,
+    model: str,
+    text: str,
+    source: str,
+    target: str,
+    tone: Optional[str],
+    use_temperature: bool,
+    should_cancel: Optional[Callable[[], bool]],
+) -> Iterator[str]:
+    params = {"temperature": config.DEFAULT_TEMPERATURE} if use_temperature else {}
     with client.responses.stream(
-        model=providers.get_model(),
+        model=model,
         input=[
-            {"role": "system", "content": system_prompt(source, target)},
+            {"role": "system", "content": system_prompt(source, target, tone)},
             {"role": "user", "content": text},
         ],
-        temperature=config.DEFAULT_TEMPERATURE,
+        **params,
     ) as stream:
         for event in stream:
             if should_cancel is not None and should_cancel():

@@ -90,18 +90,51 @@ type-fast
 A small always-on-top window opens with:
 
 - a direction toggle (English → Japanese / Japanese → English),
-- an input box, and
-- an output box that streams the translation.
+- a tone selector for the translation (see [Tone](#tone)),
+- an input box,
+- an output box that streams the translation, and
+- the active model, shown at the bottom left.
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
 
+### Tone
+
+Pick the tone of the translated text from the selector next to the direction
+toggle: **Polite** (default), **Casual**, **Formal**, **Business**,
+**Friendly**, or **Neutral** (mirror the original). Choose **Custom…** — or
+**Settings → Set Custom Tone…** — to write your own instruction, such as
+"Humble keigo (謙譲語) for a client" or "Playful, with a light touch of humor".
+The instruction is added to the translation prompt.
+
+Changing the tone re-translates the current text. Your choice (and custom
+instruction) is saved to `~/.type-fast/settings.json` and restored on launch.
+
 ## Configuration
 
-Defaults live in [`type_fast/config.py`](type_fast/config.py): the OpenAI model,
-the default Foundry model, temperature, default language pair, and the debounce
-interval. Provider selection (OpenAI vs. Azure AI Foundry) is driven by the
-environment variables described under [Setup](#setup).
+Defaults live in [`type_fast/config.py`](type_fast/config.py): the default
+model, the models suggested in the model picker, temperature, default language
+pair, tone presets, and the debounce interval. Provider selection (OpenAI vs.
+Azure AI Foundry) is driven by the environment variables described under
+[Setup](#setup).
+
+### Switch the model
+
+Choose **Settings → Set Model…** to pick a model from the list or type any
+model/deployment name. Leave it blank to go back to the default
+(`gpt-4.1-mini`). The choice applies to the active provider and is saved to a
+file under `~/.type-fast/`. You can also set it by hand or with an environment
+variable, which takes precedence over the file:
+
+| Provider         | Environment variable | Fallback file                   |
+|------------------|----------------------|---------------------------------|
+| OpenAI           | `OPENAI_MODEL`       | `~/.type-fast/openai_model`     |
+| Azure AI Foundry | `AZURE_AI_MODEL`     | `~/.type-fast/azure_ai_model`   |
+
+Reasoning models (`gpt-5*`, `o1`, `o3`, `o4` families) do not accept a
+`temperature` setting, so it is omitted for them automatically. If a
+custom-named deployment rejects `temperature`, the request is retried without
+it and that deployment is remembered for the rest of the session.
 
 ## Build a native macOS app
 

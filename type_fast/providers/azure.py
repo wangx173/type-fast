@@ -11,14 +11,16 @@ from __future__ import annotations
 from openai import OpenAI
 
 from .. import config
-from ._common import CONFIG_DIR, from_env_or_file
+from ._common import CONFIG_DIR, from_env_or_file, write_or_clear
 
 NAME = "azure"
+DISPLAY_NAME = "Azure AI Foundry"
 
 # Fallback files, used when the matching environment variables are not set.
 ENDPOINT_FILE = CONFIG_DIR / "azure_ai_endpoint"
 API_KEY_FILE = CONFIG_DIR / "azure_ai_api_key"
 MODEL_FILE = CONFIG_DIR / "azure_ai_model"
+MODEL_ENV = "AZURE_AI_MODEL"
 
 
 def get_endpoint() -> str:
@@ -33,7 +35,12 @@ def get_api_key() -> str:
 
 def get_model() -> str:
     """Return the Foundry model/deployment name (or the shared default)."""
-    return from_env_or_file("AZURE_AI_MODEL", MODEL_FILE) or config.DEFAULT_MODEL
+    return from_env_or_file(MODEL_ENV, MODEL_FILE) or config.DEFAULT_MODEL
+
+
+def save_model(model: str) -> None:
+    """Persist ``model`` to the model file; a blank value restores the default."""
+    write_or_clear(MODEL_FILE, model)
 
 
 def is_configured() -> bool:

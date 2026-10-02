@@ -12,6 +12,11 @@ reused verbatim, so completed lines are never re-translated as you keep typing.
 Freezing on newline (rather than punctuation) is language-agnostic, so it works
 the same for English, Japanese, and future languages. Editing inside a frozen
 prefix transparently re-translates from that point.
+
+A tone selector next to the direction toggle controls the register of the
+translation (polite, casual, business, ... or a custom instruction), and the
+model can be switched from Settings › Set Model…. Changing the direction, tone,
+or model re-translates everything with the new settings.
 """
 
 from __future__ import annotations
@@ -23,17 +28,19 @@ from PySide6.QtGui import QAction, QKeySequence, QTextCursor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QHBoxLayout,
     QInputDialog,
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPlainTextEdit,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from . import config, providers
+from . import config, providers, settings
 from .providers import openai as openai_provider
 from .translator import translate_stream
 
@@ -65,6 +72,15 @@ class MainWindow(QMainWindow):
         self.direction = QComboBox()
         self.direction.addItems([label for label, _, _ in _DIRECTIONS])
 
+        self.tone_settings = settings.load()
+        self.tone = QComboBox()
+        self.tone.setToolTip("Tone of the translation")
+        for name in config.TONES:
+            self.tone.addItem(name, name)
+        self.tone.addItem(f"{config.CUSTOM_TONE}\u2026", config.CUSTOM_TONE)
+        self.tone.setCurrentIndex(self.tone.findData(self.tone_settings.tone))
+        self._update_tone_tooltip()
+
         self.input_label = QLabel()
         self.input = QPlainTextEdit()
         self.input.setPlaceholderText("Type here\u2026")
@@ -78,39 +94,50 @@ class MainWindow(QMainWindow):
         self.status.setAlignment(Qt.AlignRight)
         self.status.setStyleSheet("color: gray;")
 
+        self.model_label = QLabel()
+        self.model_label.setStyleSheet("color: gray;")
+
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(16, 16, 16, 12)
         layout.setSpacing(8)
-        layout.addWidget(self.direction)
+        controls = QHBoxLayout()
+        controls.addWidget(self.direction, 1)
+        controls.addWidget(self.tone)
+        layout.addLayout(controls)
         layout.addWidget(self.input_label)
         layout.addWidget(self.input)
         layout.addWidget(self.output_label)
         layout.addWidget(self.output)
-        layout.addWidget(self.status)
+        footer = QHBoxLayout()
+        footer.addWidget(self.model_label)
+        footer.addWidget(self.status, 1)
+        layout.addLayout(footer)
         self.setCentralWidget(central)
 
         self._build_menu()
         self._update_labels()
         self._reflect_key_status()
+        self._reflect_model()
 
         # Monotonic id identifying the most recent translation request so that
         # superseded, slower in-flight translations are discarded.
         self._request_id = 0
 
-        # The last (frozen_src, active, source, target, should_freeze) actually
-        # sent, used to skip redundant requests when nothing relevant changed.
-        # ``should_freeze`` is part of the key so that adding a newline (which
-        # must advance the freeze boundary) is never skipped as a duplicate.
-        self._last_sent_key: tuple[str, str, str, str, bool] | None = None
+        # The last (frozen_src, active, source, target, tone, model,
+        # should_freeze) actually sent, used to skip redundant requests when
+        # nothing relevant changed. ``should_freeze`` is part of the key so that
+        # adding a newline (which must advance the freeze boundary) is never
+        # skipped as a duplicate.
+        self._last_sent_key: tuple[str, str, str, str, str, str, bool] | None = None
 
         # Source prefix whose translation is finalized, and its translation.
         # Only the input text *after* ``_frozen_src`` is ever sent to the API.
         self._frozen_src = ""
         self._frozen_out = ""
-        # Target language the frozen translation is written in; a direction
-        # change invalidates it.
-        self._frozen_target = _DIRECTIONS[0][2]
+        # (target, tone, model) the frozen translation was produced with; a
+        # direction, tone, or model change invalidates it.
+        self._frozen_context: tuple[str, str, str] | None = None
 
         # Display prefix (frozen translations + separator) shown while the
         # active line streams, plus how to freeze that line once it lands:
@@ -132,6 +159,7 @@ class MainWindow(QMainWindow):
         self.input.textChanged.connect(self._on_text_changed)
         self.direction.currentIndexChanged.connect(self._on_text_changed)
         self.direction.currentIndexChanged.connect(self._update_labels)
+        self.tone.activated.connect(self._on_tone_activated)
 
     def _build_menu(self) -> None:
         # On macOS this becomes part of the global menu bar at the top of the
@@ -142,6 +170,96 @@ class MainWindow(QMainWindow):
         self.set_key_action.setShortcut(QKeySequence("Ctrl+,"))
         self.set_key_action.triggered.connect(self._set_api_key)
         menu.addAction(self.set_key_action)
+
+        self.set_model_action = QAction("Set Model\u2026", self)
+        self.set_model_action.triggered.connect(self._set_model)
+        menu.addAction(self.set_model_action)
+
+        self.set_custom_tone_action = QAction("Set Custom Tone\u2026", self)
+        self.set_custom_tone_action.triggered.connect(self._set_custom_tone)
+        menu.addAction(self.set_custom_tone_action)
+
+    def _reflect_model(self) -> None:
+        provider = providers.active_provider()
+        self.model_label.setText(f"Model: {providers.get_model()}")
+        self.model_label.setToolTip(
+            f"Provider: {provider.DISPLAY_NAME} \u2014 change it in Settings \u203a Set Model\u2026"
+        )
+
+    def _set_model(self) -> None:
+        provider = providers.active_provider()
+        env = providers.model_env_override()
+        if env:
+            QMessageBox.information(
+                self,
+                "Set Model",
+                f"The model is pinned by the {env} environment variable "
+                f"({providers.get_model()}). Unset it to choose a model here.",
+            )
+            return
+        current = providers.get_model()
+        choices = list(config.MODEL_CHOICES)
+        if current not in choices:
+            choices.insert(0, current)
+        model, ok = QInputDialog.getItem(
+            self,
+            "Set Model",
+            f"{provider.DISPLAY_NAME} model or deployment name\n"
+            f"(stored in {provider.MODEL_FILE}; leave blank for "
+            f"the default, {config.DEFAULT_MODEL}):",
+            choices,
+            choices.index(current),
+            True,
+        )
+        if not ok:
+            return
+        providers.save_model(model)
+        self._reflect_model()
+        self._retranslate()
+
+    def _update_tone_tooltip(self) -> None:
+        self.tone.setToolTip(
+            f"Tone of the translation: {self.tone_settings.instruction()}"
+        )
+
+    def _on_tone_activated(self, index: int) -> None:
+        tone = self.tone.itemData(index)
+        if tone == config.CUSTOM_TONE and not self.tone_settings.custom_tone.strip():
+            # Custom needs an instruction; ask for one (reverts on cancel).
+            self._set_custom_tone()
+            return
+        self._apply_tone(tone)
+
+    def _set_custom_tone(self) -> None:
+        text, ok = QInputDialog.getMultiLineText(
+            self,
+            "Set Custom Tone",
+            "Describe the tone for translations, e.g. \"Playful, with a light "
+            "touch of humor\" or \"Humble keigo (\u8b19\u8b72\u8a9e) for a client\":",
+            self.tone_settings.custom_tone,
+        )
+        text = text.strip()
+        if not ok or not text:
+            # Keep the combo box in sync with the tone actually in use.
+            self.tone.setCurrentIndex(self.tone.findData(self.tone_settings.tone))
+            return
+        self.tone_settings.custom_tone = text
+        self._apply_tone(config.CUSTOM_TONE)
+
+    def _apply_tone(self, tone: str) -> None:
+        self.tone_settings.tone = tone
+        self.tone.setCurrentIndex(self.tone.findData(tone))
+        self._update_tone_tooltip()
+        try:
+            settings.save(self.tone_settings)
+        except OSError as exc:
+            self.status.setText(f"Could not save tone: {exc}")
+        self._retranslate()
+
+    def _retranslate(self) -> None:
+        """Re-run the translation now (e.g. after a tone or model change)."""
+        self.timer.stop()
+        self.run_translation()
 
     def _reflect_key_status(self) -> None:
         if providers.has_credentials():
@@ -170,6 +288,7 @@ class MainWindow(QMainWindow):
         openai_provider.save_api_key(key)
         providers.reset_client()  # so the next translation uses the new key
         self._reflect_key_status()
+        self._reflect_model()
 
     def _update_labels(self) -> None:
         _, source, target = _DIRECTIONS[self.direction.currentIndex()]
@@ -189,12 +308,15 @@ class MainWindow(QMainWindow):
     def run_translation(self) -> None:
         full = self.input.toPlainText()
         _, source, target = _DIRECTIONS[self.direction.currentIndex()]
+        tone = self.tone_settings.instruction()
+        model = providers.get_model()
 
-        # A direction change makes the frozen translation the wrong language.
-        if target != self._frozen_target:
+        # A direction, tone, or model change makes the frozen translation stale.
+        context = (target, tone, model)
+        if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""
-            self._frozen_target = target
+            self._frozen_context = context
 
         # If the frozen prefix was edited, drop it and re-translate from there.
         if not full.startswith(self._frozen_src):
@@ -235,7 +357,7 @@ class MainWindow(QMainWindow):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target, should_freeze)
+        key = (self._frozen_src, active, source, target, tone, model, should_freeze)
         if key == self._last_sent_key:
             return
         self._last_sent_key = key
@@ -250,13 +372,19 @@ class MainWindow(QMainWindow):
 
         thread = threading.Thread(
             target=self._translate_worker,
-            args=(request_id, active, source, target),
+            args=(request_id, active, source, target, tone, model),
             daemon=True,
         )
         thread.start()
 
     def _translate_worker(
-        self, request_id: int, text: str, source: str, target: str
+        self,
+        request_id: int,
+        text: str,
+        source: str,
+        target: str,
+        tone: str,
+        model: str,
     ) -> None:
         def superseded() -> bool:
             return request_id != self._request_id
@@ -264,7 +392,12 @@ class MainWindow(QMainWindow):
         chunks: list[str] = []
         try:
             for chunk in translate_stream(
-                text, source, target, should_cancel=superseded
+                text,
+                source,
+                target,
+                tone=tone,
+                model=model,
+                should_cancel=superseded,
             ):
                 if superseded():
                     return
