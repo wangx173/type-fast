@@ -88,6 +88,8 @@ CUSTOM_TONE = "Custom"
 DEBOUNCE_MS = 500
 
 # Default global show/hide hotkey (see :mod:`type_fast.hotkey` for the format).
-# ⌘Space is Spotlight's own shortcut, so we don't default to it; users can pick
-# any combination in Settings › Set Show/Hide Hotkey….
-DEFAULT_HOTKEY = "Option+Space"
+# ⇧⌘Space is unused by macOS by default. It avoids Spotlight (⌘Space, ⌥⌘Space),
+# input-source switching (⌃Space, ⌃⌥Space), and ⌥Space, which types a
+# non-breaking space and is claimed by launchers such as Alfred, Raycast, and
+# ChatGPT. Users can pick any combination in Settings › Set Show/Hide Hotkey….
+DEFAULT_HOTKEY = "Shift+Cmd+Space"

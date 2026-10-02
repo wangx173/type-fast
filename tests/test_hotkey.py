@@ -179,6 +179,17 @@ class HotkeySettingsTests(unittest.TestCase):
         self.assertIsNotNone(hotkey.parse(config.DEFAULT_HOTKEY))
         self.assertEqual(self._load({"tone": "Casual"}).hotkey, config.DEFAULT_HOTKEY)
 
+    def test_default_avoids_common_conflicts(self) -> None:
+        default = hotkey.parse(config.DEFAULT_HOTKEY)
+        self.assertEqual(str(default), config.DEFAULT_HOTKEY)  # canonical form
+        taken = {
+            "Cmd+Space", "Option+Cmd+Space",  # Spotlight
+            "Ctrl+Space", "Ctrl+Option+Space",  # input sources
+            "Ctrl+Cmd+Space",  # Character Viewer
+            "Option+Space",  # non-breaking space; Alfred, Raycast, ChatGPT
+        }
+        self.assertNotIn(str(default), taken)
+
     def test_round_trip(self) -> None:
         settings.save(settings.Settings(hotkey="Ctrl+Option+K"))
         self.assertEqual(settings.load().hotkey, "Ctrl+Option+K")
@@ -227,7 +238,7 @@ class WindowHotkeyTests(unittest.TestCase):
         w = self.window
         self.assertIsInstance(w.global_hotkey, hotkey.GlobalHotkey)
         self.assertFalse(w.global_hotkey.is_registered)  # never grabbed headless
-        self.assertIn("\u2325Space", w.hotkey_label.text())
+        self.assertIn("\u21e7\u2318Space", w.hotkey_label.text())
 
     def test_toggle_shows_and_hides(self) -> None:
         w = self.window

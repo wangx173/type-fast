@@ -107,7 +107,7 @@ space while you're not using it.
 ### Show/hide hotkey
 
 Like Spotlight, Type Fast pops up on demand with a global hotkey —
-**⌥Space** (Option+Space) by default — from any app. It appears centered near
+**⇧⌘Space** (Shift+Command+Space) by default — from any app. It appears centered near
 the top of the screen under the mouse pointer, stays on top while shown, and
 puts the cursor in the input box. Press the hotkey again, or **Esc**, to hide it
 and return to the app you were using. The current hotkey is shown at the bottom
@@ -122,21 +122,24 @@ full layout.
 
 To change it, choose **Settings → Set Show/Hide Hotkey…** and press the new
 combination. It must include ⌘ Command, ⌃ Control, or ⌥ Option (F-keys work on
-their own). **Reset to Default** restores ⌥Space and **Disable** turns the
+their own). **Reset to Default** restores ⇧⌘Space and **Disable** turns the
 hotkey off. If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type
 Fast tells you and keeps the previous one. Another app's global shortcut can't
 always be detected, so if the new hotkey does nothing, pick a different one.
 
-⌘Space is Spotlight's shortcut. To use it for Type Fast instead, first change
-or turn off Spotlight's shortcut in **System Settings → Keyboard → Keyboard
-Shortcuts → Spotlight**.
+The default avoids the shortcuts macOS already uses for Space: ⌘Space and
+⌥⌘Space (Spotlight), and ⌃Space and ⌃⌥Space (switching input sources). It
+also avoids ⌥Space, which types a non-breaking space and is the default for
+launchers such as Alfred, Raycast, and ChatGPT. To use ⌘Space for Type Fast
+anyway, first change or turn off Spotlight's shortcut in **System Settings →
+Keyboard → Keyboard Shortcuts → Spotlight**.
 
 Hotkeys are tied to the physical key you press, so they keep working if you
 switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
 is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
 
 The hotkey needs no Accessibility permission. It is saved to
-`~/.type-fast/settings.json` (as `"hotkey": "Option+Space"`; an empty string
+`~/.type-fast/settings.json` (as `"hotkey": "Shift+Cmd+Space"`; an empty string
 disables it).
 
 ### Languages

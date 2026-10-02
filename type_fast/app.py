@@ -1,7 +1,7 @@
 """PySide6 PoC window for type-fast.
 
 A small window, summoned on demand Spotlight-style with a configurable global
-hotkey (⌥Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
+hotkey (⇧⌘Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
 hotkey again, or Esc, dismisses it and hands focus back to the previous app.
 While shown it stays on top of other windows. Summoned by the hotkey it is
 compact: only the boxes and a one-line "English → Japanese" direction, which
@@ -98,8 +98,8 @@ class HotkeyDialog(QDialog):
         info = QLabel(
             "Press the key combination that shows and hides Type Fast from any "
             "app. Include \u2318, \u2303, or \u2325 (or use an F-key).\n"
-            "\u2318Space is Spotlight\u2019s shortcut unless you change it in "
-            "System Settings."
+            "Avoid \u2318Space (Spotlight) and \u2303Space (switch input "
+            "source); macOS keeps those for itself."
         )
         info.setWordWrap(True)
 

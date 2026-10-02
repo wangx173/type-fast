@@ -4,7 +4,7 @@ Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
 any custom tone instruction, and the global show/hide hotkey survive restarts. A
 missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
-``"Option+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
+``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
 """
 
 from __future__ import annotations
