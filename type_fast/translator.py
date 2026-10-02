@@ -2,8 +2,8 @@
 
 The core entry point is :func:`translate_stream`, a generator that yields chunks
 of the translated text as they arrive. The source and target languages are
-configurable so the same function supports English -> Japanese, Japanese ->
-English, and additional language pairs in the future.
+configurable, so the same function handles any pair from
+:data:`type_fast.config.LANGUAGES` (or auto-detected source text).
 
 The underlying client (OpenAI or Microsoft Azure AI Foundry) is built by
 :mod:`type_fast.providers`.
@@ -32,12 +32,16 @@ def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
         tone: Instruction describing the desired tone/register of the
             translation. Defaults to the :data:`config.DEFAULT_TONE` preset.
     """
-    src = "the source language (auto-detect it)" if source == "auto" else source
+    src = (
+        "the source language (auto-detect it)"
+        if source == config.AUTO_SOURCE
+        else source
+    )
     tone = (tone or "").strip() or config.TONES[config.DEFAULT_TONE]
     return (
         f"You are a translation engine. Translate the user's text from {src} "
         f"into natural {target}. Output ONLY the {target} translation. "
-        "Do not add romaji, transliteration, explanations, notes, or quotes. "
+        "Do not add romanization, transliteration, explanations, notes, or quotes. "
         "Preserve the original meaning. "
         f"Tone for the translation: {tone}"
     )

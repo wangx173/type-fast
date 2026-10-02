@@ -5,13 +5,13 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "type-fast"
 version = "0.1.0"
-description = "A simple macOS input tool that translates typed text bidirectionally (English <-> Japanese) using the OpenAI API."
+description = "A simple macOS input tool that translates typed text between many languages (English, Japanese, Chinese, Korean, Spanish, and more) using the OpenAI API."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Xiang Wang" }]
-keywords = ["translation", "openai", "macos", "japanese", "pyside6"]
+keywords = ["translation", "openai", "macos", "japanese", "multilingual", "pyside6"]
 classifiers = [
     "Environment :: MacOS X",
     "Intended Audience :: End Users/Desktop",

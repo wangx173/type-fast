@@ -1,7 +1,8 @@
 """PySide6 PoC window for type-fast.
 
-A small always-on-top window with an input box, a streamed output box, and an
-English <-> Japanese direction toggle. Typing triggers a translation after a
+A small always-on-top window with an input box, a streamed output box, and
+source/target language pickers (any pair from :data:`config.LANGUAGES`, with
+optional auto-detection of the source) plus a swap button. Typing triggers a translation after a
 short idle debounce, or immediately when a line ends (Enter) or the input ends
 in sentence-ending punctuation. Translation runs on a worker thread and streams
 results back to the UI via Qt signals so the interface never freezes.
@@ -10,13 +11,14 @@ To keep cost down, only the *active* (current) line of the input is ever sent.
 Once you move to the next line, the finished line's translation is frozen and
 reused verbatim, so completed lines are never re-translated as you keep typing.
 Freezing on newline (rather than punctuation) is language-agnostic, so it works
-the same for English, Japanese, and future languages. Editing inside a frozen
+the same for every supported language. Editing inside a frozen
 prefix transparently re-translates from that point.
 
-A tone selector next to the direction toggle controls the register of the
+A tone selector next to the language pickers controls the register of the
 translation (polite, casual, business, ... or a custom instruction), and the
-model can be switched from Settings › Set Model…. Changing the direction, tone,
-or model re-translates everything with the new settings.
+model can be switched from Settings › Set Model…. Changing the languages, tone,
+or model re-translates everything with the new settings. The language pair and
+tone are remembered across launches.
 """
 
 from __future__ import annotations
@@ -36,6 +38,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QTextEdit,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -46,12 +49,18 @@ from .translator import translate_stream
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
-_SENTENCE_ENDINGS = (".", "!", "?", "\u3002", "\uff01", "\uff1f")
+# Covers Latin, CJK full-width, Arabic (\u061f), and Devanagari (\u0964) marks.
+_SENTENCE_ENDINGS = (
+    ".", "!", "?", "\u3002", "\uff01", "\uff1f", "\u061f", "\u0964",
+)
 
-_DIRECTIONS = [
-    ("English \u2192 Japanese", "English", "Japanese"),
-    ("Japanese \u2192 English", "Japanese", "English"),
-]
+_AUTO_LABEL = "Auto-detect"
+
+
+def _language_label(name: str) -> str:
+    """Return the picker label for ``name``, with its native name if different."""
+    native = config.LANGUAGES[name]
+    return name if native == name else f"{name} \u00b7 {native}"
 
 
 class Bridge(QObject):
@@ -69,16 +78,27 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Type Fast")
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
-        self.direction = QComboBox()
-        self.direction.addItems([label for label, _, _ in _DIRECTIONS])
+        self.prefs = settings.load()
 
-        self.tone_settings = settings.load()
+        self.source_lang = QComboBox()
+        self.source_lang.setToolTip("Language you type in")
+        self.source_lang.addItem(_AUTO_LABEL, config.AUTO_SOURCE)
+        self.target_lang = QComboBox()
+        self.target_lang.setToolTip("Language to translate into")
+        for name in config.LANGUAGES:
+            self.source_lang.addItem(_language_label(name), name)
+            self.target_lang.addItem(_language_label(name), name)
+        self.swap_button = QToolButton()
+        self.swap_button.setText("\u21c4")
+        self.swap_button.setToolTip("Swap languages")
+        self._select_languages(self.prefs.source, self.prefs.target)
+
         self.tone = QComboBox()
         self.tone.setToolTip("Tone of the translation")
         for name in config.TONES:
             self.tone.addItem(name, name)
         self.tone.addItem(f"{config.CUSTOM_TONE}\u2026", config.CUSTOM_TONE)
-        self.tone.setCurrentIndex(self.tone.findData(self.tone_settings.tone))
+        self.tone.setCurrentIndex(self.tone.findData(self.prefs.tone))
         self._update_tone_tooltip()
 
         self.input_label = QLabel()
@@ -102,7 +122,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(16, 16, 16, 12)
         layout.setSpacing(8)
         controls = QHBoxLayout()
-        controls.addWidget(self.direction, 1)
+        controls.addWidget(self.source_lang, 1)
+        controls.addWidget(self.swap_button)
+        controls.addWidget(self.target_lang, 1)
         controls.addWidget(self.tone)
         layout.addLayout(controls)
         layout.addWidget(self.input_label)
@@ -135,9 +157,9 @@ class MainWindow(QMainWindow):
         # Only the input text *after* ``_frozen_src`` is ever sent to the API.
         self._frozen_src = ""
         self._frozen_out = ""
-        # (target, tone, model) the frozen translation was produced with; a
-        # direction, tone, or model change invalidates it.
-        self._frozen_context: tuple[str, str, str] | None = None
+        # (source, target, tone, model) the frozen translation was produced
+        # with; a language, tone, or model change invalidates it.
+        self._frozen_context: tuple[str, str, str, str] | None = None
 
         # Display prefix (frozen translations + separator) shown while the
         # active line streams, plus how to freeze that line once it lands:
@@ -157,8 +179,9 @@ class MainWindow(QMainWindow):
         self.timer.timeout.connect(self.run_translation)
 
         self.input.textChanged.connect(self._on_text_changed)
-        self.direction.currentIndexChanged.connect(self._on_text_changed)
-        self.direction.currentIndexChanged.connect(self._update_labels)
+        self.source_lang.activated.connect(self._on_source_activated)
+        self.target_lang.activated.connect(self._on_target_activated)
+        self.swap_button.clicked.connect(self._swap_languages)
         self.tone.activated.connect(self._on_tone_activated)
 
     def _build_menu(self) -> None:
@@ -225,12 +248,12 @@ class MainWindow(QMainWindow):
 
     def _update_tone_tooltip(self) -> None:
         self.tone.setToolTip(
-            f"Tone of the translation: {self.tone_settings.instruction()}"
+            f"Tone of the translation: {self.prefs.instruction()}"
         )
 
     def _on_tone_activated(self, index: int) -> None:
         tone = self.tone.itemData(index)
-        if tone == config.CUSTOM_TONE and not self.tone_settings.custom_tone.strip():
+        if tone == config.CUSTOM_TONE and not self.prefs.custom_tone.strip():
             # Custom needs an instruction; ask for one (reverts on cancel).
             self._set_custom_tone()
             return
@@ -242,30 +265,82 @@ class MainWindow(QMainWindow):
             "Set Custom Tone",
             "Describe the tone for translations, e.g. \"Playful, with a light "
             "touch of humor\" or \"Humble keigo (\u8b19\u8b72\u8a9e) for a client\":",
-            self.tone_settings.custom_tone,
+            self.prefs.custom_tone,
         )
         text = text.strip()
         if not ok or not text:
             # Keep the combo box in sync with the tone actually in use.
-            self.tone.setCurrentIndex(self.tone.findData(self.tone_settings.tone))
+            self.tone.setCurrentIndex(self.tone.findData(self.prefs.tone))
             return
-        self.tone_settings.custom_tone = text
+        self.prefs.custom_tone = text
         self._apply_tone(config.CUSTOM_TONE)
 
     def _apply_tone(self, tone: str) -> None:
-        self.tone_settings.tone = tone
+        self.prefs.tone = tone
         self.tone.setCurrentIndex(self.tone.findData(tone))
         self._update_tone_tooltip()
+        self._save_prefs("Tone", "tone")
+        self._retranslate()
+
+    def _save_prefs(self, title: str, what: str) -> None:
         try:
-            settings.save(self.tone_settings)
+            settings.save(self.prefs)
         except OSError as exc:
             # A dialog, not the status line, which the retranslation overwrites.
             QMessageBox.warning(
                 self,
-                "Tone",
-                f"The tone applies now but could not be saved to "
+                title,
+                f"The {what} applies now but could not be saved to "
                 f"{settings.SETTINGS_FILE}, so it will be lost on restart:\n{exc}",
             )
+
+    def _select_languages(self, source: str, target: str) -> None:
+        """Show ``source``/``target`` in the pickers and record them in prefs."""
+        self.prefs.source = source
+        self.prefs.target = target
+        self.source_lang.setCurrentIndex(self.source_lang.findData(source))
+        self.target_lang.setCurrentIndex(self.target_lang.findData(target))
+        # Auto-detect can't become a target, so there is nothing to swap.
+        self.swap_button.setEnabled(source != config.AUTO_SOURCE)
+
+    def _on_source_activated(self, index: int) -> None:
+        source = self.source_lang.itemData(index)
+        target = self.prefs.target
+        if source == target:
+            # Picking the target language as the source swaps the pair.
+            previous = self.prefs.source
+            if previous == config.AUTO_SOURCE:
+                target = self._other_language(source)
+            else:
+                target = previous
+        self._apply_languages(source, target)
+
+    def _on_target_activated(self, index: int) -> None:
+        target = self.target_lang.itemData(index)
+        source = self.prefs.source
+        if source == target:
+            # Picking the source language as the target swaps the pair.
+            source = self.prefs.target
+        self._apply_languages(source, target)
+
+    def _swap_languages(self) -> None:
+        if self.prefs.source != config.AUTO_SOURCE:
+            self._apply_languages(self.prefs.target, self.prefs.source)
+
+    @staticmethod
+    def _other_language(language: str) -> str:
+        """Return a sensible language different from ``language``."""
+        for candidate in (config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET):
+            if candidate != language:
+                return candidate
+        return next(name for name in config.LANGUAGES if name != language)
+
+    def _apply_languages(self, source: str, target: str) -> None:
+        if (source, target) == (self.prefs.source, self.prefs.target):
+            return
+        self._select_languages(source, target)
+        self._update_labels()
+        self._save_prefs("Languages", "language pair")
         self._retranslate()
 
     def _retranslate(self) -> None:
@@ -303,9 +378,11 @@ class MainWindow(QMainWindow):
         self._reflect_model()
 
     def _update_labels(self) -> None:
-        _, source, target = _DIRECTIONS[self.direction.currentIndex()]
-        self.input_label.setText(source)
-        self.output_label.setText(target)
+        source, target = self.prefs.source, self.prefs.target
+        self.input_label.setText(
+            _AUTO_LABEL if source == config.AUTO_SOURCE else _language_label(source)
+        )
+        self.output_label.setText(_language_label(target))
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
@@ -319,12 +396,12 @@ class MainWindow(QMainWindow):
 
     def run_translation(self) -> None:
         full = self.input.toPlainText()
-        _, source, target = _DIRECTIONS[self.direction.currentIndex()]
-        tone = self.tone_settings.instruction()
+        source, target = self.prefs.source, self.prefs.target
+        tone = self.prefs.instruction()
         model = providers.get_model()
 
-        # A direction, tone, or model change makes the frozen translation stale.
-        context = (target, tone, model)
+        # A language, tone, or model change makes the frozen translation stale.
+        context = (source, target, tone, model)
         if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""

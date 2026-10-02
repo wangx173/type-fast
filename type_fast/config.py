@@ -1,7 +1,7 @@
 """Shared, provider-agnostic configuration for type-fast.
 
-Holds the default model, temperature, default language pair, translation tone
-presets, and the input debounce interval so they are easy to change in one
+Holds the default model, temperature, supported languages and the default
+language pair, translation tone presets, and the input debounce interval so they are easy to change in one
 place. Provider-specific credential handling and client construction live in
 :mod:`type_fast.providers` (one module per provider).
 """
@@ -36,10 +36,38 @@ def supports_temperature(model: str) -> bool:
     return not model.strip().lower().startswith(NO_TEMPERATURE_MODEL_PREFIXES)
 
 
-# Default language pair. ``source="auto"`` lets the model detect the input
-# language, which supports bidirectional translation and future languages.
-DEFAULT_SOURCE = "auto"
+# Supported languages: English name (used in the prompt) -> native name (shown
+# alongside it in the language pickers). Add an entry here to support another
+# language.
+LANGUAGES = {
+    "English": "English",
+    "Japanese": "日本語",
+    "Chinese (Simplified)": "简体中文",
+    "Chinese (Traditional)": "繁體中文",
+    "Korean": "한국어",
+    "Spanish": "Español",
+    "French": "Français",
+    "German": "Deutsch",
+    "Italian": "Italiano",
+    "Portuguese": "Português",
+    "Russian": "Русский",
+    "Vietnamese": "Tiếng Việt",
+    "Thai": "ไทย",
+    "Indonesian": "Bahasa Indonesia",
+    "Hindi": "हिन्दी",
+    "Arabic": "العربية",
+}
+
+# Source value that lets the model detect the input language.
+AUTO_SOURCE = "auto"
+
+# Default language pair used by :func:`type_fast.translator.translate_stream`.
+DEFAULT_SOURCE = AUTO_SOURCE
 DEFAULT_TARGET = "Japanese"
+
+# Default language pair shown in the window on first launch.
+DEFAULT_UI_SOURCE = "English"
+DEFAULT_UI_TARGET = "Japanese"
 
 # Tone presets for the translated text: display name -> prompt instruction.
 TONES = {

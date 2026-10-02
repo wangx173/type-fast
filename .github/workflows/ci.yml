@@ -28,6 +28,8 @@ jobs:
         run: python -c "import type_fast.app, type_fast.translator, type_fast.config; print('imports OK')"
 
       - name: Unit tests
+        env:
+          QT_QPA_PLATFORM: offscreen
         run: python -m unittest discover -s tests -v
 
       - name: Headless window smoke test
@@ -41,7 +43,8 @@ jobs:
           app = QApplication([])
           w = MainWindow()
           assert w.windowTitle() == "Type Fast"
-          assert w.direction.count() == 2
+          assert w.source_lang.count() == len(config.LANGUAGES) + 1
+          assert w.target_lang.count() == len(config.LANGUAGES)
           assert w.tone.count() == len(config.TONES) + 1
           print("window OK")
           PY
