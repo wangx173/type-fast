@@ -371,14 +371,19 @@ class MainWindow(QMainWindow):
 
     # --- Hotkey settings --------------------------------------------------
 
-    def _register_hotkey(self) -> None:
-        """(Re-)register the saved hotkey and reflect the outcome."""
+    def _register_hotkey(self) -> bool:
+        """(Re-)register the saved hotkey and reflect the outcome.
+
+        Returns False if a saved hotkey could not be registered.
+        """
         parsed = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
         if parsed is None:
             self.global_hotkey.unregister()
+            ok = True
         else:
-            self.global_hotkey.register(parsed)
+            ok = self.global_hotkey.register(parsed)
         self._reflect_hotkey()
+        return ok
 
     def _reflect_hotkey(self) -> None:
         parsed = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
@@ -427,17 +432,25 @@ class MainWindow(QMainWindow):
         if parsed is None:
             self.global_hotkey.unregister()
         elif not self.global_hotkey.register(parsed) and hotkey.GlobalHotkey.is_supported():
+            # The previous hotkey was released while recording; restore it first
+            # so the message reports what is actually active.
+            restored = self._register_hotkey()
             previous = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
-            keeping = (
-                f"Keeping {previous.symbols()}." if previous else "The hotkey stays off."
-            )
+            if previous is None:
+                keeping = "The hotkey stays off."
+            elif restored:
+                keeping = f"Keeping {previous.symbols()}."
+            else:
+                keeping = (
+                    f"{previous.symbols()} could not be restored either, so the hotkey "
+                    "is off until you choose another."
+                )
             QMessageBox.warning(
                 self,
                 title,
                 f"{parsed.symbols()} could not be registered; it may already be used "
                 f"by macOS or another app. {keeping}",
             )
-            self._register_hotkey()
             return False
         # Registration is skipped on unsupported platforms; still save the choice.
         self.prefs.hotkey = str(parsed) if parsed else ""

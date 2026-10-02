@@ -107,6 +107,13 @@ class QtConversionTests(unittest.TestCase):
         self.assertIsNotNone(bare)
         self.assertFalse(bare.is_valid)
 
+    def test_keypad_keys_rejected_but_arrows_allowed(self) -> None:
+        keypad_1 = QKeyCombination(Qt.ControlModifier | Qt.KeypadModifier, Qt.Key_1)
+        self.assertIsNone(hotkey.from_qt(keypad_1))
+        # macOS flags the arrow keys as keypad keys.
+        arrow = QKeyCombination(Qt.AltModifier | Qt.KeypadModifier, Qt.Key_Up)
+        self.assertEqual(str(hotkey.from_qt(arrow)), "Option+Up")
+
 
 class GlobalHotkeyTests(unittest.TestCase):
     @classmethod
@@ -295,7 +302,7 @@ class WindowHotkeyTests(unittest.TestCase):
         with mock.patch.object(
             hotkey.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(
-            w.global_hotkey, "register", return_value=False
+            w.global_hotkey, "register", side_effect=[False, True]
         ) as register, mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
             self.assertFalse(w._apply_hotkey("Cmd+Space"))
         warning.assert_called_once()
@@ -304,6 +311,20 @@ class WindowHotkeyTests(unittest.TestCase):
         self.assertEqual(str(register.call_args_list[-1].args[0]), previous)
         self.assertEqual(w.prefs.hotkey, previous)
         self.assertFalse(settings.SETTINGS_FILE.exists())
+        self.assertIn("Keeping", warning.call_args.args[2])
+
+    def test_registration_failure_reports_failed_restore(self) -> None:
+        w = self.window
+        with mock.patch.object(
+            hotkey.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+        ), mock.patch.object(
+            w.global_hotkey, "register", return_value=False
+        ), mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
+            self.assertFalse(w._apply_hotkey("Cmd+Space"))
+        message = warning.call_args.args[2]
+        self.assertIn("could not be restored", message)
+        self.assertNotIn("Keeping", message)
+        self.assertIn("unavailable", w.hotkey_label.text())
 
     def test_dialog_records_and_validates(self) -> None:
         dialog = self.app_module.HotkeyDialog("Option+Space", self.window)

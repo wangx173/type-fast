@@ -2,7 +2,7 @@
 
 Hotkeys are written in a canonical, human-readable form using macOS modifier
 names in Apple's order (Ctrl, Option, Shift, Cmd), e.g. ``"Option+Space"``,
-``"Cmd+Shift+T"``, ``"Ctrl+Option+K"`` or ``"F5"``. :func:`parse` accepts that
+``"Shift+Cmd+T"``, ``"Ctrl+Option+K"`` or ``"F5"``. :func:`parse` accepts that
 form case-insensitively, plus common aliases (``Command``/``⌘``, ``Alt``/
 ``Opt``/``⌥``, ``Control``/``⌃``, ``⇧``, ``Enter``, ``Esc``, ``Backspace``), and
 :meth:`Hotkey.symbols` renders the compact menu-style form (``"⌥Space"``).
@@ -71,6 +71,7 @@ KEYCODES: dict[str, int] = {
 }
 
 FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 21))
+_ARROW_KEYS = frozenset({"Left", "Right", "Up", "Down"})
 
 _KEY_ALIASES = {name.lower(): name for name in KEYCODES}
 _KEY_ALIASES.update({
@@ -225,8 +226,8 @@ def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
     """Convert a Qt key combination (or the first one in a sequence).
 
     Applies the macOS Qt mapping (ControlModifier = ⌘, MetaModifier = ⌃,
-    AltModifier = ⌥). Returns None for an empty sequence, a bare modifier, or an
-    unsupported key. The result may still fail :attr:`Hotkey.is_valid` so that
+    AltModifier = ⌥). Returns None for an empty sequence, a bare modifier, an
+    unsupported key, or a numeric-keypad key. The result may still fail :attr:`Hotkey.is_valid` so that
     callers can explain why.
     """
     if isinstance(combo, QKeySequence):
@@ -237,6 +238,10 @@ def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
     if name is None:
         return None
     mods = combo.keyboardModifiers()
+    # Numeric-keypad keys have their own keycodes, so don't silently map e.g.
+    # ⌘+keypad-1 onto ⌘1. macOS also flags the arrow keys as keypad keys.
+    if mods & Qt.KeyboardModifier.KeypadModifier and name not in _ARROW_KEYS:
+        return None
     modifiers = tuple(m for flag, m in _QT_MODIFIERS if mods & flag)
     return Hotkey(modifiers, name)
 
