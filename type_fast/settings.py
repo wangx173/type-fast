@@ -45,12 +45,17 @@ def load() -> Settings:
         return Settings()
     if not isinstance(data, dict):
         return Settings()
+    # The pair is validated as a unit: if either side is missing, invalid, or
+    # both are the same, restore the whole default pair.
+    source, target = data.get("source"), data.get("target")
     languages = set(config.LANGUAGES)
-    source = _pick(
-        data.get("source"), languages | {config.AUTO_SOURCE}, config.DEFAULT_UI_SOURCE
-    )
-    target = _pick(data.get("target"), languages, config.DEFAULT_UI_TARGET)
-    if source == target:
+    if not (
+        isinstance(source, str)
+        and isinstance(target, str)
+        and source in languages | {config.AUTO_SOURCE}
+        and target in languages
+        and source != target
+    ):
         source, target = config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET
     custom = data.get("custom_tone")
     return Settings(

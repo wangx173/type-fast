@@ -48,17 +48,22 @@ class LanguageSettingsTests(unittest.TestCase):
         self.assertEqual(loaded.source, config.DEFAULT_UI_SOURCE)
         self.assertEqual(loaded.target, config.DEFAULT_UI_TARGET)
 
-    def test_invalid_languages_fall_back(self) -> None:
+    def test_invalid_languages_restore_default_pair(self) -> None:
         for data in (
             {"source": "Klingon", "target": "French"},
+            {"source": "French", "target": "Klingon"},
             {"source": ["English"], "target": {}},
             {"source": "French", "target": config.AUTO_SOURCE},
+            {"source": "French"},
+            {"target": "French"},
         ):
             self._write(data)
             loaded = settings.load()
-            self.assertIn(loaded.source, set(config.LANGUAGES) | {config.AUTO_SOURCE})
-            self.assertIn(loaded.target, config.LANGUAGES)
-            self.assertNotEqual(loaded.source, loaded.target)
+            self.assertEqual(
+                (loaded.source, loaded.target),
+                (config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET),
+                data,
+            )
 
     def test_same_source_and_target_falls_back_to_default_pair(self) -> None:
         self._write({"source": "French", "target": "French"})
