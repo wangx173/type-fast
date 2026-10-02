@@ -8,7 +8,9 @@
 ## OpenAI API key
 
 The easiest way is from the app: **Settings → Set OpenAI API Key…** (⌘,). The
-key is saved to `~/.type-fast/api_key` and applied immediately.
+key is saved to `~/.type-fast/api_key` and applied immediately, unless the
+`OPENAI_API_KEY` environment variable is set (it takes precedence) or
+[Azure AI Foundry](#azure-ai-foundry) is configured.
 
 Type Fast reads the key from the `OPENAI_API_KEY` environment variable or, if
 that is not set, from `~/.type-fast/api_key`. The packaged app uses the file,
@@ -21,6 +23,7 @@ export OPENAI_API_KEY='sk-...'
 # Or the key file (works for the packaged app too)
 mkdir -p ~/.type-fast
 echo 'sk-...' > ~/.type-fast/api_key
+chmod 600 ~/.type-fast/api_key  # keep the key private to your account
 ```
 
 ## Azure AI Foundry
@@ -47,6 +50,7 @@ the packaged app works when launched from Finder:
 mkdir -p ~/.type-fast
 echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
 echo '<your-foundry-key>' > ~/.type-fast/azure_ai_api_key
+chmod 600 ~/.type-fast/azure_ai_api_key
 # Optional model/deployment override:
 echo 'gpt-4.1-mini' > ~/.type-fast/azure_ai_model
 ```

@@ -18,8 +18,8 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 
 ## Features
 
-- ⚡ **Live translation** — the translation streams in as you type, and
-  finished lines are never re-translated.
+- ⚡ **Live translation** — the translation streams in as you type; as you keep
+  typing, finished lines aren't re-translated.
 - ⌨️ **Spotlight-style hotkey** — press **⇧⌘Space** in any app to pop up a
   minimal window; press it again or **Esc** to go back.
 - 📋 **Auto-copy** — the finished translation is copied to your clipboard,
@@ -49,11 +49,13 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 
 1. Download `Type-Fast-macos-arm64.zip` from the
    [latest release](https://github.com/wangx173/type-fast/releases/latest),
-   unzip it, and drag **Type Fast.app** into `/Applications`.
-2. The app is ad-hoc signed, not notarized, so macOS warns that it is from an
-   unidentified developer. Open it the first time with right-click → **Open** →
-   **Open**, or allow it under **System Settings → Privacy & Security** →
-   **Open Anyway** (required on macOS 15 and later).
+   unzip it, and drag **Type Fast.app** into `/Applications`. The prebuilt app
+   requires an Apple Silicon Mac; on Intel Macs,
+   [run from source](docs/development.md#run-from-source).
+2. The app is ad-hoc signed, not notarized, so macOS blocks the first launch:
+   - **macOS 15 and later:** open the app once, then go to **System Settings →
+     Privacy & Security** and click **Open Anyway**.
+   - **macOS 14 and earlier:** right-click the app → **Open** → **Open**.
 3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
 
 To use Azure AI Foundry instead, or to run from source, see

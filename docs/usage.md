@@ -16,9 +16,10 @@ The full window has:
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`)
-or you press Return. Finished lines are kept as they are; only the line you are
-typing is sent for translation. When a translation finishes, it is copied to the
-clipboard.
+or you press Return. As you keep typing, finished lines are kept as they are and
+only the line you are typing is sent for translation; changing the language,
+tone, or model re-translates everything. When a translation finishes, it is
+copied to the clipboard.
 
 The window is shown when the app launches. After that, summon and dismiss it
 with the [show/hide hotkey](#showhide-hotkey) so it stays out of the way while
