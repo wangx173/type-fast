@@ -213,7 +213,13 @@ class MainWindow(QMainWindow):
         )
         if not ok:
             return
-        providers.save_model(model)
+        try:
+            providers.save_model(model)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, "Set Model", f"Could not save the model to {provider.MODEL_FILE}:\n{exc}"
+            )
+            return
         self._reflect_model()
         self._retranslate()
 
@@ -253,7 +259,13 @@ class MainWindow(QMainWindow):
         try:
             settings.save(self.tone_settings)
         except OSError as exc:
-            self.status.setText(f"Could not save tone: {exc}")
+            # A dialog, not the status line, which the retranslation overwrites.
+            QMessageBox.warning(
+                self,
+                "Tone",
+                f"The tone applies now but could not be saved to "
+                f"{settings.SETTINGS_FILE}, so it will be lost on restart:\n{exc}",
+            )
         self._retranslate()
 
     def _retranslate(self) -> None:

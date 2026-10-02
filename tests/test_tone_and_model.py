@@ -62,6 +62,11 @@ class ToneSettingsTests(unittest.TestCase):
         self.assertEqual(settings.load().tone, config.DEFAULT_TONE)
         settings.SETTINGS_FILE.write_text('{"tone": "Bogus"}', encoding="utf-8")
         self.assertEqual(settings.load().tone, config.DEFAULT_TONE)
+        for bad in ('{"tone": []}', '{"tone": {}}', '{"tone": 1, "custom_tone": []}', "[]"):
+            settings.SETTINGS_FILE.write_text(bad, encoding="utf-8")
+            loaded = settings.load()
+            self.assertEqual(loaded.tone, config.DEFAULT_TONE, bad)
+            self.assertEqual(loaded.custom_tone, "", bad)
 
 
 class ModelSelectionTests(unittest.TestCase):

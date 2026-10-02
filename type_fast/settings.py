@@ -43,7 +43,7 @@ def load() -> ToneSettings:
     custom = data.get("custom_tone")
     valid = set(config.TONES) | {config.CUSTOM_TONE}
     return ToneSettings(
-        tone=tone if tone in valid else config.DEFAULT_TONE,
+        tone=tone if isinstance(tone, str) and tone in valid else config.DEFAULT_TONE,
         custom_tone=custom if isinstance(custom, str) else "",
     )
 
