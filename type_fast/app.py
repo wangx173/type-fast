@@ -1,7 +1,12 @@
 """PySide6 PoC window for type-fast.
 
-A small always-on-top window with an input box, a streamed output box, and
-source/target language pickers (any pair from :data:`config.LANGUAGES`, with
+A small window, summoned on demand Spotlight-style with a configurable global
+hotkey (⇧⌘Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
+hotkey again, or Esc, dismisses it and hands focus back to the previous app.
+While shown it stays on top of other windows. Summoned by the hotkey it is
+compact: only the boxes and a one-line "English → Japanese" direction, which
+expands to the full pickers when clicked. It has an input box, a streamed
+output box, and source/target language pickers (any pair from :data:`config.LANGUAGES`, with
 optional auto-detection of the source) plus a swap button. Typing triggers a translation after a
 short idle debounce, or immediately when a line ends (Enter) or the input ends
 in sentence-ending punctuation. Translation runs on a worker thread and streams
@@ -18,20 +23,30 @@ A tone selector next to the language pickers controls the register of the
 translation (polite, casual, business, ... or a custom instruction), and the
 model can be switched from Settings › Set Model…. Changing the languages, tone,
 or model re-translates everything with the new settings. The language pair and
-tone are remembered across launches.
+tone (and the hotkey) are remembered across launches.
 """
 
 from __future__ import annotations
 
 import threading
 
-from PySide6.QtCore import Qt, QTimer, Signal, QObject
-from PySide6.QtGui import QAction, QKeySequence, QTextCursor
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal, QObject
+from PySide6.QtGui import (
+    QAction,
+    QCursor,
+    QGuiApplication,
+    QKeySequence,
+    QShortcut,
+    QTextCursor,
+)
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QHBoxLayout,
     QInputDialog,
+    QKeySequenceEdit,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -43,7 +58,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import config, providers, settings
+from . import config, hotkey, providers, settings
 from .providers import openai as openai_provider
 from .translator import translate_stream
 
@@ -61,6 +76,111 @@ def _language_label(name: str) -> str:
     """Return the picker label for ``name``, with its native name if different."""
     native = config.LANGUAGES[name]
     return name if native == name else f"{name} \u00b7 {native}"
+
+
+class HotkeyDialog(QDialog):
+    """Records a new show/hide hotkey.
+
+    After ``exec()`` returns Accepted, :attr:`chosen` holds the canonical
+    hotkey text, or "" to disable the hotkey.
+    """
+
+    def __init__(self, current: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Set Show/Hide Hotkey")
+        self.chosen = current
+        # macOS virtual keycode of the last key pressed in the recorder. Carbon
+        # registers physical keys, while Qt reports layout-dependent keys, so
+        # this keeps non-U.S. layouts (Dvorak, AZERTY, ...) correct.
+        self._native_key: int | None = None
+        self._pending_native_key: int | None = None
+
+        info = QLabel(
+            "Press the key combination that shows and hides Type Fast from any "
+            "app. Include \u2318, \u2303, or \u2325 (or use an F-key).\n"
+            "Avoid \u2318Space (Spotlight) and \u2303Space (switch input "
+            "source); macOS keeps those for itself."
+        )
+        info.setWordWrap(True)
+
+        self.editor = QKeySequenceEdit()
+        if hasattr(self.editor, "setMaximumSequenceLength"):
+            self.editor.setMaximumSequenceLength(1)
+        if hasattr(self.editor, "setClearButtonEnabled"):
+            self.editor.setClearButtonEnabled(True)
+        parsed = hotkey.parse(current) if current else None
+        if parsed is not None:
+            self.editor.setKeySequence(hotkey.to_qt(parsed))
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel | QDialogButtonBox.RestoreDefaults
+        )
+        self.reset_button = buttons.button(QDialogButtonBox.RestoreDefaults)
+        self.reset_button.setText("Reset to Default")
+        self.disable_button = buttons.addButton("Disable", QDialogButtonBox.ResetRole)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        self.reset_button.clicked.connect(lambda: self._finish(config.DEFAULT_HOTKEY))
+        self.disable_button.clicked.connect(lambda: self._finish(""))
+
+        self.editor.installEventFilter(self)
+        for child in self.editor.findChildren(QWidget):
+            child.installEventFilter(self)
+        # Only keys that change the recorded sequence count; e.g. Tab moves
+        # focus out of the editor without being recorded.
+        self.editor.keySequenceChanged.connect(self._on_sequence_changed)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(info)
+        layout.addWidget(self.editor)
+        layout.addWidget(buttons)
+        self.editor.setFocus()
+
+    _MODIFIER_KEYS = frozenset(
+        {Qt.Key_Shift, Qt.Key_Control, Qt.Key_Meta, Qt.Key_Alt, Qt.Key_AltGr, Qt.Key_CapsLock}
+    )
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        if (
+            event.type() == QEvent.KeyPress
+            and event.key() not in self._MODIFIER_KEYS
+            and hotkey.uses_native_keycodes()
+        ):
+            self._pending_native_key = event.nativeVirtualKey()
+        return super().eventFilter(watched, event)
+
+    def _on_sequence_changed(self, sequence: QKeySequence) -> None:
+        self._native_key = None if sequence.isEmpty() else self._pending_native_key
+        self._pending_native_key = None
+
+    def _finish(self, text: str) -> None:
+        self.chosen = text
+        super().accept()
+
+    def accept(self) -> None:
+        sequence = self.editor.keySequence()
+        if sequence.isEmpty():
+            self._finish("")
+            return
+        parsed = hotkey.from_qt(sequence)
+        if parsed is not None and self._native_key is not None:
+            physical = hotkey.key_for_keycode(self._native_key)
+            parsed = hotkey.Hotkey(parsed.modifiers, physical) if physical else None
+        if parsed is None:
+            QMessageBox.warning(
+                self, "Set Show/Hide Hotkey", "That key can\u2019t be used as a hotkey."
+            )
+            return
+        if not parsed.is_valid:
+            QMessageBox.warning(
+                self,
+                "Set Show/Hide Hotkey",
+                f"{parsed.symbols()} would get in the way of normal typing. "
+                "Include \u2318 Command, \u2303 Control, or \u2325 Option "
+                "(or use an F-key).",
+            )
+            return
+        self._finish(str(parsed))
 
 
 class Bridge(QObject):
@@ -117,22 +237,45 @@ class MainWindow(QMainWindow):
         self.model_label = QLabel()
         self.model_label.setStyleSheet("color: gray;")
 
+        self.hotkey_label = QLabel()
+        self.hotkey_label.setStyleSheet("color: gray;")
+
         central = QWidget()
         layout = QVBoxLayout(central)
         layout.setContentsMargins(16, 16, 16, 12)
         layout.setSpacing(8)
-        controls = QHBoxLayout()
+        # Language and tone pickers; hidden in compact mode (see set_compact).
+        self.options_bar = QWidget()
+        controls = QHBoxLayout(self.options_bar)
+        controls.setContentsMargins(0, 0, 0, 0)
         controls.addWidget(self.source_lang, 1)
         controls.addWidget(self.swap_button)
         controls.addWidget(self.target_lang, 1)
         controls.addWidget(self.tone)
-        layout.addLayout(controls)
+        layout.addWidget(self.options_bar)
+
+        # Compact mode shows only the direction, e.g. "English → Japanese";
+        # clicking it brings the pickers back.
+        self.pair_button = QToolButton()
+        self.pair_button.setAutoRaise(True)
+        # Reachable with Tab, but clicking it doesn't pull focus from the input.
+        self.pair_button.setFocusPolicy(Qt.TabFocus)
+        self.pair_button.setCursor(Qt.PointingHandCursor)
+        self.pair_button.setStyleSheet(
+            "QToolButton { color: gray; border: none; padding: 0; }"
+            "QToolButton:hover, QToolButton:focus { text-decoration: underline; }"
+        )
+        self.pair_button.setToolTip("Show language and tone options (\u2318L)")
+        self.pair_button.clicked.connect(lambda: self.set_compact(False))
+        self.pair_button.hide()
+        layout.addWidget(self.pair_button, 0, Qt.AlignLeft)
         layout.addWidget(self.input_label)
         layout.addWidget(self.input)
         layout.addWidget(self.output_label)
         layout.addWidget(self.output)
         footer = QHBoxLayout()
         footer.addWidget(self.model_label)
+        footer.addWidget(self.hotkey_label)
         footer.addWidget(self.status, 1)
         layout.addLayout(footer)
         self.setCentralWidget(central)
@@ -141,6 +284,24 @@ class MainWindow(QMainWindow):
         self._update_labels()
         self._reflect_key_status()
         self._reflect_model()
+
+        # Esc dismisses the window, even while typing in the input box
+        # (QPlainTextEdit does not claim Esc, so the window shortcut wins).
+        self.dismiss_shortcut = QShortcut(QKeySequence(Qt.Key_Escape), self)
+        self.dismiss_shortcut.setContext(Qt.WindowShortcut)
+        self.dismiss_shortcut.activated.connect(self.dismiss)
+
+        # Global show/hide hotkey (Spotlight-style). ``_dismissed`` records
+        # that the window was hidden on purpose (hotkey or Esc), so that
+        # reactivating the app (Dock icon, ⌘Tab) brings it back.
+        self._dismissed = False
+        self.compact = False
+        self.global_hotkey = hotkey.GlobalHotkey(self)
+        self.global_hotkey.activated.connect(self.toggle_visibility)
+        self._register_hotkey()
+        app = QGuiApplication.instance()
+        if app is not None:
+            app.applicationStateChanged.connect(self._on_app_state_changed)
 
         # Monotonic id identifying the most recent translation request so that
         # superseded, slower in-flight translations are discarded.
@@ -201,6 +362,181 @@ class MainWindow(QMainWindow):
         self.set_custom_tone_action = QAction("Set Custom Tone\u2026", self)
         self.set_custom_tone_action.triggered.connect(self._set_custom_tone)
         menu.addAction(self.set_custom_tone_action)
+
+        # Keyboard route out of the compact layout (see set_compact).
+        self.show_options_action = QAction("Show Language && Tone Options", self)
+        self.show_options_action.setShortcut(QKeySequence("Ctrl+L"))  # ⌘L on macOS
+        self.show_options_action.triggered.connect(lambda: self.set_compact(False))
+        menu.addAction(self.show_options_action)
+
+        self.set_hotkey_action = QAction("Set Show/Hide Hotkey\u2026", self)
+        self.set_hotkey_action.triggered.connect(self._set_hotkey)
+        menu.addAction(self.set_hotkey_action)
+
+    # --- Show/hide --------------------------------------------------------
+
+    def toggle_visibility(self) -> None:
+        """Hide the window if it is shown and focused, otherwise summon it.
+
+        A window summoned this way (by the global hotkey) is compact.
+        """
+        modal = QApplication.activeModalWidget()
+        if modal is not None:
+            # Don't hide the window out from under an open dialog.
+            hotkey.activate_app()
+            modal.raise_()
+            modal.activateWindow()
+            return
+        if self.isVisible() and self.isActiveWindow() and not self.isMinimized():
+            self.dismiss()
+        else:
+            self.summon(compact=True)
+
+    def summon(self, compact: bool = False) -> None:
+        """Show, raise, and focus the window, Spotlight-style.
+
+        With ``compact``, only the input and output boxes and the language
+        direction are shown (see :meth:`set_compact`).
+        """
+        self._dismissed = False
+        self.set_compact(compact)
+        if not self.isVisible():
+            self._center_on_cursor_screen()
+        if self.isMinimized():
+            self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
+        self.show()
+        self.raise_()
+        self.activateWindow()
+        hotkey.activate_app()
+        self.input.setFocus()
+        self.input.moveCursor(QTextCursor.End)
+
+    def set_compact(self, compact: bool) -> None:
+        """Switch between the minimal and the full layout.
+
+        The minimal layout hides the language and tone pickers, the box labels,
+        and the model/hotkey hints, showing just the direction instead.
+        """
+        self.compact = compact
+        self.options_bar.setVisible(not compact)
+        self.pair_button.setVisible(compact)
+        for widget in (self.input_label, self.output_label, self.model_label, self.hotkey_label):
+            widget.setVisible(not compact)
+
+    def dismiss(self) -> None:
+        """Hide the window and return focus to the previously active app."""
+        self._dismissed = True
+        self.hide()
+        hotkey.hide_app()
+
+    def _center_on_cursor_screen(self) -> None:
+        """Center horizontally on the cursor's screen, in its upper part."""
+        screen = (
+            QGuiApplication.screenAt(QCursor.pos())
+            or self.screen()
+            or QGuiApplication.primaryScreen()
+        )
+        if screen is None:
+            return
+        area = screen.availableGeometry()
+        frame = self.frameGeometry()
+        x = area.x() + (area.width() - frame.width()) // 2
+        y = area.y() + max(0, (area.height() - frame.height()) // 4)
+        self.move(x, y)
+
+    def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
+        # Reactivating the app (Dock icon, ⌘Tab) while dismissed shows the window.
+        if state == Qt.ApplicationActive and self._dismissed and not self.isVisible():
+            self.summon()
+
+    # --- Hotkey settings --------------------------------------------------
+
+    def _register_hotkey(self) -> bool:
+        """(Re-)register the saved hotkey and reflect the outcome.
+
+        Returns False if a saved hotkey could not be registered.
+        """
+        parsed = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
+        if parsed is None:
+            self.global_hotkey.unregister()
+            ok = True
+        else:
+            ok = self.global_hotkey.register(parsed)
+        self._reflect_hotkey()
+        return ok
+
+    def _reflect_hotkey(self) -> None:
+        parsed = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
+        where = "Settings \u203a Set Show/Hide Hotkey\u2026"
+        if parsed is None:
+            text, tip = "Hotkey off", f"No show/hide hotkey \u2014 set one in {where}"
+        elif self.global_hotkey.is_registered:
+            text = f"{parsed.symbols()} to show/hide"
+            tip = f"Press {parsed.symbols()} in any app to show or hide Type Fast \u2014 change it in {where}"
+        elif not hotkey.GlobalHotkey.is_supported():
+            text = f"{parsed.symbols()} (inactive)"
+            tip = "Global hotkeys are only available in the macOS app"
+        else:
+            text = f"{parsed.symbols()} unavailable"
+            tip = (
+                f"{parsed.symbols()} could not be registered (it may be used by "
+                f"macOS or another app) \u2014 choose another in {where}"
+            )
+        self.hotkey_label.setText(text)
+        self.hotkey_label.setToolTip(tip)
+        self.set_hotkey_action.setToolTip(tip)
+
+    def _set_hotkey(self) -> None:
+        # Release the current hotkey while recording, or pressing it would
+        # toggle the window instead of being captured by the dialog.
+        self.global_hotkey.unregister()
+        dialog = HotkeyDialog(self.prefs.hotkey, self)
+        if dialog.exec() == QDialog.Accepted:
+            self._apply_hotkey(dialog.chosen)
+        else:
+            self._register_hotkey()  # cancelled: restore the previous hotkey
+
+    def _apply_hotkey(self, text: str) -> bool:
+        """Switch to hotkey ``text`` ("" disables it) and save it.
+
+        Returns False, keeping the previous hotkey registered, if ``text`` is
+        invalid or macOS refuses to register it.
+        """
+        title = "Set Show/Hide Hotkey"
+        text = text.strip()
+        parsed = hotkey.parse(text) if text else None
+        if text and parsed is None:
+            QMessageBox.warning(self, title, f"\u201c{text}\u201d is not a valid hotkey.")
+            self._register_hotkey()
+            return False
+        if parsed is None:
+            self.global_hotkey.unregister()
+        elif not self.global_hotkey.register(parsed) and hotkey.GlobalHotkey.is_supported():
+            # The previous hotkey was released while recording; restore it first
+            # so the message reports what is actually active.
+            restored = self._register_hotkey()
+            previous = hotkey.parse(self.prefs.hotkey) if self.prefs.hotkey else None
+            if previous is None:
+                keeping = "The hotkey stays off."
+            elif restored:
+                keeping = f"Keeping {previous.symbols()}."
+            else:
+                keeping = (
+                    f"{previous.symbols()} could not be restored either, so the hotkey "
+                    "is off until you choose another."
+                )
+            QMessageBox.warning(
+                self,
+                title,
+                f"{parsed.symbols()} could not be registered; it may already be used "
+                f"by macOS or another app. {keeping}",
+            )
+            return False
+        # Registration is skipped on unsupported platforms; still save the choice.
+        self.prefs.hotkey = str(parsed) if parsed else ""
+        self._reflect_hotkey()
+        self._save_prefs(title, "hotkey")
+        return True
 
     def _reflect_model(self) -> None:
         provider = providers.active_provider()
@@ -383,6 +719,9 @@ class MainWindow(QMainWindow):
             _AUTO_LABEL if source == config.AUTO_SOURCE else _language_label(source)
         )
         self.output_label.setText(_language_label(target))
+        self.pair_button.setText(
+            f"{_AUTO_LABEL if source == config.AUTO_SOURCE else source} \u2192 {target}"
+        )
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
@@ -539,7 +878,8 @@ def main() -> None:
     app.setApplicationDisplayName("Type Fast")
     window = MainWindow()
     window.resize(460, 380)
-    window.show()
+    # Show on launch so first-time users see the window (and its hotkey hint).
+    window.summon()
     app.exec()
 
 

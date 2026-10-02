@@ -25,7 +25,7 @@ jobs:
           pip install -e .
 
       - name: Import check
-        run: python -c "import type_fast.app, type_fast.translator, type_fast.config; print('imports OK')"
+        run: python -c "import type_fast.app, type_fast.translator, type_fast.config, type_fast.hotkey; print('imports OK')"
 
       - name: Unit tests
         env:
@@ -38,7 +38,7 @@ jobs:
         run: |
           python - <<'PY'
           from PySide6.QtWidgets import QApplication
-          from type_fast import config
+          from type_fast import config, hotkey
           from type_fast.app import MainWindow
           app = QApplication([])
           w = MainWindow()
@@ -46,5 +46,11 @@ jobs:
           assert w.source_lang.count() == len(config.LANGUAGES) + 1
           assert w.target_lang.count() == len(config.LANGUAGES)
           assert w.tone.count() == len(config.TONES) + 1
+          assert isinstance(w.global_hotkey, hotkey.GlobalHotkey)
+          assert not w.global_hotkey.is_registered  # never grabbed headless
+          w.toggle_visibility()
+          assert w.isVisible()
+          w.dismiss()
+          assert not w.isVisible()
           print("window OK")
           PY

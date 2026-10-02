@@ -88,7 +88,7 @@ python -m type_fast.app
 type-fast
 ```
 
-A small always-on-top window opens with:
+A small window opens with:
 
 - source and target language pickers with a ⇄ swap button (see
   [Languages](#languages)),
@@ -99,6 +99,48 @@ A small always-on-top window opens with:
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`).
+
+The window is shown when the app launches; after that, summon and dismiss it
+with the [show/hide hotkey](#showhide-hotkey) so it doesn't take up screen
+space while you're not using it.
+
+### Show/hide hotkey
+
+Like Spotlight, Type Fast pops up on demand with a global hotkey —
+**⇧⌘Space** (Shift+Command+Space) by default — from any app. It appears centered near
+the top of the screen under the mouse pointer, stays on top while shown, and
+puts the cursor in the input box. Press the hotkey again, or **Esc**, to hide it
+and return to the app you were using. The current hotkey is shown at the bottom
+of the window.
+
+A window opened with the hotkey uses a minimal layout: just the input and output
+boxes under a one-line direction such as **English → Japanese**, with no
+language or tone pickers. Click the direction, or press **⌘L** (**Settings →
+Show Language & Tone Options**), to show the pickers. When the
+window opens any other way (at launch, from the Dock, or with ⌘Tab) it shows the
+full layout.
+
+To change it, choose **Settings → Set Show/Hide Hotkey…** and press the new
+combination. It must include ⌘ Command, ⌃ Control, or ⌥ Option (F-keys work on
+their own). **Reset to Default** restores ⇧⌘Space and **Disable** turns the
+hotkey off. If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type
+Fast tells you and keeps the previous one. Another app's global shortcut can't
+always be detected, so if the new hotkey does nothing, pick a different one.
+
+The default avoids the shortcuts macOS already uses for Space: ⌘Space and
+⌥⌘Space (Spotlight), and ⌃Space and ⌃⌥Space (switching input sources). It
+also avoids ⌥Space, which types a non-breaking space and is the default for
+launchers such as Alfred, Raycast, and ChatGPT. To use ⌘Space for Type Fast
+anyway, first change or turn off Spotlight's shortcut in **System Settings →
+Keyboard → Keyboard Shortcuts → Spotlight**.
+
+Hotkeys are tied to the physical key you press, so they keep working if you
+switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
+is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
+
+The hotkey needs no Accessibility permission. It is saved to
+`~/.type-fast/settings.json` (as `"hotkey": "Shift+Cmd+Space"`; an empty string
+disables it).
 
 ### Languages
 
@@ -133,8 +175,8 @@ instruction) is saved to `~/.type-fast/settings.json` and restored on launch.
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the default
 model, the models suggested in the model picker, temperature, supported
-languages and the default language pair, tone presets, and the debounce
-interval. Provider selection (OpenAI vs.
+languages and the default language pair, tone presets, the debounce
+interval, and the default show/hide hotkey. Provider selection (OpenAI vs.
 Azure AI Foundry) is driven by the environment variables described under
 [Setup](#setup).
 
@@ -177,4 +219,5 @@ the API when launched from Finder.
 
 - Store the API key in the macOS Keychain instead of a key file.
 - Sign and notarize the `.app` with a Developer ID for distribution to others.
-- A menu-bar wrapper.
+- A menu-bar wrapper (and hiding the Dock icon), now that the window can be
+  summoned with the show/hide hotkey.
