@@ -1,7 +1,8 @@
 # Type Fast
 
-A simple macOS input tool that translates what you type, bidirectionally between
-English and Japanese, using the OpenAI API. Type in one box and the translation
+A simple macOS input tool that translates what you type between many languages
+(English, Japanese, Chinese, Korean, Spanish, French, German, and more) using
+the OpenAI API. Type in one box and the translation
 streams into the other.
 
 ## Download
@@ -89,19 +90,37 @@ type-fast
 
 A small always-on-top window opens with:
 
-- a direction toggle (English → Japanese / Japanese → English),
+- source and target language pickers with a ⇄ swap button (see
+  [Languages](#languages)),
 - a tone selector for the translation (see [Tone](#tone)),
 - an input box,
 - an output box that streams the translation, and
 - the active model, shown at the bottom left.
 
 Translation fires shortly after you stop typing, or immediately when your text
-ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`).
+ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`).
+
+### Languages
+
+Choose the language you type in on the left and the language to translate into
+on the right. Supported languages: English, Japanese, Chinese (Simplified),
+Chinese (Traditional), Korean, Spanish, French, German, Italian, Portuguese,
+Russian, Vietnamese, Thai, Indonesian, Hindi, and Arabic.
+
+- **Auto-detect** as the source lets the model work out the input language.
+- **⇄** swaps the source and target. It is disabled while the source is
+  Auto-detect.
+- Picking the same language on both sides swaps the pair instead.
+- Changing either language re-translates the current text.
+
+The pair is saved to `~/.type-fast/settings.json` (with the tone) and restored
+on launch. To add a language, add an entry to `LANGUAGES` in
+[`type_fast/config.py`](type_fast/config.py).
 
 ### Tone
 
-Pick the tone of the translated text from the selector next to the direction
-toggle: **Polite** (default), **Casual**, **Formal**, **Business**,
+Pick the tone of the translated text from the selector next to the language
+pickers: **Polite** (default), **Casual**, **Formal**, **Business**,
 **Friendly**, or **Neutral** (mirror the original). Choose **Custom…** — or
 **Settings → Set Custom Tone…** — to write your own instruction, such as
 "Humble keigo (謙譲語) for a client" or "Playful, with a light touch of humor".
@@ -113,8 +132,9 @@ instruction) is saved to `~/.type-fast/settings.json` and restored on launch.
 ## Configuration
 
 Defaults live in [`type_fast/config.py`](type_fast/config.py): the default
-model, the models suggested in the model picker, temperature, default language
-pair, tone presets, and the debounce interval. Provider selection (OpenAI vs.
+model, the models suggested in the model picker, temperature, supported
+languages and the default language pair, tone presets, and the debounce
+interval. Provider selection (OpenAI vs.
 Azure AI Foundry) is driven by the environment variables described under
 [Setup](#setup).
 
@@ -157,4 +177,4 @@ the API when launched from Finder.
 
 - Store the API key in the macOS Keychain instead of a key file.
 - Sign and notarize the `.app` with a Developer ID for distribution to others.
-- A menu-bar wrapper and more language pairs.
+- A menu-bar wrapper.

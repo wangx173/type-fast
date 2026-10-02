@@ -43,18 +43,18 @@ class ToneSettingsTests(unittest.TestCase):
         self.assertEqual(loaded.instruction(), config.TONES[config.DEFAULT_TONE])
 
     def test_round_trip(self) -> None:
-        settings.save(settings.ToneSettings(tone="Casual", custom_tone="x"))
+        settings.save(settings.Settings(tone="Casual", custom_tone="x"))
         loaded = settings.load()
         self.assertEqual(loaded.tone, "Casual")
         self.assertEqual(loaded.custom_tone, "x")
         self.assertEqual(loaded.instruction(), config.TONES["Casual"])
 
     def test_custom_tone_instruction(self) -> None:
-        tone = settings.ToneSettings(tone=config.CUSTOM_TONE, custom_tone=" Be terse. ")
+        tone = settings.Settings(tone=config.CUSTOM_TONE, custom_tone=" Be terse. ")
         self.assertEqual(tone.instruction(), "Be terse.")
 
     def test_empty_custom_tone_falls_back(self) -> None:
-        tone = settings.ToneSettings(tone=config.CUSTOM_TONE, custom_tone="")
+        tone = settings.Settings(tone=config.CUSTOM_TONE, custom_tone="")
         self.assertEqual(tone.instruction(), config.TONES[config.DEFAULT_TONE])
 
     def test_invalid_file_falls_back(self) -> None:

@@ -1,8 +1,8 @@
-"""Persistent user preferences for the translation tone.
+"""Persistent user preferences: language pair and translation tone.
 
-Stored as JSON in ``~/.type-fast/settings.json`` so the chosen tone (and any
-custom tone instruction) survives restarts. A missing or unreadable file falls
-back to the defaults in :mod:`type_fast.config`.
+Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
+and any custom tone instruction survive restarts. A missing, unreadable, or
+invalid file (or field) falls back to the defaults in :mod:`type_fast.config`.
 """
 
 from __future__ import annotations
@@ -17,9 +17,11 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 
 @dataclass
-class ToneSettings:
-    """The selected tone preset and the user's custom tone instruction."""
+class Settings:
+    """The selected language pair, tone preset, and custom tone instruction."""
 
+    source: str = config.DEFAULT_UI_SOURCE
+    target: str = config.DEFAULT_UI_TARGET
     tone: str = config.DEFAULT_TONE
     custom_tone: str = ""
 
@@ -31,24 +33,44 @@ class ToneSettings:
         return config.TONES.get(self.tone, config.TONES[config.DEFAULT_TONE])
 
 
-def load() -> ToneSettings:
-    """Load saved tone settings, falling back to defaults on any problem."""
+def _pick(value: object, valid: set[str], default: str) -> str:
+    return value if isinstance(value, str) and value in valid else default
+
+
+def load() -> Settings:
+    """Load saved settings, falling back to defaults on any problem."""
     try:
         data = json.loads(SETTINGS_FILE.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return ToneSettings()
+        return Settings()
     if not isinstance(data, dict):
-        return ToneSettings()
-    tone = data.get("tone")
+        return Settings()
+    # The pair is validated as a unit: if either side is missing, invalid, or
+    # both are the same, restore the whole default pair.
+    source, target = data.get("source"), data.get("target")
+    languages = set(config.LANGUAGES)
+    if not (
+        isinstance(source, str)
+        and isinstance(target, str)
+        and source in languages | {config.AUTO_SOURCE}
+        and target in languages
+        and source != target
+    ):
+        source, target = config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET
     custom = data.get("custom_tone")
-    valid = set(config.TONES) | {config.CUSTOM_TONE}
-    return ToneSettings(
-        tone=tone if isinstance(tone, str) and tone in valid else config.DEFAULT_TONE,
+    return Settings(
+        source=source,
+        target=target,
+        tone=_pick(
+            data.get("tone"),
+            set(config.TONES) | {config.CUSTOM_TONE},
+            config.DEFAULT_TONE,
+        ),
         custom_tone=custom if isinstance(custom, str) else "",
     )
 
 
-def save(settings: ToneSettings) -> None:
+def save(settings: Settings) -> None:
     """Write ``settings`` to the settings file."""
     SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     SETTINGS_FILE.write_text(
