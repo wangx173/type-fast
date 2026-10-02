@@ -87,6 +87,8 @@ def translate_stream(
         if not use_temperature or "temperature" not in str(exc).lower():
             raise
         _models_without_temperature.add(model)
+        if should_cancel is not None and should_cancel():
+            return
         yield from _stream(client, model, text, source, target, tone,
                            False, should_cancel)
 

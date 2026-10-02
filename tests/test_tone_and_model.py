@@ -173,6 +173,25 @@ class TranslateStreamTests(unittest.TestCase):
         self.assertNotIn("temperature", calls[1].kwargs)
         self.assertNotIn("temperature", calls[2].kwargs)  # remembered
 
+    def test_no_retry_when_cancelled(self) -> None:
+        import openai
+
+        rejection = openai.BadRequestError.__new__(openai.BadRequestError)
+        Exception.__init__(rejection, "Unsupported parameter: 'temperature'")
+        bad_cm = mock.MagicMock()
+        bad_cm.__enter__.side_effect = rejection
+        client = mock.Mock()
+        client.responses.stream.return_value = bad_cm
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            out = list(
+                translator.translate_stream(
+                    "hello", model="my-deploy", should_cancel=lambda: True
+                )
+            )
+        self.assertEqual(out, [])
+        self.assertEqual(client.responses.stream.call_count, 1)
+
 
 if __name__ == "__main__":
     unittest.main()
