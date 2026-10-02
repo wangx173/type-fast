@@ -7,6 +7,7 @@ cached, so importing this package never fails when credentials are absent.
 
 from __future__ import annotations
 
+import os
 from types import ModuleType
 from typing import Optional
 
@@ -33,6 +34,21 @@ def has_credentials() -> bool:
 def get_model() -> str:
     """Return the model/deployment name for the active provider."""
     return active_provider().get_model()
+
+
+def model_env_override() -> Optional[str]:
+    """Return the env var name if it currently pins the active provider's model.
+
+    An environment variable takes precedence over the saved model file, so a
+    model chosen in the app has no effect while this returns a name.
+    """
+    env = active_provider().MODEL_ENV
+    return env if os.environ.get(env, "").strip() else None
+
+
+def save_model(model: str) -> None:
+    """Save ``model`` for the active provider (blank restores the default)."""
+    active_provider().save_model(model)
 
 
 def get_client() -> OpenAI:

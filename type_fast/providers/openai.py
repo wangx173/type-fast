@@ -1,8 +1,10 @@
 """OpenAI provider: credentials, model, and client construction.
 
 The API key is read from the ``OPENAI_API_KEY`` environment variable, or, when
-that is not set, from the fallback file ``~/.type-fast/api_key``. This is the
-default provider, used whenever Azure AI Foundry is not configured.
+that is not set, from the fallback file ``~/.type-fast/api_key``. The model is
+read from ``OPENAI_MODEL`` or ``~/.type-fast/openai_model`` (settable in the app
+via Settings › Set Model…), defaulting to :data:`type_fast.config.DEFAULT_MODEL`.
+This is the default provider, used whenever Azure AI Foundry is not configured.
 """
 
 from __future__ import annotations
@@ -10,12 +12,17 @@ from __future__ import annotations
 from openai import OpenAI
 
 from .. import config
-from ._common import CONFIG_DIR, from_env_or_file
+from ._common import CONFIG_DIR, from_env_or_file, write_or_clear
 
 NAME = "openai"
+DISPLAY_NAME = "OpenAI"
 
 # Fallback key file, used when OPENAI_API_KEY is not in the environment.
 API_KEY_FILE = CONFIG_DIR / "api_key"
+
+# Model override: environment variable, then fallback file, then the default.
+MODEL_ENV = "OPENAI_MODEL"
+MODEL_FILE = CONFIG_DIR / "openai_model"
 
 
 class MissingAPIKeyError(RuntimeError):
@@ -33,8 +40,13 @@ def is_configured() -> bool:
 
 
 def get_model() -> str:
-    """Return the model name used for OpenAI requests."""
-    return config.DEFAULT_MODEL
+    """Return the model name used for OpenAI requests (or the shared default)."""
+    return from_env_or_file(MODEL_ENV, MODEL_FILE) or config.DEFAULT_MODEL
+
+
+def save_model(model: str) -> None:
+    """Persist ``model`` to the model file; a blank value restores the default."""
+    write_or_clear(MODEL_FILE, model)
 
 
 def get_api_key() -> str:

@@ -16,7 +16,17 @@ CONFIG_DIR = Path.home() / ".type-fast"
 
 def from_env_or_file(env_var: str, file_path: Path) -> str:
     """Return ``env_var`` if set, else the trimmed contents of ``file_path``."""
-    value = os.environ.get(env_var)
+    value = (os.environ.get(env_var) or "").strip()
     if not value and file_path.is_file():
         value = file_path.read_text(encoding="utf-8").strip()
-    return (value or "").strip()
+    return value
+
+
+def write_or_clear(file_path: Path, value: str) -> None:
+    """Write ``value`` to ``file_path``, or delete the file if it is blank."""
+    value = value.strip()
+    if not value:
+        file_path.unlink(missing_ok=True)
+        return
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_text(value, encoding="utf-8")
