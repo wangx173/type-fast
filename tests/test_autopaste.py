@@ -459,7 +459,7 @@ class WindowAutoPasteTests(unittest.TestCase):
 
         def single_shot(delay: int, callback: Callable[[], None]) -> None:
             checks.append(delay)
-            if len(checks) == 3:
+            if len(checks) == 3:  # the paste's delay, then two retries
                 self.frontmost_pid = 100  # focus comes back on a later check
             callback()
 

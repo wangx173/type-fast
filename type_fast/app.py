@@ -492,7 +492,8 @@ class MainWindow(QMainWindow):
         self._shown_count = 0
         # A hotkey hide whose paste waits for the translation still running,
         # or None; the paste happens once it finishes (see _on_finished),
-        # unless that takes too long or something is copied in the meantime.
+        # unless something is copied in the meantime. Timing out, summoning,
+        # an error, or re-translating drops it (see _cancel_deferred_paste).
         self._deferred_paste: _DeferredPaste | None = None
         self._deferred_paste_timer = QTimer(self)
         self._deferred_paste_timer.setSingleShot(True)
