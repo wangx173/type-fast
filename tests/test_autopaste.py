@@ -318,6 +318,25 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._type("Hello.\nWorld.")
         self.assertEqual(w._request_id, stale + 2)
 
+    def test_reopening_starts_empty(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+        self._hotkey()
+        w.summon()
+        self.assertEqual(w.input.toPlainText(), "")
+        self.assertEqual(w.output.toPlainText(), "")
+        self.assertEqual(w.status.text(), "")
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+        # A translation still running when the window was hidden is dropped.
+        self._type("World.")
+        stale = w._request_id
+        w.dismiss()
+        w.summon()
+        w.bridge.finished.emit(stale, "Monde.")
+        self.assertEqual(w.output.toPlainText(), "")
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+
     def test_finished_while_hidden_is_not_pasted_later(self) -> None:
         w = self.window
         w.summon()

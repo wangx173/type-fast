@@ -314,9 +314,11 @@ class WindowHotkeyTests(unittest.TestCase):
 
     def test_summon_puts_cursor_at_end(self) -> None:
         w = self.window
+        w.summon()
         w.input.setPlainText("hello")
         w.input.moveCursor(self.app_module.QTextCursor.Start)
-        w.summon()
+        w.summon()  # raising the shown window keeps its input
+        self.assertEqual(w.input.toPlainText(), "hello")
         self.assertEqual(w.input.textCursor().position(), len("hello"))
 
     def test_escape_dismisses_from_input(self) -> None:

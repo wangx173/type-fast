@@ -36,7 +36,8 @@ Like Spotlight, Type Fast pops up from any app with a global hotkey:
 **⇧⌘Space** (Shift+Command+Space) by default.
 
 - The window appears near the top of the screen the mouse pointer is on, stays
-  on top, and puts the cursor in the input box.
+  on top, and puts the cursor in the input box. It opens empty each time; the
+  last translation is still on the clipboard.
 - Press the hotkey again to hide it, return to the app you were using, and
   [paste the translation](#auto-paste) there. **Esc** hides it without pasting.
   If you have clicked into another app while the window is still shown,

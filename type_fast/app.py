@@ -692,10 +692,12 @@ class MainWindow(QMainWindow):
         self.set_compact(compact)
         appearing = not self.isVisible()
         if appearing:
-            # Whatever finished while hidden (or was dismissed with Esc) has
-            # been seen or skipped; don't paste it on the next hide.
+            # Start empty each time; the last translation stays on the
+            # clipboard. Whatever finished while hidden is dropped, so the
+            # next hide doesn't paste it.
             self._paste_text = ""
             self._shown_count += 1
+            self._clear_input()
             self._center_on_cursor_screen()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
@@ -710,6 +712,13 @@ class MainWindow(QMainWindow):
         # Fade in, Spotlight-style. Activation may land a moment later; the
         # focus change then retargets the fade.
         self._update_opacity(start=0.0 if appearing else None, engaged=True)
+
+    def _clear_input(self) -> None:
+        self.input.clear()
+        self.timer.stop()
+        # Empty input: drops any translation still running and clears the output.
+        self.run_translation()
+        self._set_status("")
 
     def set_compact(self, compact: bool) -> None:
         """Switch between the minimal and the full layout.
