@@ -454,6 +454,9 @@ class MainWindow(QMainWindow):
         self._paste_text = ""
         # The permission prompt is shown at most once per launch.
         self._asked_paste_permission = False
+        # Bumped each time the window appears, so a paste still waiting from
+        # an earlier hide is dropped (see dismiss).
+        self._shown_count = 0
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         self._register_hotkey()
@@ -688,6 +691,7 @@ class MainWindow(QMainWindow):
             # Whatever finished while hidden (or was dismissed with Esc) has
             # been seen or skipped; don't paste it on the next hide.
             self._paste_text = ""
+            self._shown_count += 1
             self._center_on_cursor_screen()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
@@ -726,7 +730,10 @@ class MainWindow(QMainWindow):
         self.hide()
         hotkey.hide_app()
         if text:
-            QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text))
+            shown = self._shown_count
+            QTimer.singleShot(
+                _PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown)
+            )
 
     def _take_paste_text(self) -> str:
         """Return the translation to paste, or "", and mark it as pasted.
@@ -752,8 +759,12 @@ class MainWindow(QMainWindow):
             and QApplication.clipboard().text() == text
         )
 
-    def _paste_into_previous_app(self, text: str) -> None:
-        if self.isVisible() or not self._is_pasteable(text):
+    def _paste_into_previous_app(self, text: str, shown: int) -> None:
+        if (
+            shown != self._shown_count
+            or self.isVisible()
+            or not self._is_pasteable(text)
+        ):
             return  # summoned again, or the clipboard changed, before the paste
         if autopaste.send_paste() or self._asked_paste_permission:
             return

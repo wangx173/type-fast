@@ -322,7 +322,24 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.summon()
         self._translate()
         w.show()
-        w._paste_into_previous_app("Bonjour.")
+        w._paste_into_previous_app("Bonjour.", w._shown_count)
+        self.send_paste.assert_not_called()
+
+    def test_no_paste_if_summoned_and_hidden_again_before_it_runs(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+        pending: list[Callable[[], None]] = []
+
+        def single_shot(delay: int, callback: Callable[[], None]) -> None:
+            pending.append(callback)
+
+        with mock.patch.object(self.app_module.QTimer, "singleShot", single_shot):
+            self._hotkey()  # hide: paste scheduled
+            self._hotkey()  # summon
+            self._hotkey()  # hide again, within the delay
+        for callback in pending:
+            callback()
         self.send_paste.assert_not_called()
 
     def test_asks_for_permission_once_per_launch(self) -> None:
