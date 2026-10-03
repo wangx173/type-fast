@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Type Fast app icon: a keycap labeled "A" and "文" (typing + translation)
+       with speed lines (fast) on a macOS-style rounded square.
+       Original artwork drawn with plain paths (no fonts, filters, or images).
+       Re-export TypeFast.icns and type_fast/resources/icon.png after editing. -->
+  <title>Type Fast</title>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6E7CFF"/>
+      <stop offset="1" stop-color="#3B2CC9"/>
+    </linearGradient>
+    <linearGradient id="keycap-top" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E9ECF6"/>
+    </linearGradient>
+    <linearGradient id="keycap-side" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#D3D8E8"/>
+      <stop offset="1" stop-color="#A9B0CC"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#5B4BFF"/>
+      <stop offset="1" stop-color="#8A3FFC"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Soft drop shadow under the rounded square (stacked layers, no filters). -->
+  <g fill="#000000">
+    <rect x="104" y="116" width="816" height="816" rx="185" opacity="0.06"/>
+    <rect x="102" y="110" width="820" height="820" rx="185" opacity="0.08"/>
+  </g>
+
+  <!-- Rounded-square background on the macOS icon grid (824 px body). -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="url(#background)"/>
+
+  <!-- Speed lines. -->
+  <g stroke="#FFFFFF" stroke-width="36" stroke-linecap="round" opacity="0.75">
+    <path d="M170,420 L262,420"/>
+    <path d="M140,512 L262,512"/>
+    <path d="M190,604 L262,604"/>
+  </g>
+
+  <!-- Keycap: shadow, sides, and top face. -->
+  <rect x="306" y="284" width="480" height="500" rx="96" fill="#2A1F9A" opacity="0.35"/>
+  <rect x="306" y="262" width="480" height="500" rx="96" fill="url(#keycap-side)"/>
+  <rect x="340" y="282" width="412" height="408" rx="72" fill="url(#keycap-top)"/>
+
+  <!-- Legends: Latin "A" (top left) and "文" (bottom right), like a JIS keycap. -->
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path stroke="#1F2257" stroke-width="32"
+          d="M391,472 L457,322 L523,472 M415,421 L499,421"/>
+    <path stroke="url(#accent)" stroke-width="34"
+          d="M620,452 L620,477.5 M533.8,504.9 L706.2,504.9
+             M667,522.6 Q631.8,612.7 537.7,648 M573,522.6 Q608.2,612.7 702.3,648"/>
+  </g>
+</svg>

@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import string
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -54,6 +55,7 @@ from PySide6.QtGui import (
     QCursor,
     QDesktopServices,
     QGuiApplication,
+    QIcon,
     QKeySequence,
     QShortcut,
     QTextCursor,
@@ -1281,10 +1283,21 @@ class MainWindow(QMainWindow):
             self._set_status("Copied to clipboard \u2713", "done")
 
 
+# The Dock and window icon, set at runtime in every run mode (Type Fast.spec
+# bundles it into the .app). Finder uses assets/icon/TypeFast.icns instead.
+ICON_PATH = Path(__file__).resolve().parent / "resources" / "icon.png"
+
+
+def app_icon() -> QIcon:
+    """Return the Type Fast icon (empty if the image file is missing)."""
+    return QIcon(str(ICON_PATH))
+
+
 def main() -> None:
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Type Fast")
     app.setApplicationDisplayName("Type Fast")
+    app.setWindowIcon(app_icon())
     window = MainWindow()
     window.resize(460, 380)
     # Show on launch so first-time users see the window (and its hotkey hint).
