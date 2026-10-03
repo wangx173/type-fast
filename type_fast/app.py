@@ -469,6 +469,8 @@ class MainWindow(QMainWindow):
         # Monotonic id identifying the most recent translation request so that
         # superseded, slower in-flight translations are discarded.
         self._request_id = 0
+        # Whether that request is still running.
+        self._translating = False
 
         # The last (frozen_src, active, source, target, tone, model,
         # should_freeze) actually sent, used to skip redundant requests when
@@ -1126,6 +1128,7 @@ class MainWindow(QMainWindow):
             self._frozen_out = ""
 
         if not full.strip():
+            self._cancel_translation()
             self._frozen_src = ""
             self._frozen_out = ""
             self._last_sent_key = None
@@ -1147,6 +1150,8 @@ class MainWindow(QMainWindow):
             frozen_after = self._frozen_src + rest[: newline + 1]
 
         if not active:
+            # The line being translated, if any, was deleted.
+            self._cancel_translation()
             if should_freeze and frozen_after != self._frozen_src:
                 # Blank completed line: advance the boundary, preserve the gap,
                 # and continue with any following lines.
@@ -1171,6 +1176,7 @@ class MainWindow(QMainWindow):
 
         self._request_id += 1
         request_id = self._request_id
+        self._translating = True
         self.bridge.started.emit(request_id)
 
         thread = threading.Thread(
@@ -1179,6 +1185,14 @@ class MainWindow(QMainWindow):
             daemon=True,
         )
         thread.start()
+
+    def _cancel_translation(self) -> None:
+        """Drop the request still running, if any, so its result never lands."""
+        if self._translating:
+            self._translating = False
+            self._request_id += 1
+            self._last_sent_key = None
+            self._set_status("")
 
     def _translate_worker(
         self,
@@ -1225,6 +1239,7 @@ class MainWindow(QMainWindow):
     def _on_finished(self, request_id: int, translation: str) -> None:
         if request_id != self._request_id:
             return
+        self._translating = False
         should_freeze, frozen_after, prefix = self._pending_freeze
         if should_freeze:
             self._frozen_src = frozen_after
@@ -1238,6 +1253,7 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
+            self._translating = False
             self._paste_text = ""
             self._set_status("")
             self.output.setPlainText(f"[error] {message}")

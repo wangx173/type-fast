@@ -277,6 +277,47 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._hotkey()
         self.send_paste.assert_not_called()
 
+    def _type(self, text: str) -> None:
+        w = self.window
+        w.input.setPlainText(text)
+        w.timer.stop()
+        w.run_translation()
+
+    def test_clearing_the_input_drops_the_translation_in_flight(self) -> None:
+        w = self.window
+        w.summon()
+        self._type("Hello.")
+        stale = w._request_id
+        self._type("")
+        w.bridge.delta.emit(stale, "Bonjour.")
+        w.bridge.finished.emit(stale, "Bonjour.")
+        self.assertEqual(w.output.toPlainText(), "")
+        self.assertEqual(w.status.text(), "")
+        self._hotkey()
+        self.send_paste.assert_not_called()
+        # Typing the same text again translates it again.
+        w.summon()
+        self._type("Hello.")
+        self.assertEqual(w._request_id, stale + 2)
+        self.assertEqual(w.status.text(), "Translating\u2026")
+
+    def test_deleting_the_line_in_flight_drops_its_translation(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate("Hello.\n")
+        self._type("Hello.\nWorld.")
+        stale = w._request_id
+        self._type("Hello.\n")
+        w.bridge.delta.emit(stale, "Monde.")
+        w.bridge.finished.emit(stale, "Monde.")
+        self.assertEqual(w.output.toPlainText(), "Bonjour.")
+        self._hotkey()
+        self.send_paste.assert_not_called()
+        # Typing the deleted line again translates it again.
+        w.summon()
+        self._type("Hello.\nWorld.")
+        self.assertEqual(w._request_id, stale + 2)
+
     def test_finished_while_hidden_is_not_pasted_later(self) -> None:
         w = self.window
         w.summon()
