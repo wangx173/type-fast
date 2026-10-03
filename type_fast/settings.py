@@ -1,7 +1,8 @@
-"""Persistent user preferences: language pair, translation tone, and hotkey.
+"""Persistent user preferences: languages, tone, hotkey, and transparency.
 
 Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
-any custom tone instruction, and the global show/hide hotkey survive restarts. A
+any custom tone instruction, the global show/hide hotkey, and the window
+transparency survive restarts. A
 missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
 ``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
@@ -20,7 +21,7 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 @dataclass
 class Settings:
-    """The selected language pair, tone, custom tone, and show/hide hotkey."""
+    """The selected language pair, tone, custom tone, hotkey, and transparency."""
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
@@ -28,6 +29,8 @@ class Settings:
     custom_tone: str = ""
     # Canonical hotkey text; "" means the global hotkey is disabled.
     hotkey: str = config.DEFAULT_HOTKEY
+    # Name of a :data:`config.TRANSPARENCY` preset.
+    transparency: str = config.DEFAULT_TRANSPARENCY
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
@@ -83,6 +86,11 @@ def load() -> Settings:
         ),
         custom_tone=custom if isinstance(custom, str) else "",
         hotkey=_pick_hotkey(data.get("hotkey")),
+        transparency=_pick(
+            data.get("transparency"),
+            set(config.TRANSPARENCY),
+            config.DEFAULT_TRANSPARENCY,
+        ),
     )
 
 

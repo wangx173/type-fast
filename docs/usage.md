@@ -2,6 +2,7 @@
 
 - [The window](#the-window)
 - [Show/hide hotkey](#showhide-hotkey)
+- [Transparency](#transparency)
 - [Languages](#languages)
 - [Tone](#tone)
 
@@ -81,6 +82,29 @@ The hotkey needs no Accessibility permission. It is saved to
 disables it.
 
 </details>
+
+## Transparency
+
+The window floats above your other apps, so by default it is slightly
+see-through and doesn't fully hide what you are working on. You can turn this
+off.
+
+- It fades in when it appears.
+- While you use it, it is almost opaque so the text stays easy to read.
+- When you click into another app, it fades further so you can see the work
+  behind it. Hover over it, or click it, to bring it back.
+
+Choose how see-through it is in **Settings → Window Transparency**:
+
+| Setting             | While in use | In the background |
+|---------------------|--------------|-------------------|
+| **Off**             | 100%         | 100%              |
+| **Light** (default) | 95%          | 75%               |
+| **Medium**          | 88%          | 60%               |
+| **Strong**          | 80%          | 45%               |
+
+The percentages are opacity. Your choice is saved to
+`~/.type-fast/settings.json` as `"transparency"` and restored on launch.
 
 ## Languages
 

@@ -1,8 +1,9 @@
 """Shared, provider-agnostic configuration for type-fast.
 
 Holds the default model, temperature, supported languages and the default
-language pair, translation tone presets, the input debounce interval, and the
-default show/hide hotkey so they are easy to change in one place.
+language pair, translation tone presets, the input debounce interval, the
+default show/hide hotkey, and the window transparency presets so they are easy
+to change in one place.
 Provider-specific credential handling and client construction live in
 :mod:`type_fast.providers` (one module per provider).
 """
@@ -93,3 +94,16 @@ DEBOUNCE_MS = 500
 # non-breaking space and is claimed by launchers such as Alfred, Raycast, and
 # ChatGPT. Users can pick any combination in Settings › Set Show/Hide Hotkey….
 DEFAULT_HOTKEY = "Shift+Cmd+Space"
+
+# Window transparency presets: name -> (opacity while you are using Type Fast,
+# opacity while it sits in the background). The window stays on top of other
+# apps, so it fades further once you click elsewhere and comes back to the first
+# value when you return to it or hover over it. Pick one in Settings › Window
+# Transparency.
+TRANSPARENCY = {
+    "Off": (1.0, 1.0),
+    "Light": (0.95, 0.75),
+    "Medium": (0.88, 0.6),
+    "Strong": (0.8, 0.45),
+}
+DEFAULT_TRANSPARENCY = "Light"
