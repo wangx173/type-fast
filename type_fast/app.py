@@ -454,7 +454,7 @@ class MainWindow(QMainWindow):
         # The finished translation that hiding with the hotkey should paste,
         # or "" (see dismiss); each one is pasted at most once.
         self._paste_text = ""
-        # Hiding with the hotkey explains a missing permission once per launch.
+        # A missing permission is explained at most once per launch.
         self._asked_paste_permission = False
         # Bumped each time the window appears, so a paste still waiting from
         # an earlier hide is dropped (see dismiss).
@@ -800,7 +800,7 @@ class MainWindow(QMainWindow):
     def _set_auto_paste(self, enabled: bool) -> None:
         self.prefs.auto_paste = enabled
         self._save_prefs("Auto-Paste Translation", "auto-paste setting")
-        if enabled and self._needs_paste_permission():
+        if enabled and not self._asked_paste_permission and self._needs_paste_permission():
             self._ask_paste_permission()
 
     def _center_on_cursor_screen(self) -> None:

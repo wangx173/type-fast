@@ -100,8 +100,8 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
   typing anything, or you copied something else in the meantime, nothing is
   pasted.
 - Pasting into another app needs the **Accessibility** permission. If Type Fast
-  doesn't have it, it tells you when you turn auto-paste on, or the first time
-  the hotkey would paste (once per launch). Click **Open System Settings** and
+  doesn't have it, it tells you, at most once per launch, when you turn
+  auto-paste on or when the hotkey would paste. Click **Open System Settings** and
   turn on Type Fast under **Privacy & Security → Accessibility** (add it with
   **+** if it isn't listed). No relaunch is needed. Until then, the hotkey just
   hides the window and you can paste with **⌘V** yourself.

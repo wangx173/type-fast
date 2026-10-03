@@ -429,7 +429,10 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.auto_paste_action.trigger()
         self.assertTrue(settings.load().auto_paste)
         self.assertEqual(len(self.alerts), 1)
-        # Explained already this launch: a hotkey hide doesn't ask again.
+        # Explained already this launch: neither re-enabling nor a hotkey hide
+        # asks again.
+        w.auto_paste_action.trigger()
+        w.auto_paste_action.trigger()
         w.summon()
         self._translate()
         self._hotkey()
@@ -439,6 +442,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.auto_paste_action.trigger()
         self.assertEqual(len(self.alerts), 1)
         self.assertTrue(self._new_window().auto_paste_action.isChecked())
+
 
 if __name__ == "__main__":
     unittest.main()
