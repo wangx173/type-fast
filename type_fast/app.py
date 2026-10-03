@@ -99,10 +99,6 @@ _FADE_MS = 160
 # is active, in milliseconds.
 _HOVER_POLL_MS = 120
 
-# The app icon shown in the Dock and window when running from source. The built
-# .app also gets its Finder icon from assets/icon/TypeFast.icns.
-ICON_PATH = Path(__file__).resolve().parent / "resources" / "icon.png"
-
 # How long to let the previous app take focus back before pasting into it, in
 # milliseconds. Short enough to feel instant.
 _PASTE_DELAY_MS = 100
@@ -1285,6 +1281,11 @@ class MainWindow(QMainWindow):
             self._copy_change_count = hotkey.pasteboard_change_count()
             self._paste_text = text
             self._set_status("Copied to clipboard \u2713", "done")
+
+
+# The Dock and window icon, set at runtime in every run mode (Type Fast.spec
+# bundles it into the .app). Finder uses assets/icon/TypeFast.icns instead.
+ICON_PATH = Path(__file__).resolve().parent / "resources" / "icon.png"
 
 
 def app_icon() -> QIcon:

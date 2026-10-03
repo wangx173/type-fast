@@ -30,8 +30,10 @@ def _icns_types(data: bytes) -> set[bytes]:
         raise ValueError("not a valid .icns file")
     types, offset = set(), 8
     while offset < len(data):
+        if offset + 8 > len(data):
+            raise ValueError("truncated .icns element header")
         kind, length = struct.unpack(">4sI", data[offset:offset + 8])
-        if length < 8:
+        if length < 8 or offset + length > len(data):
             raise ValueError("corrupt .icns element")
         types.add(kind)
         offset += length

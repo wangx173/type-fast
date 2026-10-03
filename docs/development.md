@@ -68,9 +68,9 @@ uses `iconutil`):
 python scripts/build_icon.py
 ```
 
-This writes `assets/icon/TypeFast.icns`, which the `.app` bundle uses, and
-`type_fast/resources/icon.png`, which the app shows in the Dock and window when
-run from source. Commit all three files. Check the result at small sizes
+This writes `assets/icon/TypeFast.icns`, the `.app` bundle's Finder icon, and
+`type_fast/resources/icon.png`, which the app sets as its Dock and window icon
+at runtime (this is what you see when running from source). Commit all three files. Check the result at small sizes
 (16 and 32 px), where only the white key on the indigo background stays
 readable.
 

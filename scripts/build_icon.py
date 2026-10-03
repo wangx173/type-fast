@@ -22,6 +22,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+# Render without a display; this must be set before PySide6 is imported.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QRectF, Qt  # noqa: E402
@@ -51,8 +52,10 @@ def render(renderer: QSvgRenderer, size: int) -> QImage:
 
 
 def save(image: QImage, path: Path) -> None:
+    """Write ``image`` to ``path`` as a PNG."""
     if not image.save(str(path), "PNG"):
-        raise RuntimeError(f"could not write {path}")
+        raise OSError(f"could not write PNG to {path}; check that its folder "
+                      "exists and is writable")
 
 
 def main() -> int:
@@ -61,12 +64,15 @@ def main() -> int:
               file=sys.stderr)
         return 1
 
+    # Qt needs a live QGuiApplication to render; keep a reference until done.
     app = QGuiApplication.instance() or QGuiApplication([])  # noqa: F841
     renderer = QSvgRenderer(str(SVG_PATH))
     if not renderer.isValid():
         print(f"error: could not load {SVG_PATH}", file=sys.stderr)
         return 1
 
+    # Build both files in a temporary folder first, so a failure never leaves
+    # a new .icns next to a stale PNG (or the other way around).
     with tempfile.TemporaryDirectory() as tmp:
         iconset = Path(tmp) / "TypeFast.iconset"
         iconset.mkdir()
@@ -74,13 +80,21 @@ def main() -> int:
             save(render(renderer, size), iconset / f"icon_{size}x{size}.png")
             save(render(renderer, size * 2),
                  iconset / f"icon_{size}x{size}@2x.png")
-        subprocess.run(
-            ["iconutil", "-c", "icns", str(iconset), "-o", str(ICNS_PATH)],
-            check=True,
+        icns = Path(tmp) / ICNS_PATH.name
+        result = subprocess.run(
+            ["iconutil", "-c", "icns", str(iconset), "-o", str(icns)],
+            capture_output=True, text=True,
         )
+        if result.returncode != 0:
+            print(f"error: iconutil failed: {result.stderr.strip()}",
+                  file=sys.stderr)
+            return 1
+        png = Path(tmp) / PNG_PATH.name
+        save(render(renderer, PNG_SIZE), png)
 
-    PNG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    save(render(renderer, PNG_SIZE), PNG_PATH)
+        PNG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(icns, ICNS_PATH)
+        shutil.copyfile(png, PNG_PATH)
 
     for path in (ICNS_PATH, PNG_PATH):
         print(f"wrote {path.relative_to(ROOT)}")
