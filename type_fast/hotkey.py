@@ -563,6 +563,14 @@ def pasteboard_change_count() -> int | None:
     return _send(board, "changeCount", ctypes.c_long) if board else None
 
 
+def frontmost_app_pid() -> int | None:
+    """Return the process id of the frontmost app, or None off macOS/Cocoa."""
+    cls = _objc_class("NSWorkspace")
+    workspace = _send(cls, "sharedWorkspace") if cls else None
+    app = _send(workspace, "frontmostApplication") if workspace else None
+    return _send(app, "processIdentifier", ctypes.c_int32) if app else None
+
+
 def activate_app() -> None:
     """Unhide and bring this app to the front (no-op off macOS/Cocoa)."""
     app = _ns_app()

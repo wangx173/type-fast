@@ -96,10 +96,12 @@ Hiding the window with the hotkey pastes the finished translation into the app
 you return to, as if you had pressed **⌘V**. To go back without pasting, press
 **Esc** instead. The translation is on the clipboard either way.
 
-- It pastes only a finished translation, and only once. If you hide the window
-  while a translation is still in progress, you open and hide it again without
-  typing anything, or you copied something else in the meantime, nothing is
-  pasted.
+- It pastes the finished translation, and only once. If you hide the window
+  while a translation is still in progress, it is pasted as soon as it
+  finishes. It isn't pasted if that takes more than a few seconds, you open
+  the window again or switch to another app first, or you copy something else
+  in the meantime; the translation is still copied to the clipboard. Opening and
+  hiding the window again without typing anything pastes nothing.
 - Pasting into another app needs the **Accessibility** permission. If Type Fast
   doesn't have it, it tells you, at most once per launch, when you turn
   auto-paste on or when the hotkey would paste. Click **Open System Settings** and

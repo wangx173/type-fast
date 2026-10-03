@@ -1,8 +1,8 @@
 """Paste into the frontmost app with a synthetic ⌘V (macOS).
 
 When the show/hide hotkey hides the window, the previous app gets focus back
-and the finished translation is already on the clipboard; posting ⌘V there
-pastes it, so you don't have to.
+and the finished translation is on the clipboard (or soon will be, once it
+finishes); posting ⌘V there pastes it, so you don't have to.
 
 Posting keystrokes to another app needs the Accessibility permission (System
 Settings › Privacy & Security › Accessibility). Without it nothing is posted,

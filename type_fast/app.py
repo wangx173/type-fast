@@ -3,8 +3,9 @@
 A small window, summoned on demand Spotlight-style with a configurable global
 hotkey (⇧⌘Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
 hotkey again, or Esc, dismisses it and hands focus back to the previous app.
-Dismissing with the hotkey also pastes a finished translation there (Settings ›
-Auto-Paste Translation); Esc just hides the window.
+Dismissing with the hotkey also pastes the translation there, waiting a few
+seconds for it to finish if needed (Settings › Auto-Paste Translation); Esc
+just hides the window.
 While shown it stays on top of other windows. Summoned by the hotkey it is
 compact: only the boxes and a one-line "English → Japanese" direction, which
 expands to the full pickers when clicked. It has an input box, a streamed
@@ -100,6 +101,10 @@ _HOVER_POLL_MS = 120
 # How long to let the previous app take focus back before pasting into it, in
 # milliseconds. Short enough to feel instant.
 _PASTE_DELAY_MS = 100
+
+# How long a paste waits for a translation still running when the hotkey hid
+# the window, in milliseconds. Later, the translation is only copied.
+_DEFERRED_PASTE_TIMEOUT_MS = 5000
 
 # Styles for the main window. Neutral gray tints read well in both light and
 # dark mode; ``palette(...)`` colors follow the system appearance and accent
@@ -461,6 +466,18 @@ class MainWindow(QMainWindow):
         # Bumped each time the window appears, so a paste still waiting from
         # an earlier hide is dropped (see dismiss).
         self._shown_count = 0
+        # (_shown_count, pasteboard change count) of a hotkey hide whose paste
+        # waits for the translation still running, or None; the paste happens
+        # once it finishes (see _on_finished), unless that takes too long or
+        # something is copied in the meantime.
+        self._deferred_paste: tuple[int, int | None] | None = None
+        self._deferred_paste_timer = QTimer(self)
+        self._deferred_paste_timer.setSingleShot(True)
+        self._deferred_paste_timer.setInterval(_DEFERRED_PASTE_TIMEOUT_MS)
+        self._deferred_paste_timer.timeout.connect(self._cancel_deferred_paste)
+        # (_shown_count, pid) of the app that got focus back after such a hide,
+        # so a late paste never lands in an app you switched to since.
+        self._paste_target: tuple[int, int | None] | None = None
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         self._register_hotkey()
@@ -698,6 +715,8 @@ class MainWindow(QMainWindow):
             # clipboard. Whatever finished while hidden is dropped, so the
             # next hide doesn't paste it.
             self._paste_text = ""
+            self._cancel_deferred_paste()
+            self._paste_target = None
             self._shown_count += 1
             self._clear_input()
             self._center_on_cursor_screen()
@@ -738,21 +757,36 @@ class MainWindow(QMainWindow):
         """Hide the window and return focus to the previously active app.
 
         With ``paste`` (the show/hide hotkey) and Auto-Paste on, a finished
-        translation that hasn't been pasted yet is pasted into that app.
+        translation that hasn't been pasted yet is pasted into that app. If
+        the translation is still running, the window hides right away and the
+        paste waits for it to finish (see :meth:`_on_finished`).
         """
-        text = self._take_paste_text() if paste and self.prefs.auto_paste else ""
-        if text and not self._asked_paste_permission and self._needs_paste_permission():
+        paste = paste and self.prefs.auto_paste
+        text = self._take_paste_text() if paste else ""
+        if (
+            (text or (paste and self._translating))
+            and not self._asked_paste_permission
+            and self._needs_paste_permission()
+        ):
             # Explain while the window is still up; this time the translation
             # stays on the clipboard to paste by hand.
             self._ask_paste_permission()
+            if not text:
+                # The translation may have finished while the alert was up.
+                text = self._take_paste_text()
+        defer = paste and not text and self._translating
         self._dismissed = True
         self.hide()
         hotkey.hide_app()
+        shown = self._shown_count
         if text:
-            shown = self._shown_count
             QTimer.singleShot(
                 _PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown)
             )
+        elif defer:
+            self._deferred_paste = (shown, hotkey.pasteboard_change_count())
+            self._deferred_paste_timer.start()
+            QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._remember_paste_target(shown))
 
     def _take_paste_text(self) -> str:
         """Return the translation to paste, or "", and mark it as pasted.
@@ -784,9 +818,47 @@ class MainWindow(QMainWindow):
             shown != self._shown_count
             or self.isVisible()
             or not self._is_pasteable(text)
+            or not self._is_paste_target(shown)
         ):
-            return  # summoned again, or the clipboard changed, before the paste
+            return  # summoned again, or the clipboard or app changed, before the paste
         autopaste.send_paste()
+
+    def _remember_paste_target(self, shown: int) -> None:
+        """Note the app that got focus back after the hide with ``shown``."""
+        if shown == self._shown_count and not self.isVisible():
+            self._paste_target = (shown, hotkey.frontmost_app_pid())
+
+    def _is_paste_target(self, shown: int) -> bool:
+        """False if you switched apps since a waiting paste's hide."""
+        target = self._paste_target
+        pid = target[1] if target is not None and target[0] == shown else None
+        return pid is None or hotkey.frontmost_app_pid() == pid
+
+    def _take_deferred_paste(self) -> int | None:
+        """Return the hide's _shown_count of a paste waiting for this translation.
+
+        Call just before copying the finished translation. Returns None, and
+        drops the waiting paste, when there is none or something was copied
+        since the hide.
+        """
+        deferred = self._deferred_paste
+        self._cancel_deferred_paste()
+        if deferred is None or hotkey.pasteboard_change_count() != deferred[1]:
+            return None
+        return deferred[0]
+
+    def _paste_deferred(self, shown: int) -> None:
+        """Paste the just-copied translation that a hotkey hide was waiting for."""
+        text, self._paste_text = self._paste_text, ""
+        if self._is_pasteable(text):
+            QTimer.singleShot(
+                _PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown)
+            )
+
+    def _cancel_deferred_paste(self) -> None:
+        """Drop a paste still waiting for its translation; it stays copied."""
+        self._deferred_paste = None
+        self._deferred_paste_timer.stop()
 
     @staticmethod
     def _needs_paste_permission() -> bool:
@@ -1263,12 +1335,16 @@ class MainWindow(QMainWindow):
                     return
                 # Only blank lines followed: nothing more to translate.
         # Nothing left to translate: auto-copy the finished translation.
+        deferred = self._take_deferred_paste()
         self._copy_output_to_clipboard()
+        if deferred is not None:
+            self._paste_deferred(deferred)
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
             self._translating = False
             self._paste_text = ""
+            self._cancel_deferred_paste()
             self._set_status("")
             self.output.setPlainText(f"[error] {message}")
 
