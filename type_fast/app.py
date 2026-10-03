@@ -3,6 +3,8 @@
 A small window, summoned on demand Spotlight-style with a configurable global
 hotkey (⇧⌘Space by default; Settings › Set Show/Hide Hotkey…). Pressing the
 hotkey again, or Esc, dismisses it and hands focus back to the previous app.
+Dismissing with the hotkey also pastes a finished translation there (Settings ›
+Auto-Paste Translation); Esc just hides the window.
 While shown it stays on top of other windows. Summoned by the hotkey it is
 compact: only the boxes and a one-line "English → Japanese" direction, which
 expands to the full pickers when clicked. It has an input box, a streamed
@@ -73,7 +75,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import config, hotkey, providers, settings
+from . import autopaste, config, hotkey, providers, settings
 from .providers import openai as openai_provider
 from .translator import translate_stream
 
@@ -92,6 +94,10 @@ _FADE_MS = 160
 # How often to check whether the pointer is over the window while another app
 # is active, in milliseconds.
 _HOVER_POLL_MS = 120
+
+# How long to let the previous app take focus back before pasting into it, in
+# milliseconds. Short enough to feel instant.
+_PASTE_DELAY_MS = 100
 
 # Styles for the main window. Neutral gray tints read well in both light and
 # dark mode; ``palette(...)`` colors follow the system appearance and accent
@@ -443,6 +449,11 @@ class MainWindow(QMainWindow):
         # reactivating the app (Dock icon, ⌘Tab) brings it back.
         self._dismissed = False
         self.compact = False
+        # Whether the output is a finished translation that hiding with the
+        # hotkey should paste (see dismiss); each one is pasted at most once.
+        self._paste_ready = False
+        # The permission prompt is shown at most once per launch.
+        self._asked_paste_permission = False
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         self._register_hotkey()
@@ -519,6 +530,15 @@ class MainWindow(QMainWindow):
         self.set_hotkey_action = QAction("Set Show/Hide Hotkey\u2026", self)
         self.set_hotkey_action.triggered.connect(self._set_hotkey)
         menu.addAction(self.set_hotkey_action)
+
+        self.auto_paste_action = QAction("Auto-Paste Translation", self, checkable=True)
+        self.auto_paste_action.setChecked(self.prefs.auto_paste)
+        self.auto_paste_action.setToolTip(
+            "Hiding Type Fast with the show/hide hotkey pastes the translation "
+            "into your app (needs Accessibility permission)"
+        )
+        self.auto_paste_action.triggered.connect(self._set_auto_paste)
+        menu.addAction(self.auto_paste_action)
 
         transparency_menu = menu.addMenu("Window Transparency")
         self.transparency_group = QActionGroup(self)
@@ -651,7 +671,7 @@ class MainWindow(QMainWindow):
             modal.activateWindow()
             return
         if self.isVisible() and self.isActiveWindow() and not self.isMinimized():
-            self.dismiss()
+            self.dismiss(paste=True)
         else:
             self.summon(compact=True)
 
@@ -665,6 +685,9 @@ class MainWindow(QMainWindow):
         self.set_compact(compact)
         appearing = not self.isVisible()
         if appearing:
+            # Whatever finished while hidden (or was dismissed with Esc) has
+            # been seen or skipped; don't paste it on the next hide.
+            self._paste_ready = False
             self._center_on_cursor_screen()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
@@ -692,11 +715,44 @@ class MainWindow(QMainWindow):
         for widget in (self.input_label, self.output_label, self.model_label, self.hotkey_label):
             widget.setVisible(not compact)
 
-    def dismiss(self) -> None:
-        """Hide the window and return focus to the previously active app."""
+    def dismiss(self, paste: bool = False) -> None:
+        """Hide the window and return focus to the previously active app.
+
+        With ``paste`` (the show/hide hotkey) and Auto-Paste on, a finished
+        translation that hasn't been pasted yet is pasted into that app.
+        """
+        paste = paste and self.prefs.auto_paste and self._take_paste_ready()
         self._dismissed = True
         self.hide()
         hotkey.hide_app()
+        if paste:
+            QTimer.singleShot(_PASTE_DELAY_MS, self._paste_into_previous_app)
+
+    def _take_paste_ready(self) -> bool:
+        """Return whether the output should be pasted, and mark it as pasted."""
+        if self.timer.isActive():
+            # Typed since the last translation: translate now. If that starts a
+            # new request, the output is stale and nothing is pasted.
+            self.timer.stop()
+            self.run_translation()
+        ready, self._paste_ready = self._paste_ready, False
+        return ready
+
+    def _paste_into_previous_app(self) -> None:
+        if self.isVisible():
+            return  # summoned again before the paste: don't paste into ourselves
+        if autopaste.send_paste() or self._asked_paste_permission:
+            return
+        # Not allowed yet: ask once per launch. The translation stays on the
+        # clipboard either way.
+        self._asked_paste_permission = True
+        autopaste.request_permission()
+
+    def _set_auto_paste(self, enabled: bool) -> None:
+        self.prefs.auto_paste = enabled
+        self._save_prefs("Auto-Paste Translation", "auto-paste setting")
+        if enabled and autopaste.is_supported() and not autopaste.has_permission():
+            autopaste.request_permission()
 
     def _center_on_cursor_screen(self) -> None:
         """Center horizontally on the cursor's screen, in its upper part."""
@@ -1024,6 +1080,7 @@ class MainWindow(QMainWindow):
             self._frozen_src = ""
             self._frozen_out = ""
             self._last_sent_key = None
+            self._paste_ready = False
             self.output.clear()
             return
 
@@ -1107,6 +1164,7 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
+            self._paste_ready = False
             self._set_status("Translating\u2026", "busy")
             self.output.setPlainText(self._active_prefix)
             self.output.moveCursor(QTextCursor.End)
@@ -1131,6 +1189,7 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
+            self._paste_ready = False
             self._set_status("")
             self.output.setPlainText(f"[error] {message}")
 
@@ -1138,6 +1197,7 @@ class MainWindow(QMainWindow):
         text = self.output.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
+            self._paste_ready = True
             self._set_status("Copied to clipboard \u2713", "done")
 
 

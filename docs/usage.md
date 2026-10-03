@@ -2,6 +2,7 @@
 
 - [The window](#the-window)
 - [Show/hide hotkey](#showhide-hotkey)
+- [Auto-paste](#auto-paste)
 - [Transparency](#transparency)
 - [Languages](#languages)
 - [Tone](#tone)
@@ -20,8 +21,8 @@ ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `
 or you press Return. As you keep typing, finished lines are kept as they are and
 only the line you are typing is sent for translation; changing the language,
 tone, or model re-translates everything. When a translation finishes, it is
-copied to the clipboard, so you can hide the window and paste it into your app
-with **⌘V**.
+copied to the clipboard. Hide the window with the hotkey and it is
+[pasted into your app](#auto-paste) for you.
 
 The window is shown when the app launches. After that, summon and dismiss it
 with the [show/hide hotkey](#showhide-hotkey) so it stays out of the way while
@@ -36,8 +37,9 @@ Like Spotlight, Type Fast pops up from any app with a global hotkey:
 
 - The window appears near the top of the screen the mouse pointer is on, stays
   on top, and puts the cursor in the input box.
-- Press the hotkey again, or **Esc**, to hide it and return to the app you were
-  using. If you have clicked into another app while the window is still shown,
+- Press the hotkey again to hide it, return to the app you were using, and
+  [paste the translation](#auto-paste) there. **Esc** hides it without pasting.
+  If you have clicked into another app while the window is still shown,
   the hotkey brings the window back to the front instead, showing the
   minimal layout.
 - The current hotkey is shown at the bottom of the full window.
@@ -80,9 +82,40 @@ Hotkeys are tied to the physical key you press, so they keep working if you
 switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
 is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
 
-The hotkey needs no Accessibility permission. It is saved to
+The hotkey itself needs no Accessibility permission (only
+[auto-paste](#auto-paste) does). It is saved to
 `~/.type-fast/settings.json` as `"hotkey": "Shift+Cmd+Space"`; an empty string
 disables it.
+
+</details>
+
+## Auto-paste
+
+Hiding the window with the hotkey pastes the finished translation into the app
+you return to, as if you had pressed **⌘V**. To go back without pasting, press
+**Esc** instead. The translation is on the clipboard either way.
+
+- It pastes only a finished translation, and only once. If you hide the window
+  while a translation is still in progress, or you open and hide it again
+  without typing anything, nothing is pasted.
+- Pasting into another app needs the **Accessibility** permission. The first
+  time, macOS asks you to allow Type Fast in **System Settings → Privacy &
+  Security → Accessibility**. Until you do, the hotkey just hides the window and
+  you can paste with **⌘V** yourself.
+- To turn it off, uncheck **Settings → Auto-Paste Translation**. The choice is
+  saved to `~/.type-fast/settings.json` as `"auto_paste"`.
+
+<details>
+<summary>If auto-paste doesn't work</summary>
+
+- **After updating Type Fast:** macOS may keep the old app's permission. In
+  **Accessibility** settings, remove Type Fast with **−**, then allow it again.
+- **Running from source:** the permission belongs to the app that runs Python,
+  such as Terminal, so allow that app instead.
+- **Dvorak layouts:** auto-paste presses the key in the **V** position of a U.S.
+  keyboard, which is a different key on Dvorak (it works on "Dvorak – QWERTY
+  ⌘"). Turn auto-paste off and paste with **⌘V**.
+- Some fields, such as password fields, may ignore the pasted text.
 
 </details>
 
