@@ -564,7 +564,10 @@ def pasteboard_change_count() -> int | None:
 
 
 def frontmost_app_pid() -> int | None:
-    """Return the process id of the frontmost app, or None off macOS/Cocoa."""
+    """Return the process id of the frontmost app.
+
+    None off macOS/Cocoa, or when macOS reports no frontmost app.
+    """
     cls = _objc_class("NSWorkspace")
     workspace = _send(cls, "sharedWorkspace") if cls else None
     app = _send(workspace, "frontmostApplication") if workspace else None

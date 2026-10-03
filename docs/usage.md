@@ -98,10 +98,11 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
 
 - It pastes the finished translation, and only once. If you hide the window
   while a translation is still in progress, it is pasted as soon as it
-  finishes. It isn't pasted if that takes more than a few seconds, you open
-  the window again or switch to another app first, or you copy something else
-  in the meantime; the translation is still copied to the clipboard. Opening and
-  hiding the window again without typing anything pastes nothing.
+  finishes. It isn't pasted if that takes more than 5 seconds, the translation
+  fails, you open the window again, switch to another app, click or type
+  anywhere, or copy something else in the meantime; a finished translation is
+  still copied to the clipboard. Opening and hiding the window again without
+  typing anything pastes nothing.
 - Pasting into another app needs the **Accessibility** permission. If Type Fast
   doesn't have it, it tells you, at most once per launch, when you turn
   auto-paste on or when the hotkey would paste. Click **Open System Settings** and

@@ -28,6 +28,7 @@ class AutopasteModuleTests(unittest.TestCase):
             self.assertFalse(autopaste.send_paste())
             self.assertIsNone(autopaste.hotkey.pasteboard_change_count())
             self.assertIsNone(autopaste.hotkey.frontmost_app_pid())
+            self.assertIsNone(autopaste.input_event_count())
         cdll.assert_not_called()
 
     def _fake_lib(self, permitted: bool = True) -> mock.MagicMock:
@@ -139,10 +140,13 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
         self.send_paste = mock.MagicMock(return_value=True)
         self.has_permission = mock.MagicMock(return_value=True)
+        # Stand in for your clicks and key presses: none unless a test adds some.
+        self.input_count = 0
         for name, value in (
             ("send_paste", self.send_paste),
             ("is_supported", mock.MagicMock(return_value=True)),
             ("has_permission", self.has_permission),
+            ("input_event_count", lambda: self.input_count),
         ):
             patcher = mock.patch.object(autopaste, name, value)
             patcher.start()
@@ -205,14 +209,22 @@ class WindowAutoPasteTests(unittest.TestCase):
         window.deleteLater()
         QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
-    def _translate(self, text: str = "Hello.") -> None:
-        """Type ``text`` and finish its translation."""
+    def _type(self, text: str) -> None:
         w = self.window
         w.input.setPlainText(text)
         w.timer.stop()
         w.run_translation()
-        w.bridge.delta.emit(w._request_id, "Bonjour.")
-        w.bridge.finished.emit(w._request_id, "Bonjour.")
+
+    def _finish(self, translation: str = "Bonjour.") -> None:
+        """Stream ``translation`` for the request in flight and finish it."""
+        w = self.window
+        w.bridge.delta.emit(w._request_id, translation)
+        w.bridge.finished.emit(w._request_id, translation)
+
+    def _translate(self, text: str = "Hello.") -> None:
+        """Type ``text`` and finish its translation."""
+        self._type(text)
+        self._finish()
 
     def _hotkey(self) -> None:
         w = self.window
@@ -255,12 +267,6 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._hotkey()
         self.send_paste.assert_called_once_with()
 
-    def _finish(self, translation: str = "Bonjour.") -> None:
-        """Stream ``translation`` for the request in flight and finish it."""
-        w = self.window
-        w.bridge.delta.emit(w._request_id, translation)
-        w.bridge.finished.emit(w._request_id, translation)
-
     def test_hide_while_translating_pastes_once_it_finishes(self) -> None:
         w = self.window
         w.summon()
@@ -296,9 +302,7 @@ class WindowAutoPasteTests(unittest.TestCase):
     def test_hide_while_translating_several_lines_pastes_all_of_them(self) -> None:
         w = self.window
         w.summon()
-        w.input.setPlainText("Hello.\nWorld.")
-        w.timer.stop()
-        w.run_translation()
+        self._type("Hello.\nWorld.")
         self._hotkey()
         self._finish("Bonjour.")  # first line; the next one starts
         self.send_paste.assert_not_called()
@@ -306,7 +310,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.assertEqual(QApplication.clipboard().text(), "Bonjour.\nMonde.")
         self.send_paste.assert_called_once_with()
 
-    def test_waiting_paste_times_out(self) -> None:
+    def test_deferred_paste_times_out(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -320,7 +324,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.send_paste.assert_not_called()
         self.assertEqual(QApplication.clipboard().text(), "Bonjour.")  # still copied
 
-    def test_waiting_paste_is_dropped_when_summoned_again(self) -> None:
+    def test_deferred_paste_dropped_when_summoned_again(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -331,7 +335,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._finish()
         self.send_paste.assert_not_called()
 
-    def test_waiting_paste_is_dropped_when_summoned_and_hidden_before_it_runs(self) -> None:
+    def test_deferred_paste_dropped_when_summoned_and_hidden_before_it_runs(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -349,7 +353,7 @@ class WindowAutoPasteTests(unittest.TestCase):
             callback()
         self.send_paste.assert_not_called()
 
-    def test_waiting_paste_skipped_if_the_clipboard_changes(self) -> None:
+    def test_deferred_paste_dropped_if_the_clipboard_changes(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -371,18 +375,18 @@ class WindowAutoPasteTests(unittest.TestCase):
             self._finish("Au revoir.")  # copied, then something else is
         self.send_paste.assert_not_called()
 
-    def test_waiting_paste_skipped_if_you_switch_apps(self) -> None:
+    def test_deferred_paste_dropped_if_you_switch_apps(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
         self._hotkey()
-        self.assertEqual(w._paste_target, (w._shown_count, 100))
+        self.assertEqual(w._paste_target.pid, 100)
         self.frontmost_pid = 200  # you switched to another app
         self._finish()
         self.send_paste.assert_not_called()
         self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
 
-    def test_waiting_paste_skipped_if_you_switch_apps_during_the_delay(self) -> None:
+    def test_deferred_paste_dropped_if_you_switch_apps_during_the_delay(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -396,7 +400,93 @@ class WindowAutoPasteTests(unittest.TestCase):
             self._finish()
         self.send_paste.assert_not_called()
 
-    def test_waiting_paste_dropped_after_error(self) -> None:
+    def test_deferred_paste_dropped_if_you_click_or_type(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self._hotkey()
+        self.input_count += 1  # e.g. clicked another field in the same app
+        self._finish()
+        self.send_paste.assert_not_called()
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+
+    def test_deferred_paste_waits_for_the_previous_app_to_be_frontmost(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        # macOS still lists Type Fast first right after hiding.
+        self.frontmost_pid = os.getpid()
+        checks: list[int] = []
+
+        def single_shot(delay: int, callback: Callable[[], None]) -> None:
+            checks.append(delay)
+            if len(checks) == 2:
+                self.frontmost_pid = 100
+            callback()
+
+        with mock.patch.object(self.app_module.QTimer, "singleShot", single_shot):
+            self._hotkey()
+        self.assertEqual(w._paste_target.pid, 100)
+        self._finish()
+        self.send_paste.assert_called_once_with()
+
+    def test_deferred_paste_goes_to_the_first_app_noticed(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self.frontmost_pid = os.getpid()
+        self._hotkey()  # every check still finds Type Fast
+        self.assertIsNone(w._paste_target.pid)
+        self.frontmost_pid = 100
+        self._finish()
+        self.send_paste.assert_called_once_with()
+
+    def test_deferred_paste_dropped_if_the_frontmost_app_is_unknown_or_type_fast(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self._hotkey()
+        self.frontmost_pid = None
+        self._finish()
+        self.send_paste.assert_not_called()
+
+        w.summon()
+        w.input.setPlainText("Bye.")
+        self._hotkey()  # no app noted either
+        self.assertIsNone(w._paste_target.pid)
+        self._finish("Au revoir.")
+        self.send_paste.assert_not_called()
+
+        w.summon()
+        w.input.setPlainText("Hi.")
+        self.frontmost_pid = os.getpid()  # still Type Fast: never paste into it
+        self._hotkey()
+        self._finish("Salut.")
+        self.send_paste.assert_not_called()
+
+    def test_deferred_paste_times_out_between_lines(self) -> None:
+        w = self.window
+        w.summon()
+        self._type("Hello.\nWorld.")
+        self._hotkey()
+        self._finish("Bonjour.")
+        w._deferred_paste_timer.timeout.emit()  # too slow
+        self._finish("Monde.")
+        self.send_paste.assert_not_called()
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.\nMonde.")
+
+    def test_deferred_paste_dropped_after_error_on_a_later_line(self) -> None:
+        w = self.window
+        w.summon()
+        self._type("Hello.\nWorld.")
+        self._hotkey()
+        self._finish("Bonjour.")
+        w.bridge.error.emit(w._request_id, "boom")
+        self.assertIsNone(w._deferred_paste)
+        self.assertFalse(w._deferred_paste_timer.isActive())
+        self.send_paste.assert_not_called()
+
+    def test_deferred_paste_dropped_after_error(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -414,7 +504,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.send_paste.assert_not_called()
         self.assertIsNone(w._deferred_paste)
 
-    def test_waiting_paste_needs_auto_paste(self) -> None:
+    def test_deferred_paste_needs_auto_paste(self) -> None:
         w = self.window
         w.summon()
         w.auto_paste_action.trigger()  # turn it off
@@ -451,12 +541,6 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.run_translation()
         self._hotkey()
         self.send_paste.assert_not_called()
-
-    def _type(self, text: str) -> None:
-        w = self.window
-        w.input.setPlainText(text)
-        w.timer.stop()
-        w.run_translation()
 
     def test_clearing_the_input_drops_the_translation_in_flight(self) -> None:
         w = self.window
@@ -517,8 +601,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.summon()
         w.input.setPlainText("Hello.")
         self._hotkey()  # hidden before the translation finished
-        w.bridge.delta.emit(w._request_id, "Bonjour.")
-        w.bridge.finished.emit(w._request_id, "Bonjour.")
+        self._finish()
         self.send_paste.assert_called_once_with()
         self.assertEqual(w._paste_text, "")
         self._hotkey()  # summon
