@@ -14,7 +14,7 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/demo.png">
-  <img src="docs/images/demo.gif" alt="Demo: in a chat app, pressing ⇧⌘Space pops up Type Fast. Typing &quot;Yes, I will! Are you free for lunch?&quot; streams in a polite Japanese translation, which is copied to the clipboard. Pressing ⇧⌘Space again hides Type Fast, and ⌘V pastes the Japanese reply into the chat." width="720">
+  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, translating &quot;Yes, I will! Are you free for lunch?&quot; into polite Japanese and copying it to the clipboard, ready to paste into the chat." width="720">
 </picture>
 
 <sub>Press <b>⇧⌘Space</b> in any app, type, and paste the translation with <b>⌘V</b>.</sub>
@@ -88,11 +88,11 @@ details.
 
 ## Documentation
 
-| Guide                                    | What's inside                                            |
-|------------------------------------------|----------------------------------------------------------|
-| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone    |
-| [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
-| [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
+| Guide                                    | What's inside                                             |
+|------------------------------------------|-----------------------------------------------------------|
+| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone     |
+| [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings    |
+| [Development](docs/development.md)       | Run from source, tests, the `.app` build, and screenshots |
 
 ## Roadmap
 

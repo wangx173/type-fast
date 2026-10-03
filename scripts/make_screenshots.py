@@ -2,15 +2,19 @@
 
 Run on macOS from the repository root, after installing the app and Pillow:
 
-    pip install -e . pillow
+    pip install -e . "pillow>=9.1"
     python scripts/make_screenshots.py
 
-It writes demo.gif (and demo.png, a still of its last step), hotkey.png, and
-languages.png. The Type Fast window is the real ``MainWindow`` drawn with
-sample text; the desktop, the chat app, and the key badges around it are drawn
-by this script. It reads no API key, sends no requests, registers no hotkey,
-and uses a throwaway home folder, so none of your settings appear. Nothing is
-shown on screen, though Python may appear in the Dock while it runs.
+It writes demo.gif (and demo.png, a still of the finished translation),
+hotkey.png, and languages.png. The Type Fast window is the real ``MainWindow``
+drawn with sample text; the desktop, the chat app, and the key badges around it
+are drawn by this script. It reads no API key, sends no requests, registers no
+hotkey, and uses a throwaway home folder, so none of your settings appear.
+Nothing is shown on screen, though Python may appear in the Dock while it runs.
+
+Besides the public API, it relies on these ``type_fast.app`` internals:
+``MainWindow._set_status`` (the status text), ``_TEXT_COLORS`` (kept exact in
+the GIF palette), and the ``inputBox`` object name (drawn as focused).
 """
 
 from __future__ import annotations
@@ -20,28 +24,57 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
 from unittest import mock
 
+from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontMetricsF,
+    QImage,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPen,
+    QPixmap,
+    QTextCursor,
+)
+from PySide6.QtWidgets import (
+    QApplication,
+    QGraphicsDropShadowEffect,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
+)
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
+
 ROOT = Path(__file__).resolve().parent.parent
+PILLOW = 'Pillow 9.1 or later is required: pip install "pillow>=9.1"'
 
 # Everything is drawn at 2x (Retina); the GIF is scaled down from that.
 SCALE = 2
 GIF_SCALE = 1.5
 
 # The "screen" of the demo, in points.
-SCENE_W, SCENE_H = 820, 560
+SCENE_W, SCENE_H = 820, 700
 TITLE_H = 28
 SHADOW_MARGIN = 40
 
 # The chat app behind Type Fast.
-CHAT_X, CHAT_Y, CHAT_W, CHAT_H = 110, 24, 600, 480
+CHAT_X, CHAT_Y, CHAT_W, CHAT_H = 110, 24, 600, 600
 COMPOSE_H = 36
 
-# The Type Fast window as summoned by the hotkey (compact layout), centered in
-# the upper part of the screen like MainWindow._center_on_cursor_screen.
-POPUP_W, POPUP_H = 460, 240
+# The Type Fast window at its launch size (type_fast.app.main), in the compact
+# layout the hotkey uses, centered in the upper part of the screen like
+# MainWindow._center_on_cursor_screen.
+POPUP_W, POPUP_H = 460, 380
 POPUP_X = (SCENE_W - POPUP_W) // 2
 POPUP_Y = (SCENE_H - POPUP_H - TITLE_H) // 4
 
@@ -56,6 +89,7 @@ TRANSLATION = "はい、伺います！ランチはご一緒できますか？"
 
 WINDOW_BUTTONS = ("#ff5f57", "#febc2e", "#28c840")
 
+# The status texts MainWindow shows while translating and when done.
 BUSY = ("Translating\u2026", "busy")
 COPIED = ("Copied to clipboard \u2713", "done")
 
@@ -73,20 +107,26 @@ class Frame:
     output: str = ""
     status: tuple[str, str] = ("", "")
     badge: tuple[str, str] | None = None  # (keys, caption)
+    still: bool = False  # the step saved as demo.png
 
 
-def timeline() -> list[Frame]:
-    show = ("\u21e7\u2318Space", "Show Type Fast")
-    hide = ("\u21e7\u2318Space", "Hide Type Fast")
+def timeline(keys: str, opacity: float) -> list[Frame]:
+    """The demo's steps, for the hotkey ``keys`` and in-use window ``opacity``.
+
+    The user is replying in a chat app, summons Type Fast with the hotkey,
+    types an English reply that is translated into Japanese and copied, hides
+    Type Fast with the hotkey, and pastes and sends the translation.
+    """
+    show = (keys, "Show Type Fast")
+    hide = (keys, "Hide Type Fast")
 
     # Typing in the chat app's message box, with a blinking caret.
     frames = [Frame(700, caret=True), Frame(500), Frame(700, caret=True)]
     frames.append(Frame(300, caret=True, badge=show))
-    # The hotkey fades Type Fast in (MainWindow.summon); with the default Light
-    # transparency it is 95% opaque while in use.
-    for opacity in (0.35, 0.7, 0.95):
-        frames.append(Frame(50, popup=opacity, badge=show))
-    popup = Frame(0, popup=0.95)
+    # The hotkey fades Type Fast in (MainWindow.summon) to its in-use opacity.
+    for step in (0.35, 0.7, 1.0):
+        frames.append(Frame(50, popup=opacity * step, badge=show))
+    popup = Frame(0, popup=opacity)
 
     output, status = "", ("", "")
     ends = sorted(set(range(2, len(TYPED), 2)) | {len(PARTIAL[0]), len(TYPED)})
@@ -99,6 +139,7 @@ def timeline() -> list[Frame]:
             output, status = PARTIAL[1], COPIED
     done = replace(popup, typed=TYPED, output=TRANSLATION, status=COPIED)
     frames += _streaming(done, TRANSLATION, hold=1600)
+    frames[-1] = replace(frames[-1], still=True)
 
     frames.append(replace(done, ms=350, badge=hide))
     # Hiding is instant (MainWindow.dismiss), and the chat app is active again.
@@ -125,10 +166,10 @@ def main() -> None:
     args = parser.parse_args()
     if sys.platform != "darwin":
         sys.exit("Run this on macOS; the window is drawn with the native style.")
-    try:
-        import PIL  # noqa: F401
-    except ImportError:
-        sys.exit("Pillow is required: pip install pillow")
+    if Image is None or not hasattr(Image, "Resampling"):
+        sys.exit(PILLOW)
+    if "type_fast" in sys.modules:
+        sys.exit("type_fast is already imported, so its settings can't be isolated.")
 
     with tempfile.TemporaryDirectory() as home:
         # type_fast finds ~/.type-fast when it is imported, so isolate it first.
@@ -137,24 +178,28 @@ def main() -> None:
             if name.startswith(("OPENAI_", "AZURE_AI_")):
                 del os.environ[name]
         sys.path.insert(0, str(ROOT))
-        Renderer(args.out).run()
+        Renderer(args.out).run(Path(home))
 
 
 class Renderer:
-    def __init__(self, out: Path) -> None:
-        from PySide6.QtCore import Qt
-        from PySide6.QtWidgets import QApplication
+    """Draws the images from real ``MainWindow`` instances into ``out``."""
 
+    def __init__(self, out: Path) -> None:
         self.out = out
         self.app = QApplication.instance() or QApplication([])
         self.app.setApplicationName("Type Fast")
         hints = self.app.styleHints()
-        if hasattr(hints, "setColorScheme"):
-            hints.setColorScheme(Qt.ColorScheme.Light)
+        if not hasattr(hints, "setColorScheme"):
+            sys.exit("PySide6 6.8 or later is required to draw the light appearance.")
+        hints.setColorScheme(Qt.ColorScheme.Light)
 
-    def run(self) -> None:
+    def run(self, home: Path) -> None:
         from type_fast import app as tf
-        from type_fast import hotkey, providers
+        from type_fast import config, hotkey, providers, settings
+
+        if not settings.SETTINGS_FILE.resolve().is_relative_to(home.resolve()):
+            sys.exit(f"Settings would be read from {settings.SETTINGS_FILE}, not {home}.")
+        self.tf, self.config, self.settings = tf, config, settings
 
         patches = (
             # Show the hotkey hint as if registered, without registering it.
@@ -174,23 +219,23 @@ class Renderer:
             patch.start()
         try:
             self.out.mkdir(parents=True, exist_ok=True)
-            self._demo(tf)
-            self._hotkey_png(tf)
-            self._languages_png(tf)
+            self._demo(hotkey.parse(config.DEFAULT_HOTKEY).symbols())
+            self._hotkey_png()
+            self._languages_png()
         finally:
             for patch in reversed(patches):
                 patch.stop()
 
-    def _window(self, tf, source: str, target: str, tone: str, compact: bool, size):
+    def _window(
+        self, *, source: str, target: str, tone: str, compact: bool, size: tuple[int, int]
+    ):
         """A Type Fast window with the given settings, never shown."""
-        from type_fast import settings
-
-        settings.SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        settings.SETTINGS_FILE.write_text(
-            json.dumps({"source": source, "target": target, "tone": tone}),
-            encoding="utf-8",
+        path = self.settings.SETTINGS_FILE
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"source": source, "target": target, "tone": tone}), encoding="utf-8"
         )
-        window = tf.MainWindow()
+        window = self.tf.MainWindow()
         window.resize(*size)
         window.set_compact(compact)
         # The window is never shown, so draw the input box as focused.
@@ -205,19 +250,14 @@ class Renderer:
 
     @staticmethod
     def _fill(window, typed: str, output: str, status: tuple[str, str]) -> None:
-        from PySide6.QtGui import QTextCursor
-
         window.input.setPlainText(typed)
         window.input.moveCursor(QTextCursor.End)
         window.output.setPlainText(output)
         window._set_status(*status)
 
     @staticmethod
-    def _render(window, caret: bool = False):
+    def _render(window, caret: bool = False) -> QImage:
         """The window's contents, with a caret in the input box if ``caret``."""
-        from PySide6.QtCore import QRectF
-        from PySide6.QtGui import QColor, QPainter
-
         image = _image(window.width(), window.height())
         window.render(image)
         if caret:
@@ -228,12 +268,21 @@ class Renderer:
             painter.end()
         return image
 
-    def _demo(self, tf) -> None:
-        window = self._window(tf, "English", "Japanese", "Polite", True, (POPUP_W, POPUP_H))
-        popups: dict = {}
-        chats: dict = {}
-        steps = []
-        for frame in timeline():
+    def _popup(self):
+        """The window as the hotkey summons it."""
+        return self._window(
+            source="English", target="Japanese", tone="Polite", compact=True,
+            size=(POPUP_W, POPUP_H),
+        )
+
+    def _demo(self, keys: str) -> None:
+        window = self._popup()
+        opacity = self.config.TRANSPARENCY[self.config.DEFAULT_TRANSPARENCY][0]
+        popups: dict[tuple, QImage] = {}
+        chats: dict[tuple, QImage] = {}
+        steps: list[tuple[QImage, int]] = []
+        still = None
+        for frame in timeline(keys, opacity):
             popup = None
             if frame.popup:
                 key = (frame.typed, frame.output, frame.status)
@@ -246,13 +295,18 @@ class Renderer:
             if key not in chats:
                 chats[key] = _shadowed(_framed(_chat(*key[:3]), "Chat", active=key[3]))
             steps.append((_scene(chats[key], popup, frame.popup, frame.badge), frame.ms))
-        _save_gif(steps, self.out / "demo.gif")
+            if frame.still:
+                still = steps[-1][0]
+        _save_gif(steps, self.out / "demo.gif", self.tf._TEXT_COLORS["light"].values())
         path = self.out / "demo.png"
-        _to_pil(steps[-1][0]).save(path, optimize=True)
+        _to_pil(still).save(path, optimize=True)
         print(f"wrote {path}")
 
-    def _hotkey_png(self, tf) -> None:
-        window = self._window(tf, "Japanese", "English", "Polite", True, (POPUP_W, POPUP_H))
+    def _hotkey_png(self) -> None:
+        window = self._window(
+            source="Japanese", target="English", tone="Polite", compact=True,
+            size=(POPUP_W, POPUP_H),
+        )
         self._fill(
             window,
             "今夜の夕食、何時にする？",
@@ -261,10 +315,11 @@ class Renderer:
         )
         _save_png(_shadowed(_framed(self._render(window), "Type Fast")), self.out / "hotkey.png")
 
-    def _languages_png(self, tf) -> None:
-        from type_fast import config
-
-        window = self._window(tf, config.AUTO_SOURCE, "Spanish", "Business", False, (600, 400))
+    def _languages_png(self) -> None:
+        window = self._window(
+            source=self.config.AUTO_SOURCE, target="Spanish", tone="Business", compact=False,
+            size=(600, 400),
+        )
         self._fill(
             window,
             "Hi team, the release is moving to Friday. Please send any last "
@@ -279,33 +334,26 @@ class Renderer:
 # --- Drawing ---------------------------------------------------------------
 
 
-def _image(width: float, height: float):
+def _image(width: float, height: float) -> QImage:
     """A transparent 2x image of ``width`` x ``height`` points."""
-    from PySide6.QtCore import Qt
-    from PySide6.QtGui import QImage
-
     image = QImage(round(width * SCALE), round(height * SCALE), QImage.Format_ARGB32_Premultiplied)
     image.setDevicePixelRatio(SCALE)
     image.fill(Qt.transparent)
     return image
 
 
-def _size(image) -> tuple[float, float]:
+def _size(image: QImage) -> tuple[float, float]:
     return image.width() / SCALE, image.height() / SCALE
 
 
-def _font(size: int, bold: bool = False):
-    from PySide6.QtGui import QFont
-
+def _font(size: int, bold: bool = False) -> QFont:
     font = QFont()
     font.setPixelSize(size)
     font.setBold(bold)
     return font
 
 
-def _painter(image):
-    from PySide6.QtGui import QPainter
-
+def _painter(image: QImage) -> QPainter:
     painter = QPainter(image)
     painter.setRenderHint(QPainter.Antialiasing)
     painter.setRenderHint(QPainter.TextAntialiasing)
@@ -313,12 +361,8 @@ def _painter(image):
     return painter
 
 
-def _framed(content, title: str, active: bool = True):
+def _framed(content: QImage, title: str, active: bool = True) -> QImage:
     """``content`` in a macOS-style window with a title bar."""
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QPainterPath, QPalette, QPen
-    from PySide6.QtWidgets import QApplication
-
     width, height = _size(content)
     bounds = QRectF(0, 0, width, height + TITLE_H)
     image = _image(bounds.width(), bounds.height())
@@ -343,16 +387,8 @@ def _framed(content, title: str, active: bool = True):
     return image
 
 
-def _shadowed(window):
+def _shadowed(window: QImage) -> QImage:
     """``window`` with a soft drop shadow, on a transparent margin."""
-    from PySide6.QtCore import QPointF, Qt
-    from PySide6.QtGui import QColor, QPixmap
-    from PySide6.QtWidgets import (
-        QGraphicsDropShadowEffect,
-        QGraphicsPixmapItem,
-        QGraphicsScene,
-    )
-
     width, height = _size(window)
     image = _image(width + 2 * SHADOW_MARGIN, height + 2 * SHADOW_MARGIN)
     scene = QGraphicsScene(0, 0, *_size(image))
@@ -372,20 +408,16 @@ def _shadowed(window):
     return image
 
 
-def _bubble_size(text: str):
+def _bubble_size(text: str) -> QSizeF:
     """The size of a chat bubble holding ``text``."""
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QFontMetricsF
-
     bounds = QFontMetricsF(_font(14)).boundingRect(QRectF(0, 0, 420, 1000), Qt.TextWordWrap, text)
     return bounds.adjusted(0, 0, 24, 14).size()
 
 
-def _bubble(painter, x: float, y: float, text: str, fill: str, color: str, right: bool = False):
+def _bubble(
+    painter: QPainter, x: float, y: float, text: str, fill: str, color: str, right: bool = False
+) -> float:
     """Draw a chat bubble from ``x`` (its right edge if ``right``); return its bottom."""
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor
-
     size = _bubble_size(text)
     rect = QRectF(x - size.width() if right else x, y, size.width(), size.height())
     painter.setPen(Qt.NoPen)
@@ -397,11 +429,8 @@ def _bubble(painter, x: float, y: float, text: str, fill: str, color: str, right
     return rect.bottom()
 
 
-def _chat(caret: bool, compose: str, sent: bool):
+def _chat(caret: bool, compose: str, sent: bool) -> QImage:
     """The contents of a simple chat app, below its title bar."""
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QPen
-
     width, height = CHAT_W, CHAT_H - TITLE_H
     image = _image(width, height)
     image.fill(QColor("#ffffff"))
@@ -454,10 +483,7 @@ def _chat(caret: bool, compose: str, sent: bool):
     return image
 
 
-def _wallpaper():
-    from PySide6.QtCore import QPointF, QRectF
-    from PySide6.QtGui import QColor, QLinearGradient
-
+def _wallpaper() -> QImage:
     image = _image(SCENE_W, SCENE_H)
     painter = _painter(image)
     gradient = QLinearGradient(QPointF(0, 0), QPointF(SCENE_W, SCENE_H))
@@ -468,14 +494,13 @@ def _wallpaper():
     return image
 
 
-def _scene(chat, popup, opacity: float, badge):
+def _scene(
+    chat: QImage, popup: QImage | None, opacity: float, badge: tuple[str, str] | None
+) -> QImage:
     """One frame: the desktop, the chat app, Type Fast, and a key badge.
 
     ``chat`` and ``popup`` are windows already drawn with their shadows.
     """
-    from PySide6.QtCore import QRectF, Qt
-    from PySide6.QtGui import QColor, QFontMetricsF
-
     image = _wallpaper()
     painter = _painter(image)
     for window, x, y, alpha in ((chat, CHAT_X, CHAT_Y, 1.0), (popup, POPUP_X, POPUP_Y, opacity)):
@@ -511,24 +536,18 @@ def _scene(chat, popup, opacity: float, badge):
 # --- Saving ----------------------------------------------------------------
 
 
-def _to_pil(image, scale: float = GIF_SCALE / SCALE):
+def _to_pil(image: QImage, scale: float = GIF_SCALE / SCALE) -> Image.Image:
     """Convert a QImage to an RGB Pillow image, resized by ``scale``."""
-    from PIL import Image
-    from PySide6.QtGui import QImage
-
     rgba = image.convertToFormat(QImage.Format_RGBA8888)
     pil = Image.frombuffer(
         "RGBA", (rgba.width(), rgba.height()), bytes(rgba.constBits()), "raw", "RGBA",
         rgba.bytesPerLine(), 1,
     ).convert("RGB")
     size = (round(pil.width * scale), round(pil.height * scale))
-    return pil.resize(size, Image.LANCZOS) if size != pil.size else pil
+    return pil.resize(size, Image.Resampling.LANCZOS) if size != pil.size else pil
 
 
-def _save_gif(steps, path: Path) -> None:
-    from PIL import Image
-    from type_fast.app import _TEXT_COLORS
-
+def _save_gif(steps: list[tuple[QImage, int]], path: Path, text_colors: Iterable[str]) -> None:
     frames = [_to_pil(image) for image, _ in steps]
     # One shared palette and no dithering, so unchanged areas stay identical
     # between frames and only the changes are stored.
@@ -539,7 +558,7 @@ def _save_gif(steps, path: Path) -> None:
         sample.paste(frame, (0, height * index))
     # Small but important colors (window buttons, status text) would otherwise
     # be merged into their neighbors.
-    swatches = (*WINDOW_BUTTONS, ACCENT, *_TEXT_COLORS["light"].values())
+    swatches = (*WINDOW_BUTTONS, ACCENT, *text_colors)
     for index, color in enumerate(swatches):
         sample.paste(color, (index * 64, height * len(picks), index * 64 + 64, height * len(picks) + 64))
     palette = sample.quantize(colors=256, method=Image.Quantize.MEDIANCUT)
@@ -555,8 +574,9 @@ def _save_gif(steps, path: Path) -> None:
     print(f"wrote {path} ({len(frames)} frames, {path.stat().st_size // 1024} KB)")
 
 
-def _save_png(image, path: Path) -> None:
-    image.save(str(path))
+def _save_png(image: QImage, path: Path) -> None:
+    if not image.save(str(path)):
+        sys.exit(f"Could not write {path}")
     print(f"wrote {path}")
 
 
