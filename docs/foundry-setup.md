@@ -207,9 +207,10 @@ echo '<deployment-name>' > ~/.type-fast/azure_ai_model
 ```
 
 Then save the key, unless you already did with the CLI command in
-[step 4](#4-get-the-endpoint-and-api-key). Run this command, then paste the
-key when it asks. The key isn't shown or saved in your shell history, and the
-file is readable only by your account:
+[step 4](#4-get-the-endpoint-and-api-key). Run this command. When it asks for
+the key, copy the key from the portal again (copying the command replaced it
+on your clipboard), then paste it and press Return. The key isn't shown or
+saved in your shell history, and the file is readable only by your account:
 
 ```sh
 printf 'Foundry API key: '; read -rs KEY; echo; \
