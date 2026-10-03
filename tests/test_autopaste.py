@@ -278,6 +278,15 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.assertEqual(w.output.toPlainText(), "Bonjour.")
         self.send_paste.assert_not_called()
 
+    def test_blank_line_after_the_translation_still_pastes(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate("Hello.\n")
+        w.input.setPlainText("Hello.\n\n")
+        self.assertEqual(w.output.toPlainText(), "Bonjour.\n")
+        self._hotkey()
+        self.send_paste.assert_called_once_with()
+
     def test_no_paste_if_something_else_was_copied(self) -> None:
         w = self.window
         w.summon()

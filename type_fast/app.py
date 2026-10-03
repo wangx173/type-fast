@@ -744,10 +744,11 @@ class MainWindow(QMainWindow):
 
     def _is_pasteable(self, text: str) -> bool:
         # ⌘V pastes the clipboard, so paste only while it still holds the
-        # translation shown in the window, never something copied since.
+        # translation shown in the window, never something copied since. The
+        # window may also show blank lines typed after it.
         return (
             bool(text)
-            and self.output.toPlainText() == text
+            and self.output.toPlainText().rstrip() == text.rstrip()
             and QApplication.clipboard().text() == text
         )
 
