@@ -140,11 +140,13 @@ the list above.
 
 **Quota.** The capacity you give a deployment is its rate limit, in thousands
 of tokens per minute (TPM); `--sku-capacity 50` means 50K TPM. Each
-subscription has a TPM quota per model and region, shared by its
-deployments. One person typing needs little; 10K–50K TPM is plenty. If you
-run out of quota, lower the capacity of another deployment, use another
-region, or request more quota in the portal. You pay for the tokens you use,
-not for the capacity.
+subscription has a TPM quota per model and deployment type, shared by its
+deployments. Global Standard quota is shared across all regions, so a
+deployment in another region uses the same pool; Standard and Data Zone
+Standard have their own quota. One person typing needs little; 10K–50K TPM is
+plenty. If you run out of quota, lower the capacity of another deployment of
+the same model and type, or request more quota in the portal. You pay for the
+tokens you use, not for the capacity.
 
 > **Note the deployment name.** Type Fast sends the *deployment* name, not the
 > model name. If you name the deployment something other than `gpt-4.1-mini`,
@@ -182,8 +184,9 @@ KEY=$(az cognitiveservices account keys list \
     --name <resource> \
     --resource-group type-fast-rg \
     --query key1 --output tsv) &&
-  (umask 077; printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key) &&
-  chmod 600 ~/.type-fast/azure_ai_api_key; unset KEY
+  (umask 077; touch ~/.type-fast/azure_ai_api_key) &&
+  chmod 600 ~/.type-fast/azure_ai_api_key &&
+  printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key; unset KEY
 ```
 
 Treat the API key like a password: don't paste it into chats or tickets, or
@@ -214,8 +217,9 @@ saved in your shell history, and the file is readable only by your account:
 
 ```sh
 printf 'Foundry API key: '; read -rs KEY; echo; \
-  (umask 077; printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key); \
-  chmod 600 ~/.type-fast/azure_ai_api_key; unset KEY
+  (umask 077; touch ~/.type-fast/azure_ai_api_key) && \
+  chmod 600 ~/.type-fast/azure_ai_api_key && \
+  printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key; unset KEY
 ```
 
 **Running from a terminal.** Environment variables work too, and take
@@ -315,7 +319,13 @@ The endpoint path is wrong. Use the bare resource URL
 `/openai/responses`, or `?api-version=…`. Type Fast uses the v1 API, which
 doesn't need an `api-version`.
 
-**400 — model or parameter errors**
+**400 — "Invalid value: ''. Supported values are: …"**
+
+The endpoint is a *project* endpoint, ending in `/api/projects/<project>`.
+Use the part before `/api/projects/`, such as
+`https://<resource>.services.ai.azure.com`.
+
+**400 — other model or parameter errors**
 
 The deployment's model may not support the Responses API; deploy one of the
 models in [step 3](#3-deploy-a-model). If a deployment rejects `temperature`,
@@ -360,11 +370,17 @@ az group delete --name type-fast-rg
 ```
 
 If the resource group holds anything else, such as a group you picked in the
-portal, delete only the Foundry resource:
+portal, delete only the Foundry resource. Delete its projects first; the
+resource can't be deleted while it has any:
 
 ```sh
+az cognitiveservices account project list --name <resource> --resource-group <group> --query "[].name" --output tsv
+az cognitiveservices account project delete --name <resource> --resource-group <group> --project-name type-fast
 az cognitiveservices account delete --name <resource> --resource-group <group>
 ```
+
+The project list shows names as `<resource>/<project>`; pass only the part
+after the `/` to `--project-name`.
 
 Deleted Foundry resources are soft-deleted, and their name stays reserved
 until they're purged. To reuse the name, purge it:
