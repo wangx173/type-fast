@@ -4,7 +4,6 @@
 - [Run from source](#run-from-source)
 - [Run tests](#run-tests)
 - [Build the macOS app](#build-the-macos-app)
-- [Update the screenshots](#update-the-screenshots)
 
 ## Requirements
 
@@ -56,19 +55,3 @@ launched from Finder.
 Pushing a version tag (for example `v0.4.0`) runs the
 [release workflow](../.github/workflows/release.yml), which builds the app and
 attaches `Type-Fast-macos-arm64.zip` to a GitHub Release.
-
-## Update the screenshots
-
-The demo GIF and the screenshots in [`docs/images`](images) are drawn from the
-real window with sample text by
-[`scripts/make_screenshots.py`](../scripts/make_screenshots.py). After you
-change the UI, regenerate them on a Mac:
-
-```sh
-pip install -e . "PySide6>=6.8" "pillow>=9.1"
-python scripts/make_screenshots.py
-```
-
-The script needs no API key and sends no requests, and it uses a temporary home
-folder so your settings don't appear. The desktop, the chat app, and the key
-badges around the window in the demo are drawn by the script.

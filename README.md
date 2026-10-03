@@ -88,11 +88,11 @@ details.
 
 ## Documentation
 
-| Guide                                    | What's inside                                             |
-|------------------------------------------|-----------------------------------------------------------|
-| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone     |
-| [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings    |
-| [Development](docs/development.md)       | Run from source, tests, the `.app` build, and screenshots |
+| Guide                                    | What's inside                                            |
+|------------------------------------------|----------------------------------------------------------|
+| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone    |
+| [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
+| [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
 
 ## Roadmap
 
