@@ -79,9 +79,9 @@ SHADOW_MARGIN = 40
 CHAT_X, CHAT_Y, CHAT_W, CHAT_H = 110, 24, 600, 600
 COMPOSE_H = 36
 
-# The Type Fast window at its launch size (type_fast.app.main), in the compact
-# layout the hotkey uses, centered in the upper part of the screen like
-# MainWindow._center_on_cursor_screen.
+# The Type Fast window at its launch size (type_fast.app.main). In the demo it
+# is in the compact layout the hotkey uses, centered in the upper part of the
+# screen like MainWindow._center_on_cursor_screen.
 POPUP_W, POPUP_H = 460, 380
 POPUP_X = (SCENE_W - POPUP_W) // 2
 POPUP_Y = (SCENE_H - POPUP_H - TITLE_H) // 4
@@ -338,9 +338,10 @@ class Renderer:
         _save_png(_shadowed(_framed(self._render(window), "Type Fast")), self.out / "hotkey.png")
 
     def _languages_png(self) -> None:
+        # At launch size, the full layout widens the window to its minimum width.
         window = self._window(
             source=self.config.AUTO_SOURCE, target="Spanish", tone="Business", compact=False,
-            size=(600, 400),
+            size=(POPUP_W, POPUP_H),
         )
         self._fill(
             window,
