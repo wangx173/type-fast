@@ -12,7 +12,12 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey)](#install)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-<img src="docs/images/main.png" alt="Type Fast translating an English message into polite Japanese" width="600">
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/demo.png">
+  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, translating &quot;Yes, I will! Are you free for lunch?&quot; into polite Japanese and copying it to the clipboard, ready to paste into the chat." width="720">
+</picture>
+
+<sub>Press <b>⇧⌘Space</b> in any app, type, and paste the translation with <b>⌘V</b>.</sub>
 
 </div>
 
@@ -65,8 +70,10 @@ To use Azure AI Foundry instead, or to run from source, see
 
 ## Usage
 
-Type in the top box. The translation appears below shortly after you pause, or
-right away when you end a sentence or press Return.
+Press **⇧⌘Space** in any app and type in the top box. The translation appears
+below shortly after you pause, or right away when you end a sentence or press
+Return. When it finishes, it is copied to the clipboard: press **⇧⌘Space** or
+**Esc** to go back to your app, then **⌘V** to paste it.
 
 | Shortcut                   | Action                                    |
 |----------------------------|-------------------------------------------|
