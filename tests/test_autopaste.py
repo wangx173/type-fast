@@ -381,6 +381,29 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._hotkey()
         self.send_paste.assert_not_called()
 
+    def test_no_paste_if_the_same_text_was_copied_elsewhere(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+        # Same text, but another app's clipboard item (it may carry rich data).
+        QApplication.clipboard().setText("Bonjour.")
+        self._hotkey()
+        self.send_paste.assert_not_called()
+
+    def test_blank_line_added_while_translating_still_copies_and_pastes(self) -> None:
+        w = self.window
+        w.summon()
+        self._type("Hello.\n")
+        request = w._request_id
+        w.input.setPlainText("Hello.\n\n")  # before the translation finishes
+        self.assertEqual(w._request_id, request)
+        w.bridge.delta.emit(request, "Bonjour.")
+        w.bridge.finished.emit(request, "Bonjour.")
+        self.assertEqual(w.status.text(), "Copied to clipboard \u2713")
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.\n")
+        self._hotkey()
+        self.send_paste.assert_called_once_with()
+
     def test_no_paste_if_the_clipboard_changes_during_the_delay(self) -> None:
         w = self.window
         w.summon()
