@@ -27,12 +27,14 @@ You need:
 
 - An **Azure subscription**. You can
   [create one for free](https://azure.microsoft.com/pricing/purchase-options/azure-account).
-- Permission to create resources in it. With the CLI, the **Contributor** or
-  **Owner** role on the resource group is enough. In the portal, you need a
-  role such as **Foundry Owner** or **Foundry Account Owner** on the
-  subscription or resource group. If you can't create resources, ask your
-  Azure administrator to create them for you, or to give you the endpoint, an
-  API key, and the deployment name.
+- Permission to create resources in it. With the CLI, the **Contributor** role
+  on the subscription is enough; you don't need **Owner**. If you only have
+  Contributor on an existing resource group, skip `az group create` below and
+  use that group's name instead. In the portal, you need a role such as
+  **Foundry Owner** or **Foundry Account Owner** on the subscription or
+  resource group. If you can't create resources, ask your Azure administrator
+  to create a Foundry resource for you and share the endpoint, an API key, and
+  the deployment name through a secure channel, such as a password manager.
 - For the CLI steps, the
   [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
   **2.80.0 or later** (check with `az version`, update with `az upgrade`).
@@ -90,7 +92,8 @@ choose another.
 
 Type Fast uses `gpt-4.1-mini` by default. It is fast and inexpensive, which
 suits translating as you type. You can deploy any chat model that supports the
-Responses API, such as `gpt-4.1-nano`, `gpt-4.1`, or `gpt-5-mini`.
+Responses API, such as `gpt-4.1-nano` or `gpt-4.1`; see
+[Cost tips](#cost-tips) before picking a larger or reasoning model.
 
 **Portal**
 
@@ -173,14 +176,16 @@ az cognitiveservices account show \
     --resource-group type-fast-rg \
     --query 'properties.endpoints."AI Foundry API"' --output tsv
 
-# API key (prints a secret; don't paste it into chats or tickets)
-az cognitiveservices account keys list \
+# API key: saved straight to Type Fast's key file, without showing it
+mkdir -p ~/.type-fast
+(umask 077; az cognitiveservices account keys list \
     --name <resource> \
     --resource-group type-fast-rg \
-    --query key1 --output tsv
+    --query key1 --output tsv > ~/.type-fast/azure_ai_api_key)
 ```
 
-Treat the API key like a password. Either key works; having two lets you
+Treat the API key like a password: don't paste it into chats or tickets, or
+show it while sharing your screen. Either key works; having two lets you
 regenerate one while the other is in use.
 
 ## 5. Configure Type Fast
@@ -195,20 +200,33 @@ see variables you set in your shell, so use the files in `~/.type-fast/`:
 ```sh
 mkdir -p ~/.type-fast
 echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
-echo '<your-foundry-key>' > ~/.type-fast/azure_ai_api_key
-chmod 600 ~/.type-fast/azure_ai_api_key  # keep the key private to your account
+
+# Copy the key from the portal, then save it from the clipboard. This keeps
+# it out of your shell history and readable only by your account.
+(umask 077; pbpaste > ~/.type-fast/azure_ai_api_key)
+pbcopy < /dev/null  # clear the clipboard
+chmod 600 ~/.type-fast/azure_ai_api_key  # in case the file already existed
+
 # Only if your deployment isn't named gpt-4.1-mini:
 echo '<deployment-name>' > ~/.type-fast/azure_ai_model
 ```
+
+If you saved the key with the CLI command in
+[step 4](#4-get-the-endpoint-and-api-key), skip the `pbpaste` and `pbcopy`
+lines.
 
 **Running from a terminal.** Environment variables work too, and take
 precedence over the files:
 
 ```sh
 export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
-export AZURE_AI_API_KEY='<your-foundry-key>'
+# Prompt for the key so it isn't saved in your shell history:
+printf 'Foundry API key: '; read -rs AZURE_AI_API_KEY; echo
+export AZURE_AI_API_KEY
 export AZURE_AI_MODEL='<deployment-name>'  # optional
 ```
+
+Don't put the key in `~/.zshrc` or other dotfiles; use the key file instead.
 
 Notes:
 
@@ -217,14 +235,15 @@ Notes:
   trailing `/`.
 - When both an endpoint and a key are found, Type Fast uses Foundry instead of
   OpenAI, even if an OpenAI key is also set.
-- You can also set the deployment name in the app: **Settings → Set Model…**.
-  It's saved to `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
+- Once the endpoint and key are set, you can also set the deployment name in
+  the app: **Settings → Set Model…**. It's saved to
+  `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
   pins the model and the app asks you to unset it first.
 - **Quit and reopen Type Fast** (⌘Q) after changing the endpoint or key.
 
 ## 6. Check that it works
 
-1. Open Type Fast. At the bottom of the full window, it shows
+1. Open Type Fast. At the bottom of the window shown at launch, it shows
    **Model: gpt-4.1-mini** (or your deployment name). Hover over it: the
    tooltip should read **Provider: Azure AI Foundry**. If it says
    **Provider: OpenAI**, Type Fast didn't find both the endpoint and the key.
@@ -237,26 +256,37 @@ If you see `[error] …` in the lower box instead, see
 
 ## Troubleshooting
 
-Errors from Foundry appear in the output box as `[error] Error code: <status>
-- {…}`, followed by Foundry's message.
+Errors from Foundry appear in the output box as
+`[error] Error code: <status> - {…}`, followed by Foundry's message.
 
-**"No API key set — Settings › Set OpenAI API Key…"**
+**`[error] No OpenAI API key found…`, or the tooltip says Provider: OpenAI**
 
-Type Fast found no Foundry endpoint and key (and no OpenAI key). If you used
+Type Fast didn't find both a Foundry endpoint and a key, so it fell back to
+OpenAI. Don't add an OpenAI key; fix the Foundry settings instead. If you used
 `export` but opened the app from Finder or the Dock, it can't see those
-variables; use the [`~/.type-fast/` files](#5-configure-type-fast) instead.
-Check that both `azure_ai_endpoint` and `azure_ai_api_key` exist and aren't
-empty. **Settings → Set OpenAI API Key…** sets only an OpenAI key; it doesn't
-configure Foundry.
+variables; use the [`~/.type-fast/` files](#5-configure-type-fast). Check that
+both `azure_ai_endpoint` and `azure_ai_api_key` exist and aren't empty, then
+quit and reopen Type Fast. **Settings → Set OpenAI API Key…** sets only an
+OpenAI key; it doesn't configure Foundry.
 
 **401 — "Access denied due to invalid subscription key or wrong API endpoint"**
 
 - The key is wrong, or belongs to a different resource than the endpoint.
   Copy both again from the same resource.
 - The key was regenerated. Copy the new one.
-- The resource has key authentication turned off (`disableLocalAuth`), for
-  example by an organization policy. Type Fast needs key authentication; ask
-  your administrator, or use a resource that allows it.
+
+**403 — access denied**
+
+- "Key based authentication is disabled for this resource"
+  (`AuthenticationTypeDisabled`): the resource has key authentication turned
+  off, for example by an organization policy. Type Fast needs key
+  authentication. Ask your administrator whether a resource that allows it can
+  be provided; don't work around the policy with a personal resource for work
+  content.
+- "Access denied due to Virtual Network/Firewall rules" or "Public access is
+  disabled": the resource only accepts requests from selected networks or
+  private endpoints. Connect from an allowed network, or ask your
+  administrator to allow yours.
 
 **404 — `DeploymentNotFound`, "The API deployment for this resource does not
 exist"**
@@ -293,8 +323,6 @@ raise the deployment's capacity (see [Quota](#3-deploy-a-model)).
 **Connection errors**
 
 Check the resource name in the endpoint, your network, and any VPN or proxy.
-If the resource only allows access from selected networks or private
-endpoints, your Mac must be on one of them.
 
 ## Cost tips
 
@@ -316,14 +344,34 @@ Check current prices on
 
 ## Clean up
 
-To remove everything this guide created, delete the resource group:
+Deleting resources can't be undone. If you created a resource group just for
+this guide, as in the CLI steps, check what's in it, then delete the group:
 
 ```sh
+az resource list --resource-group type-fast-rg --output table
 az group delete --name type-fast-rg
+```
+
+If the resource group holds anything else, such as a group you picked in the
+portal, delete only the Foundry resource:
+
+```sh
+az cognitiveservices account delete --name <resource> --resource-group <group>
+```
+
+Deleted Foundry resources are soft-deleted, and their name stays reserved
+until they're purged. To reuse the name, purge it:
+
+```sh
+az cognitiveservices account purge --name <resource> --resource-group <group> --location <region>
 ```
 
 Then remove the Foundry settings so Type Fast goes back to OpenAI:
 
 ```sh
-rm ~/.type-fast/azure_ai_endpoint ~/.type-fast/azure_ai_api_key ~/.type-fast/azure_ai_model
+rm -f ~/.type-fast/azure_ai_endpoint ~/.type-fast/azure_ai_api_key ~/.type-fast/azure_ai_model
+unset AZURE_AI_ENDPOINT AZURE_AI_API_KEY AZURE_AI_MODEL
 ```
+
+Remove those variables from your shell profile too, if you added them, then
+quit and reopen Type Fast.
