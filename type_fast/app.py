@@ -41,7 +41,6 @@ import threading
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
-    QMimeData,
     QObject,
     QPropertyAnimation,
     Qt,
@@ -101,9 +100,6 @@ _HOVER_POLL_MS = 120
 # How long to let the previous app take focus back before pasting into it, in
 # milliseconds. Short enough to feel instant.
 _PASTE_DELAY_MS = 100
-# Private clipboard format numbering each translation Type Fast copies, so a
-# later copy of the same text from elsewhere is told apart.
-_COPY_FORMAT = "application/x-type-fast-copy"
 
 # Styles for the main window. Neutral gray tints read well in both light and
 # dark mode; ``palette(...)`` colors follow the system appearance and accent
@@ -458,7 +454,8 @@ class MainWindow(QMainWindow):
         # The finished translation that hiding with the hotkey should paste,
         # or "" (see dismiss); each one is pasted at most once.
         self._paste_text = ""
-        self._copy_count = 0
+        # The pasteboard change count right after that copy (None off macOS).
+        self._copy_change_count: int | None = None
         # A missing permission is explained at most once per launch.
         self._asked_paste_permission = False
         # Bumped each time the window appears, so a paste still waiting from
@@ -775,13 +772,11 @@ class MainWindow(QMainWindow):
         # ⌘V pastes the clipboard, so paste only while it still holds the
         # item Type Fast copied, never something copied since, even with the
         # same text. The window may also show blank lines typed after it.
-        clipboard = QApplication.clipboard().mimeData()
         return (
             bool(text)
             and self.output.toPlainText().rstrip() == text.rstrip()
-            and clipboard is not None
-            and clipboard.text() == text
-            and bytes(clipboard.data(_COPY_FORMAT)) == str(self._copy_count).encode()
+            and QApplication.clipboard().text() == text
+            and hotkey.pasteboard_change_count() == self._copy_change_count
         )
 
     def _paste_into_previous_app(self, text: str, shown: int) -> None:
@@ -1280,11 +1275,8 @@ class MainWindow(QMainWindow):
     def _copy_output_to_clipboard(self) -> None:
         text = self.output.toPlainText()
         if text:
-            self._copy_count += 1
-            data = QMimeData()
-            data.setText(text)
-            data.setData(_COPY_FORMAT, str(self._copy_count).encode())
-            QApplication.clipboard().setMimeData(data)
+            QApplication.clipboard().setText(text)
+            self._copy_change_count = hotkey.pasteboard_change_count()
             self._paste_text = text
             self._set_status("Copied to clipboard \u2713", "done")
 

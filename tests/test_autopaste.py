@@ -26,6 +26,7 @@ class AutopasteModuleTests(unittest.TestCase):
             self.assertFalse(autopaste.is_supported())
             self.assertFalse(autopaste.has_permission())
             self.assertFalse(autopaste.send_paste())
+            self.assertIsNone(autopaste.hotkey.pasteboard_change_count())
         cdll.assert_not_called()
 
     def _fake_lib(self, permitted: bool = True) -> mock.MagicMock:
@@ -161,6 +162,21 @@ class WindowAutoPasteTests(unittest.TestCase):
             patcher = mock.patch.object(app.QMessageBox, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # Stand in for the macOS pasteboard change count: it goes up with
+        # every copy.
+        self.change_count = 0
+
+        def count_change() -> None:
+            self.change_count += 1
+
+        clipboard = QApplication.clipboard()
+        clipboard.dataChanged.connect(count_change)
+        self.addCleanup(clipboard.dataChanged.disconnect, count_change)
+        patcher = mock.patch.object(
+            app.hotkey, "pasteboard_change_count", lambda: self.change_count
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.open_url = mock.MagicMock()
         patcher = mock.patch.object(app.QDesktopServices, "openUrl", self.open_url)
         patcher.start()

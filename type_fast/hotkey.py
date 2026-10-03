@@ -511,7 +511,7 @@ class GlobalHotkey(QObject):
             pass
 
 
-# --- App activation (libobjc) ------------------------------------------------
+# --- App activation and pasteboard (libobjc) ---------------------------------
 
 _objc: ctypes.CDLL | None = None
 
@@ -529,8 +529,8 @@ def _send(receiver: int | None, selector: str, restype=ctypes.c_void_p,
     return msg_send(receiver, _objc.sel_registerName(selector.encode()), *args)
 
 
-def _ns_app() -> int | None:
-    """Return ``[NSApplication sharedApplication]`` or None when unavailable."""
+def _objc_class(name: str) -> int | None:
+    """Return the Objective-C class ``name``, or None when unavailable."""
     global _objc
     if not is_cocoa():
         return None
@@ -542,10 +542,25 @@ def _ns_app() -> int | None:
             lib.sel_registerName.argtypes = [ctypes.c_char_p]
             lib.sel_registerName.restype = ctypes.c_void_p
             _objc = lib
-        cls = _objc.objc_getClass(b"NSApplication")
-        return _send(cls, "sharedApplication") if cls else None
+        return _objc.objc_getClass(name.encode()) or None
     except (OSError, AttributeError):
         return None
+
+
+def _ns_app() -> int | None:
+    """Return ``[NSApplication sharedApplication]`` or None when unavailable."""
+    cls = _objc_class("NSApplication")
+    return _send(cls, "sharedApplication") if cls else None
+
+
+def pasteboard_change_count() -> int | None:
+    """Return the general pasteboard's change count, or None off macOS/Cocoa.
+
+    It goes up each time anything is copied, in any app.
+    """
+    cls = _objc_class("NSPasteboard")
+    board = _send(cls, "generalPasteboard") if cls else None
+    return _send(board, "changeCount", ctypes.c_long) if board else None
 
 
 def activate_app() -> None:
