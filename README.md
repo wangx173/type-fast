@@ -74,8 +74,8 @@ Press **⇧⌘Space** in any app and type in the top box. The translation appear
 below shortly after you pause, or right away when you end a sentence or press
 Return. When it finishes, it is copied to the clipboard. Press **⇧⌘Space** to
 go back to your app and paste it there (if the translation is still coming in,
-it is pasted as soon as it finishes, if that is within 5 seconds and you don't
-click or type first), or **Esc** to go back without pasting.
+it is pasted as soon as it finishes, provided that takes under 5 seconds and
+you don't click or type first), or **Esc** to go back without pasting.
 The first time, Type Fast asks you to allow it in **Accessibility** settings
 so it can paste; see [Auto-paste](docs/usage.md#auto-paste).
 

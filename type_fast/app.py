@@ -843,6 +843,13 @@ class MainWindow(QMainWindow):
     def _paste_into_previous_app(
         self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES
     ) -> None:
+        """Paste ``text`` into the app that got focus back after the hide with ``shown``.
+
+        Nothing is pasted if the window was summoned again or the clipboard
+        changed. A deferred paste (one with a :class:`_PasteTarget` for this
+        hide; :meth:`summon` clears it) also waits for focus to come back and
+        is dropped if you switched apps, or clicked or typed, since the hide.
+        """
         if shown != self._shown_count or self.isVisible() or not self._is_pasteable(text):
             return  # summoned again, or the clipboard changed, before the paste
         target = self._paste_target
@@ -1193,6 +1200,8 @@ class MainWindow(QMainWindow):
 
     def _retranslate(self) -> None:
         """Re-run the translation now (e.g. after a tone or model change)."""
+        # A paste waiting from a hotkey hide was for the old translation.
+        self._cancel_deferred_paste()
         self.timer.stop()
         self.run_translation()
 

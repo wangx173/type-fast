@@ -57,6 +57,14 @@ class AutopasteModuleTests(unittest.TestCase):
         )
         self.assertCountEqual([c.args[0] for c in lib.CFRelease.call_args_list], [1, 2, 3])
 
+    def test_input_event_count_sums_hardware_clicks_and_key_presses(self) -> None:
+        lib = self._fake_lib()
+        lib.CGEventSourceCounterForEventType.side_effect = lambda state, kind: kind
+        with mock.patch.object(autopaste, "_load", return_value=lib):
+            self.assertEqual(autopaste.input_event_count(), 1 + 3 + 10 + 25)
+        states = {c.args[0] for c in lib.CGEventSourceCounterForEventType.call_args_list}
+        self.assertEqual(states, {autopaste._kCGEventSourceStateHIDSystemState})
+
     def test_send_paste_needs_permission(self) -> None:
         lib = self._fake_lib(permitted=False)
         with mock.patch.object(autopaste, "_load", return_value=lib):
@@ -410,7 +418,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.send_paste.assert_not_called()
         self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
 
-    def test_deferred_paste_waits_for_the_previous_app_to_be_frontmost(self) -> None:
+    def test_noting_the_paste_target_waits_for_the_previous_app(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -430,7 +438,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._finish()
         self.send_paste.assert_called_once_with()
 
-    def test_deferred_paste_goes_to_the_first_app_noticed(self) -> None:
+    def test_deferred_paste_goes_to_the_first_app_if_none_was_noted(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -441,7 +449,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._finish()
         self.send_paste.assert_called_once_with()
 
-    def test_deferred_paste_waits_for_focus_to_come_back(self) -> None:
+    def test_deferred_paste_retries_until_focus_comes_back(self) -> None:
         w = self.window
         w.summon()
         w.input.setPlainText("Hello.")
@@ -514,6 +522,16 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.bridge.error.emit(w._request_id, "boom")
         self.assertIsNone(w._deferred_paste)
         self.assertFalse(w._deferred_paste_timer.isActive())
+        self.send_paste.assert_not_called()
+
+    def test_deferred_paste_dropped_when_retranslated(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self._hotkey()
+        w._retranslate()  # e.g. the model changed from the menu while hidden
+        self.assertIsNone(w._deferred_paste)
+        self._finish()
         self.send_paste.assert_not_called()
 
     def test_deferred_paste_dropped_after_error(self) -> None:
