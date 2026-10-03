@@ -216,10 +216,10 @@ on your clipboard), then paste it and press Return. The key isn't shown or
 saved in your shell history, and the file is readable only by your account:
 
 ```sh
-printf 'Foundry API key: '; read -rs KEY; echo; \
+printf 'Foundry API key: '; read -rs KEY && [ -n "$KEY" ] && \
   (umask 077; touch ~/.type-fast/azure_ai_api_key) && \
   chmod 600 ~/.type-fast/azure_ai_api_key && \
-  printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key; unset KEY
+  printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key; echo; unset KEY
 ```
 
 **Running from a terminal.** Environment variables work too, and take
