@@ -98,7 +98,7 @@ _HOVER_POLL_MS = 120
 # color, so the sheet is re-applied when the color scheme changes. Only named
 # widgets are styled, so the language and tone pickers keep their native look.
 # ``$muted``, ``$busy``, and ``$done`` are small-text colors picked per light
-# or dark mode (see _TEXT_COLORS) to keep at least 4.5:1 contrast.
+# or dark mode (see _TEXT_COLORS) to keep the text readable.
 _STYLE_SHEET = """
 QPlainTextEdit#inputBox, QTextEdit#outputBox {
     border: 1px solid rgba(128, 128, 128, 0.3);
@@ -166,10 +166,13 @@ QToolButton#swapButton:disabled {
 """
 
 # Small-text colors for light and dark mode. Each keeps at least 4.5:1 contrast
-# against the window background (about #ececec light, #323232 dark).
+# against the window background (about #ececec light, #323232 dark) while the
+# window is in use with the Off, Light, or Medium transparency, whatever is
+# behind it. Strong and the faded background state trade contrast for
+# see-through on purpose.
 _TEXT_COLORS = {
-    "light": {"muted": "#5c5c60", "busy": "#0a5bc4", "done": "#1b7a33"},
-    "dark": {"muted": "#a8a8ad", "busy": "#6cb6ff", "done": "#5fd47c"},
+    "light": {"muted": "#56565a", "busy": "#0a56ba", "done": "#17662b"},
+    "dark": {"muted": "#b3b3b7", "busy": "#71b9ff", "done": "#5fd47c"},
 }
 
 

@@ -58,6 +58,49 @@ class TransparencySettingsTests(unittest.TestCase):
         self.assertEqual(self._load({"tone": "Casual", "transparency": 1}).tone, "Casual")
 
 
+
+def _luminance(rgb: tuple[float, ...]) -> float:
+    def channel(value: float) -> float:
+        value /= 255
+        return value / 12.92 if value <= 0.03928 else ((value + 0.055) / 1.055) ** 2.4
+
+    r, g, b = (channel(v) for v in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
+def _contrast(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    high, low = sorted((_luminance(a), _luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    return tuple(int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
+
+
+class TextContrastTests(unittest.TestCase):
+    # Approximate macOS window backgrounds for light and dark mode.
+    WINDOW = {"light": "#ececec", "dark": "#323232"}
+
+    def test_small_text_stays_readable_through_transparency(self) -> None:
+        from type_fast import app
+
+        # While in use with Off, Light, or Medium, over anything behind the
+        # window (white and black are the extremes), small text keeps 4.5:1.
+        opacities = [config.TRANSPARENCY[name][0] for name in ("Off", "Light", "Medium")]
+        for mode, colors in app._TEXT_COLORS.items():
+            window = _rgb(self.WINDOW[mode])
+            for role, color in colors.items():
+                for alpha in opacities:
+                    for behind in ((255, 255, 255), (0, 0, 0)):
+                        def blend(rgb: tuple[int, ...]) -> tuple[float, ...]:
+                            return tuple(alpha * c + (1 - alpha) * d for c, d in zip(rgb, behind))
+
+                        ratio = _contrast(blend(_rgb(color)), blend(window))
+                        self.assertGreaterEqual(
+                            ratio, 4.5, f"{mode} {role} {color} at {alpha} over {behind}"
+                        )
+
+
 @unittest.skipUnless(_HEADLESS, "set QT_QPA_PLATFORM=offscreen to run the headless window tests")
 class WindowAppearanceTests(unittest.TestCase):
     @classmethod
