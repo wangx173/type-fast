@@ -45,12 +45,14 @@ from PySide6.QtCore import (
     QPropertyAnimation,
     Qt,
     QTimer,
+    QUrl,
     Signal,
 )
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
     QCursor,
+    QDesktopServices,
     QGuiApplication,
     QKeySequence,
     QShortcut,
@@ -452,7 +454,7 @@ class MainWindow(QMainWindow):
         # The finished translation that hiding with the hotkey should paste,
         # or "" (see dismiss); each one is pasted at most once.
         self._paste_text = ""
-        # The permission prompt is shown at most once per launch.
+        # Hiding with the hotkey explains a missing permission once per launch.
         self._asked_paste_permission = False
         # Bumped each time the window appears, so a paste still waiting from
         # an earlier hide is dropped (see dismiss).
@@ -726,6 +728,10 @@ class MainWindow(QMainWindow):
         translation that hasn't been pasted yet is pasted into that app.
         """
         text = self._take_paste_text() if paste and self.prefs.auto_paste else ""
+        if text and not self._asked_paste_permission and self._needs_paste_permission():
+            # Explain while the window is still up; this time the translation
+            # stays on the clipboard to paste by hand.
+            self._ask_paste_permission()
         self._dismissed = True
         self.hide()
         hotkey.hide_app()
@@ -766,24 +772,36 @@ class MainWindow(QMainWindow):
             or not self._is_pasteable(text)
         ):
             return  # summoned again, or the clipboard changed, before the paste
-        if autopaste.send_paste() or self._asked_paste_permission:
-            return
-        # Not allowed yet: ask once per launch. The translation stays on the
-        # clipboard either way.
+        autopaste.send_paste()
+
+    @staticmethod
+    def _needs_paste_permission() -> bool:
+        return autopaste.is_supported() and not autopaste.has_permission()
+
+    def _ask_paste_permission(self) -> None:
+        """Explain the Accessibility permission and offer to open its settings."""
         self._asked_paste_permission = True
-        autopaste.request_permission()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Information)
+        box.setWindowTitle("Allow Auto-Paste")
+        box.setText("Allow Type Fast to paste translations for you?")
+        box.setInformativeText(
+            "Turn on Type Fast in System Settings › Privacy & Security › "
+            "Accessibility. If it isn't listed, add it with +.\n\n"
+            "Until then, paste the translation with ⌘V."
+        )
+        open_button = box.addButton("Open System Settings", QMessageBox.AcceptRole)
+        box.addButton("Not Now", QMessageBox.RejectRole)
+        box.setDefaultButton(open_button)
+        box.exec()
+        if box.clickedButton() is open_button:
+            QDesktopServices.openUrl(QUrl(autopaste.SETTINGS_URL))
 
     def _set_auto_paste(self, enabled: bool) -> None:
         self.prefs.auto_paste = enabled
         self._save_prefs("Auto-Paste Translation", "auto-paste setting")
-        if (
-            enabled
-            and not self._asked_paste_permission
-            and autopaste.is_supported()
-            and not autopaste.has_permission()
-        ):
-            self._asked_paste_permission = True
-            autopaste.request_permission()
+        if enabled and self._needs_paste_permission():
+            self._ask_paste_permission()
 
     def _center_on_cursor_screen(self) -> None:
         """Center horizontally on the cursor's screen, in its upper part."""

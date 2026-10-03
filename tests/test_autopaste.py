@@ -12,7 +12,7 @@ from pathlib import Path
 from unittest import mock
 
 from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QApplication, QMainWindow
+from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
 from type_fast import autopaste, config, settings
 
@@ -25,13 +25,12 @@ class AutopasteModuleTests(unittest.TestCase):
                 mock.patch.object(autopaste.ctypes, "CDLL") as cdll:
             self.assertFalse(autopaste.is_supported())
             self.assertFalse(autopaste.has_permission())
-            self.assertFalse(autopaste.request_permission())
             self.assertFalse(autopaste.send_paste())
         cdll.assert_not_called()
 
     def _fake_lib(self, permitted: bool = True) -> mock.MagicMock:
         lib = mock.MagicMock()
-        lib.CGPreflightPostEventAccess.return_value = permitted
+        lib.AXIsProcessTrusted.return_value = permitted
         lib.CGEventSourceCreate.return_value = 1
         lib.CGEventCreateKeyboardEvent.side_effect = [2, 3]
         return lib
@@ -60,6 +59,14 @@ class AutopasteModuleTests(unittest.TestCase):
         with mock.patch.object(autopaste, "_load", return_value=lib):
             self.assertFalse(autopaste.send_paste())
         lib.CGEventPost.assert_not_called()
+
+    def test_permission_is_checked_live(self) -> None:
+        lib = self._fake_lib(permitted=False)
+        with mock.patch.object(autopaste, "_load", return_value=lib):
+            self.assertFalse(autopaste.has_permission())
+            lib.AXIsProcessTrusted.return_value = True  # allowed in System Settings
+            self.assertTrue(autopaste.has_permission())
+            self.assertTrue(autopaste.send_paste())
 
     def test_send_paste_never_leaves_a_key_down(self) -> None:
         lib = self._fake_lib()
@@ -129,16 +136,35 @@ class WindowAutoPasteTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
         self.send_paste = mock.MagicMock(return_value=True)
-        self.request_permission = mock.MagicMock(return_value=False)
+        self.has_permission = mock.MagicMock(return_value=True)
         for name, value in (
             ("send_paste", self.send_paste),
-            ("request_permission", self.request_permission),
             ("is_supported", mock.MagicMock(return_value=True)),
-            ("has_permission", mock.MagicMock(return_value=False)),
+            ("has_permission", self.has_permission),
         ):
             patcher = mock.patch.object(autopaste, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
+        # Answer the permission alert instead of showing it: by default with
+        # its default button, "Open System Settings".
+        self.alerts: list[str] = []
+        self.alert_choice: Callable[[QMessageBox], object] = QMessageBox.defaultButton
+
+        def exec_alert(box: QMessageBox) -> int:
+            self.alerts.append(box.text())
+            return 0
+
+        for name, value in (
+            ("exec", exec_alert),
+            ("clickedButton", lambda box: self.alert_choice(box)),
+        ):
+            patcher = mock.patch.object(app.QMessageBox, name, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+        self.open_url = mock.MagicMock()
+        patcher = mock.patch.object(app.QDesktopServices, "openUrl", self.open_url)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.window = self._new_window()
 
     def _new_window(self) -> QMainWindow:
@@ -342,35 +368,77 @@ class WindowAutoPasteTests(unittest.TestCase):
             callback()
         self.send_paste.assert_not_called()
 
-    def test_asks_for_permission_once_per_launch(self) -> None:
-        self.send_paste.return_value = False
+    def test_missing_permission_is_explained_before_hiding(self) -> None:
+        self.has_permission.return_value = False
         w = self.window
-        for _ in range(2):
-            w.summon()
-            self._translate()
-            self._hotkey()
-        self.assertEqual(self.send_paste.call_count, 2)
-        self.request_permission.assert_called_once_with()
+        w.summon()
+        self._translate()
+        visible_during_alert: list[bool] = []
+        self.alert_choice = lambda box: visible_during_alert.append(w.isVisible())
+        self._hotkey()
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(visible_during_alert, [True])
+        self.open_url.assert_not_called()  # "Not Now"
+        self.assertFalse(w.isVisible())
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+        # Once per launch: the next hide doesn't ask again.
+        w.summon()
+        self._translate()
+        self._hotkey()
+        self.assertEqual(len(self.alerts), 1)
 
-    def test_menu_toggle_is_saved_and_asks_for_permission(self) -> None:
+    def test_alert_opens_accessibility_settings(self) -> None:
+        self.has_permission.return_value = False
+        w = self.window
+        w.summon()
+        self._translate()
+        self._hotkey()
+        self.open_url.assert_called_once()
+        self.assertEqual(self.open_url.call_args.args[0].toString(), autopaste.SETTINGS_URL)
+
+    def test_permission_granted_while_running_pastes_without_relaunch(self) -> None:
+        self.has_permission.return_value = False
+        w = self.window
+        w.summon()
+        self._translate()
+        self._hotkey()
+        self.has_permission.return_value = True  # allowed in System Settings
+        w.summon()
+        self._translate()
+        self._hotkey()
+        self.assertEqual(len(self.alerts), 1)
+        self.assertEqual(self.send_paste.call_count, 2)
+
+    def test_no_alert_when_allowed_or_nothing_to_paste(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+        self._hotkey()  # allowed
+        self.has_permission.return_value = False
+        w.summon()
+        self._hotkey()  # nothing to paste
+        self.assertEqual(self.alerts, [])
+
+    def test_menu_toggle_is_saved_and_explains_missing_permission(self) -> None:
+        self.has_permission.return_value = False
         w = self.window
         self.assertTrue(w.auto_paste_action.isChecked())
         w.auto_paste_action.trigger()
         self.assertFalse(settings.load().auto_paste)
-        self.request_permission.assert_not_called()
+        self.assertEqual(self.alerts, [])
         w.auto_paste_action.trigger()
         self.assertTrue(settings.load().auto_paste)
-        self.request_permission.assert_called_once_with()
-        # Asked already this launch: neither the toggle nor a failed paste asks again.
-        w.auto_paste_action.trigger()
-        w.auto_paste_action.trigger()
-        self.send_paste.return_value = False
+        self.assertEqual(len(self.alerts), 1)
+        # Explained already this launch: a hotkey hide doesn't ask again.
         w.summon()
         self._translate()
         self._hotkey()
-        self.request_permission.assert_called_once_with()
+        self.assertEqual(len(self.alerts), 1)
+        self.has_permission.return_value = True
+        w.auto_paste_action.trigger()
+        w.auto_paste_action.trigger()
+        self.assertEqual(len(self.alerts), 1)
         self.assertTrue(self._new_window().auto_paste_action.isChecked())
-
 
 if __name__ == "__main__":
     unittest.main()

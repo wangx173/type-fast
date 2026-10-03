@@ -5,8 +5,8 @@ and the finished translation is already on the clipboard; posting ⌘V there
 pastes it, so you don't have to.
 
 Posting keystrokes to another app needs the Accessibility permission (System
-Settings › Privacy & Security › Accessibility). Without it macOS drops the
-keystroke, and the translation is still on the clipboard to paste by hand.
+Settings › Privacy & Security › Accessibility). Without it nothing is posted,
+and the translation is still on the clipboard to paste by hand.
 
 The ⌘V uses the physical V key of the U.S. layout. That is V on QWERTY, QWERTZ,
 AZERTY, and Colemak, but not on Dvorak.
@@ -28,6 +28,8 @@ _kCGSessionEventTap = 1
 _kVK_ANSI_V = hotkey.KEYCODES["V"]
 # kCGEventFlagMaskCommand, plus the left-Command device bit that some apps check.
 _COMMAND_FLAGS = 0x00100000 | 0x00000008
+# Opens System Settings › Privacy & Security › Accessibility.
+SETTINGS_URL = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
 
 _lib: ctypes.CDLL | None = None
 _lib_failed = False
@@ -41,10 +43,8 @@ def _load() -> ctypes.CDLL | None:
     if _lib is None and not _lib_failed:
         try:
             lib = ctypes.CDLL(_APP_SERVICES)
-            lib.CGPreflightPostEventAccess.argtypes = []
-            lib.CGPreflightPostEventAccess.restype = ctypes.c_bool
-            lib.CGRequestPostEventAccess.argtypes = []
-            lib.CGRequestPostEventAccess.restype = ctypes.c_bool
+            lib.AXIsProcessTrusted.argtypes = []
+            lib.AXIsProcessTrusted.restype = ctypes.c_bool
             lib.CGEventSourceCreate.argtypes = [ctypes.c_int32]
             lib.CGEventSourceCreate.restype = ctypes.c_void_p
             lib.CGEventCreateKeyboardEvent.argtypes = [
@@ -71,19 +71,14 @@ def is_supported() -> bool:
 
 
 def has_permission() -> bool:
-    """True when macOS allows this app to post keystrokes to other apps."""
-    lib = _load()
-    return bool(lib and lib.CGPreflightPostEventAccess())
+    """True when this app has the Accessibility permission.
 
-
-def request_permission() -> bool:
-    """Ask macOS for the Accessibility permission; return whether it is granted.
-
-    If it is not granted yet, macOS shows its own prompt pointing to System
-    Settings, without waiting for an answer.
+    The answer is live, so a permission granted while the app runs counts
+    right away. (``CGPreflightPostEventAccess`` would keep its first answer
+    until the app is relaunched.)
     """
     lib = _load()
-    return bool(lib and lib.CGRequestPostEventAccess())
+    return bool(lib and lib.AXIsProcessTrusted())
 
 
 def send_paste() -> bool:
@@ -92,7 +87,7 @@ def send_paste() -> bool:
     Returns False, posting nothing, when unsupported or not permitted.
     """
     lib = _load()
-    if lib is None or not lib.CGPreflightPostEventAccess():
+    if lib is None or not lib.AXIsProcessTrusted():
         return False
     source = lib.CGEventSourceCreate(_kCGEventSourceStateCombinedSessionState)
     # Create both events before posting either, so a key is never left down.

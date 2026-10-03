@@ -99,10 +99,12 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
   while a translation is still in progress, you open and hide it again without
   typing anything, or you copied something else in the meantime, nothing is
   pasted.
-- Pasting into another app needs the **Accessibility** permission. The first
-  time, macOS asks you to allow Type Fast in **System Settings → Privacy &
-  Security → Accessibility**. Until you do, the hotkey just hides the window and
-  you can paste with **⌘V** yourself.
+- Pasting into another app needs the **Accessibility** permission. If Type Fast
+  doesn't have it, it tells you when you turn auto-paste on, or the first time
+  the hotkey would paste (once per launch). Click **Open System Settings** and
+  turn on Type Fast under **Privacy & Security → Accessibility** (add it with
+  **+** if it isn't listed). No relaunch is needed. Until then, the hotkey just
+  hides the window and you can paste with **⌘V** yourself.
 - To turn it off, uncheck **Settings → Auto-Paste Translation**. The choice is
   saved to `~/.type-fast/settings.json` as `"auto_paste"`.
 
