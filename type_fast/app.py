@@ -449,9 +449,9 @@ class MainWindow(QMainWindow):
         # reactivating the app (Dock icon, ⌘Tab) brings it back.
         self._dismissed = False
         self.compact = False
-        # Whether the output is a finished translation that hiding with the
-        # hotkey should paste (see dismiss); each one is pasted at most once.
-        self._paste_ready = False
+        # The finished translation that hiding with the hotkey should paste,
+        # or "" (see dismiss); each one is pasted at most once.
+        self._paste_text = ""
         # The permission prompt is shown at most once per launch.
         self._asked_paste_permission = False
         self.global_hotkey = hotkey.GlobalHotkey(self)
@@ -687,7 +687,7 @@ class MainWindow(QMainWindow):
         if appearing:
             # Whatever finished while hidden (or was dismissed with Esc) has
             # been seen or skipped; don't paste it on the next hide.
-            self._paste_ready = False
+            self._paste_text = ""
             self._center_on_cursor_screen()
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
@@ -721,26 +721,39 @@ class MainWindow(QMainWindow):
         With ``paste`` (the show/hide hotkey) and Auto-Paste on, a finished
         translation that hasn't been pasted yet is pasted into that app.
         """
-        paste = paste and self.prefs.auto_paste and self._take_paste_ready()
+        text = self._take_paste_text() if paste and self.prefs.auto_paste else ""
         self._dismissed = True
         self.hide()
         hotkey.hide_app()
-        if paste:
-            QTimer.singleShot(_PASTE_DELAY_MS, self._paste_into_previous_app)
+        if text:
+            QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text))
 
-    def _take_paste_ready(self) -> bool:
-        """Return whether the output should be pasted, and mark it as pasted."""
+    def _take_paste_text(self) -> str:
+        """Return the translation to paste, or "", and mark it as pasted.
+
+        Flushes a pending debounce first: if the user typed since the last
+        translation, :meth:`run_translation` runs now, and when that starts a
+        new request or shortens the output, the copied text is stale, so this
+        returns "".
+        """
         if self.timer.isActive():
-            # Typed since the last translation: translate now. If that starts a
-            # new request, the output is stale and nothing is pasted.
             self.timer.stop()
             self.run_translation()
-        ready, self._paste_ready = self._paste_ready, False
-        return ready
+        text, self._paste_text = self._paste_text, ""
+        return text if self._is_pasteable(text) else ""
 
-    def _paste_into_previous_app(self) -> None:
-        if self.isVisible():
-            return  # summoned again before the paste: don't paste into ourselves
+    def _is_pasteable(self, text: str) -> bool:
+        # ⌘V pastes the clipboard, so paste only while it still holds the
+        # translation shown in the window, never something copied since.
+        return (
+            bool(text)
+            and self.output.toPlainText() == text
+            and QApplication.clipboard().text() == text
+        )
+
+    def _paste_into_previous_app(self, text: str) -> None:
+        if self.isVisible() or not self._is_pasteable(text):
+            return  # summoned again, or the clipboard changed, before the paste
         if autopaste.send_paste() or self._asked_paste_permission:
             return
         # Not allowed yet: ask once per launch. The translation stays on the
@@ -751,7 +764,13 @@ class MainWindow(QMainWindow):
     def _set_auto_paste(self, enabled: bool) -> None:
         self.prefs.auto_paste = enabled
         self._save_prefs("Auto-Paste Translation", "auto-paste setting")
-        if enabled and autopaste.is_supported() and not autopaste.has_permission():
+        if (
+            enabled
+            and not self._asked_paste_permission
+            and autopaste.is_supported()
+            and not autopaste.has_permission()
+        ):
+            self._asked_paste_permission = True
             autopaste.request_permission()
 
     def _center_on_cursor_screen(self) -> None:
@@ -1080,7 +1099,7 @@ class MainWindow(QMainWindow):
             self._frozen_src = ""
             self._frozen_out = ""
             self._last_sent_key = None
-            self._paste_ready = False
+            self._paste_text = ""
             self.output.clear()
             return
 
@@ -1164,7 +1183,7 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
-            self._paste_ready = False
+            self._paste_text = ""
             self._set_status("Translating\u2026", "busy")
             self.output.setPlainText(self._active_prefix)
             self.output.moveCursor(QTextCursor.End)
@@ -1189,7 +1208,7 @@ class MainWindow(QMainWindow):
 
     def _on_error(self, request_id: int, message: str) -> None:
         if request_id == self._request_id:
-            self._paste_ready = False
+            self._paste_text = ""
             self._set_status("")
             self.output.setPlainText(f"[error] {message}")
 
@@ -1197,7 +1216,7 @@ class MainWindow(QMainWindow):
         text = self.output.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
-            self._paste_ready = True
+            self._paste_text = text
             self._set_status("Copied to clipboard \u2713", "done")
 
 

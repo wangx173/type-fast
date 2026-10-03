@@ -33,7 +33,7 @@ class Settings:
     # Name of a :data:`config.TRANSPARENCY` preset.
     transparency: str = config.DEFAULT_TRANSPARENCY
     # Paste the translation into your app when the hotkey hides the window.
-    auto_paste: bool = True
+    auto_paste: bool = config.DEFAULT_AUTO_PASTE
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
@@ -95,7 +95,9 @@ def load() -> Settings:
             set(config.TRANSPARENCY),
             config.DEFAULT_TRANSPARENCY,
         ),
-        auto_paste=auto_paste if isinstance(auto_paste, bool) else True,
+        auto_paste=(
+            auto_paste if isinstance(auto_paste, bool) else config.DEFAULT_AUTO_PASTE
+        ),
     )
 
 

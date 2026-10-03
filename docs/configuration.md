@@ -86,6 +86,6 @@ Everything lives in `~/.type-fast/`:
 | `azure_ai_model`    | Azure AI Foundry model or deployment override                          |
 
 Built-in defaults, such as the default model, suggested models, temperature,
-languages, tone presets, debounce interval, default hotkey, and transparency
-presets, live in
+languages, tone presets, debounce interval, default hotkey, transparency
+presets, and the auto-paste default, live in
 [`type_fast/config.py`](../type_fast/config.py).

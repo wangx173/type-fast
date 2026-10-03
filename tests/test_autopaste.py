@@ -7,20 +7,21 @@ import os
 import tempfile
 import types
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest import mock
 
 from PySide6.QtCore import QEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QMainWindow
 
-from type_fast import autopaste, settings
+from type_fast import autopaste, config, settings
 
 _HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 
 
 class AutopasteModuleTests(unittest.TestCase):
     def test_no_op_off_cocoa(self) -> None:
-        with mock.patch.object(autopaste.hotkey, "_is_cocoa", return_value=False), \
+        with mock.patch.object(autopaste.hotkey, "is_cocoa", return_value=False), \
                 mock.patch.object(autopaste.ctypes, "CDLL") as cdll:
             self.assertFalse(autopaste.is_supported())
             self.assertFalse(autopaste.has_permission())
@@ -79,18 +80,18 @@ class AutoPasteSettingsTests(unittest.TestCase):
         patcher.start()
         self.addCleanup(patcher.stop)
 
-    def test_default_on_and_round_trip(self) -> None:
-        self.assertTrue(settings.load().auto_paste)
+    def test_default_and_round_trip(self) -> None:
+        self.assertEqual(settings.load().auto_paste, config.DEFAULT_AUTO_PASTE)
         settings.save(settings.Settings(auto_paste=False))
         self.assertFalse(settings.load().auto_paste)
 
-    def test_invalid_falls_back_to_on(self) -> None:
+    def test_invalid_falls_back_to_default(self) -> None:
         for bad in ("no", 0, None, []):
             settings.SETTINGS_FILE.write_text(
                 json.dumps({"auto_paste": bad, "tone": "Casual"}), encoding="utf-8"
             )
             loaded = settings.load()
-            self.assertTrue(loaded.auto_paste, bad)
+            self.assertEqual(loaded.auto_paste, config.DEFAULT_AUTO_PASTE, bad)
             self.assertEqual(loaded.tone, "Casual")
 
 
@@ -120,7 +121,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         # Run the delayed paste right away, and record it instead of posting.
         self.scheduled: list[int] = []
 
-        def single_shot(delay: int, callback) -> None:
+        def single_shot(delay: int, callback: Callable[[], None]) -> None:
             self.scheduled.append(delay)
             callback()
 
@@ -140,13 +141,13 @@ class WindowAutoPasteTests(unittest.TestCase):
             self.addCleanup(patcher.stop)
         self.window = self._new_window()
 
-    def _new_window(self):
+    def _new_window(self) -> QMainWindow:
         window = self.app_module.MainWindow()
         self.addCleanup(self._discard, window)
         return window
 
     @staticmethod
-    def _discard(window) -> None:
+    def _discard(window: QMainWindow) -> None:
         # Delete, not just close: a dismissed window that is still alive
         # re-summons itself when the app is reactivated, stealing activation
         # from windows in later tests.
@@ -257,9 +258,45 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._hotkey()  # hidden before the translation finished
         w.bridge.delta.emit(w._request_id, "Bonjour.")
         w.bridge.finished.emit(w._request_id, "Bonjour.")
-        self.assertTrue(w._paste_ready)
+        self.assertEqual(w._paste_text, "Bonjour.")
         self._hotkey()  # summon
         self._hotkey()  # hide
+        self.send_paste.assert_not_called()
+
+    def test_no_paste_after_deleting_the_last_line(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.\nWorld.")
+        w.timer.stop()
+        w.run_translation()
+        for chunk in ("Bonjour.", "Monde."):
+            w.bridge.delta.emit(w._request_id, chunk)
+            w.bridge.finished.emit(w._request_id, chunk)
+        self.assertEqual(QApplication.clipboard().text(), "Bonjour.\nMonde.")
+        w.input.setPlainText("Hello.\n")
+        self._hotkey()
+        self.assertEqual(w.output.toPlainText(), "Bonjour.")
+        self.send_paste.assert_not_called()
+
+    def test_no_paste_if_something_else_was_copied(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+        QApplication.clipboard().setText("secret")
+        self._hotkey()
+        self.send_paste.assert_not_called()
+
+    def test_no_paste_if_the_clipboard_changes_during_the_delay(self) -> None:
+        w = self.window
+        w.summon()
+        self._translate()
+
+        def single_shot(delay: int, callback: Callable[[], None]) -> None:
+            QApplication.clipboard().setText("secret")
+            callback()
+
+        with mock.patch.object(self.app_module.QTimer, "singleShot", single_shot):
+            self._hotkey()
         self.send_paste.assert_not_called()
 
     def test_no_paste_when_turned_off(self) -> None:
@@ -276,7 +313,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         w.summon()
         self._translate()
         w.show()
-        w._paste_into_previous_app()
+        w._paste_into_previous_app("Bonjour.")
         self.send_paste.assert_not_called()
 
     def test_asks_for_permission_once_per_launch(self) -> None:
@@ -297,6 +334,14 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.request_permission.assert_not_called()
         w.auto_paste_action.trigger()
         self.assertTrue(settings.load().auto_paste)
+        self.request_permission.assert_called_once_with()
+        # Asked already this launch: neither the toggle nor a failed paste asks again.
+        w.auto_paste_action.trigger()
+        w.auto_paste_action.trigger()
+        self.send_paste.return_value = False
+        w.summon()
+        self._translate()
+        self._hotkey()
         self.request_permission.assert_called_once_with()
         self.assertTrue(self._new_window().auto_paste_action.isChecked())
 

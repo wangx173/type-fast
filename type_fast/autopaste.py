@@ -24,7 +24,8 @@ from . import hotkey
 _APP_SERVICES = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
 _kCGEventSourceStateCombinedSessionState = 0
 _kCGSessionEventTap = 1
-_kVK_ANSI_V = 0x09
+# Physical V key; the same U.S.-layout table the hotkey uses.
+_kVK_ANSI_V = hotkey.KEYCODES["V"]
 # kCGEventFlagMaskCommand, plus the left-Command device bit that some apps check.
 _COMMAND_FLAGS = 0x00100000 | 0x00000008
 
@@ -35,7 +36,7 @@ _lib_failed = False
 def _load() -> ctypes.CDLL | None:
     """Return the Core Graphics bindings, or None off macOS/Cocoa."""
     global _lib, _lib_failed
-    if not hotkey._is_cocoa():
+    if not hotkey.is_cocoa():
         return None
     if _lib is None and not _lib_failed:
         try:

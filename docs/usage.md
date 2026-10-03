@@ -96,8 +96,9 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
 **Esc** instead. The translation is on the clipboard either way.
 
 - It pastes only a finished translation, and only once. If you hide the window
-  while a translation is still in progress, or you open and hide it again
-  without typing anything, nothing is pasted.
+  while a translation is still in progress, you open and hide it again without
+  typing anything, or you copied something else in the meantime, nothing is
+  pasted.
 - Pasting into another app needs the **Accessibility** permission. The first
   time, macOS asks you to allow Type Fast in **System Settings → Privacy &
   Security → Accessibility**. Until you do, the hotkey just hides the window and
@@ -111,7 +112,11 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
 - **After updating Type Fast:** macOS may keep the old app's permission. In
   **Accessibility** settings, remove Type Fast with **−**, then allow it again.
 - **Running from source:** the permission belongs to the app that runs Python,
-  such as Terminal, so allow that app instead.
+  such as Terminal. Allowing it lets *every* program you run there send
+  keystrokes to other apps, so prefer the
+  [built app](development.md#build-the-macos-app) or paste with **⌘V**
+  yourself. If you do allow your terminal, remove it from **Accessibility**
+  when you are done.
 - **Dvorak layouts:** auto-paste presses the key in the **V** position of a U.S.
   keyboard, which is a different key on Dvorak (it works on "Dvorak – QWERTY
   ⌘"). Turn auto-paste off and paste with **⌘V**.

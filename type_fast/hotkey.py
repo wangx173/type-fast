@@ -270,7 +270,7 @@ def to_qt(hotkey: Hotkey) -> QKeySequence:
 # --- Platform checks ---------------------------------------------------------
 
 
-def _is_cocoa() -> bool:
+def is_cocoa() -> bool:
     """True on macOS with a running Qt GUI app on the native Cocoa platform."""
     if sys.platform != "darwin":
         return False
@@ -280,7 +280,7 @@ def _is_cocoa() -> bool:
 
 def uses_native_keycodes() -> bool:
     """True when ``QKeyEvent.nativeVirtualKey()`` holds macOS virtual keycodes."""
-    return _is_cocoa()
+    return is_cocoa()
 
 
 def _fourcc(code: str) -> int:
@@ -455,7 +455,7 @@ class GlobalHotkey(QObject):
     @staticmethod
     def is_supported() -> bool:
         """True when global hotkeys can be registered here (macOS + Cocoa)."""
-        return _is_cocoa() and _load_carbon() is not None
+        return is_cocoa() and _load_carbon() is not None
 
     @property
     def is_registered(self) -> bool:
@@ -532,7 +532,7 @@ def _send(receiver: int | None, selector: str, restype=ctypes.c_void_p,
 def _ns_app() -> int | None:
     """Return ``[NSApplication sharedApplication]`` or None when unavailable."""
     global _objc
-    if not _is_cocoa():
+    if not is_cocoa():
         return None
     try:
         if _objc is None:
