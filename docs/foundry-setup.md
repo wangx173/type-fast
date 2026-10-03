@@ -178,10 +178,12 @@ az cognitiveservices account show \
 
 # API key: saved straight to Type Fast's key file, without showing it
 mkdir -p ~/.type-fast
-(umask 077; az cognitiveservices account keys list \
+KEY=$(az cognitiveservices account keys list \
     --name <resource> \
     --resource-group type-fast-rg \
-    --query key1 --output tsv > ~/.type-fast/azure_ai_api_key)
+    --query key1 --output tsv) &&
+  (umask 077; printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key) &&
+  chmod 600 ~/.type-fast/azure_ai_api_key; unset KEY
 ```
 
 Treat the API key like a password: don't paste it into chats or tickets, or
@@ -200,20 +202,20 @@ see variables you set in your shell, so use the files in `~/.type-fast/`:
 ```sh
 mkdir -p ~/.type-fast
 echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
-
-# Copy the key from the portal, then save it from the clipboard. This keeps
-# it out of your shell history and readable only by your account.
-(umask 077; pbpaste > ~/.type-fast/azure_ai_api_key)
-pbcopy < /dev/null  # clear the clipboard
-chmod 600 ~/.type-fast/azure_ai_api_key  # in case the file already existed
-
 # Only if your deployment isn't named gpt-4.1-mini:
 echo '<deployment-name>' > ~/.type-fast/azure_ai_model
 ```
 
-If you saved the key with the CLI command in
-[step 4](#4-get-the-endpoint-and-api-key), skip the `pbpaste` and `pbcopy`
-lines.
+Then save the key, unless you already did with the CLI command in
+[step 4](#4-get-the-endpoint-and-api-key). Run this command, then paste the
+key when it asks. The key isn't shown or saved in your shell history, and the
+file is readable only by your account:
+
+```sh
+printf 'Foundry API key: '; read -rs KEY; echo; \
+  (umask 077; printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key); \
+  chmod 600 ~/.type-fast/azure_ai_api_key; unset KEY
+```
 
 **Running from a terminal.** Environment variables work too, and take
 precedence over the files:
@@ -295,9 +297,13 @@ exist"**
   Fast sends the **deployment name**, which can differ from the model name
   (for example, a deployment called `translate` that runs `gpt-4.1-mini`).
   Set it in **Settings → Set Model…**, `AZURE_AI_MODEL`, or
-  `~/.type-fast/azure_ai_model`. List your deployments with
-  `az cognitiveservices account deployment list --name <resource>
-  --resource-group type-fast-rg --query "[].name" --output tsv`.
+  `~/.type-fast/azure_ai_model`. To list your deployments:
+
+  ```sh
+  az cognitiveservices account deployment list --name <resource> \
+      --resource-group type-fast-rg --query "[].name" --output tsv
+  ```
+
 - The deployment is brand new. Wait a few minutes and try again.
 
 **404 — "Resource not found", without `DeploymentNotFound`**
