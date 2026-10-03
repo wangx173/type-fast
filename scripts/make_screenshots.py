@@ -2,7 +2,7 @@
 
 Run on macOS from the repository root, after installing the app and Pillow:
 
-    pip install -e . "pillow>=9.1"
+    pip install -e . "PySide6>=6.8" "pillow>=9.1"
     python scripts/make_screenshots.py
 
 It writes demo.gif (and demo.png, a still of the finished translation),
@@ -27,6 +27,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest import mock
 
 from PySide6.QtCore import QPointF, QRectF, QSizeF, Qt
@@ -53,10 +54,15 @@ from PySide6.QtWidgets import (
 try:
     from PIL import Image
 except ImportError:
-    Image = None
+    Image = None  # type: ignore[assignment]
+
+if TYPE_CHECKING:
+    from types import ModuleType
+
+    from type_fast.app import MainWindow
 
 ROOT = Path(__file__).resolve().parent.parent
-PILLOW = 'Pillow 9.1 or later is required: pip install "pillow>=9.1"'
+PILLOW_REQUIRED = 'Pillow 9.1 or later is required: pip install "pillow>=9.1"'
 
 # Everything is drawn at 2x (Retina); the GIF is scaled down from that.
 SCALE = 2
@@ -167,7 +173,7 @@ def main() -> None:
     if sys.platform != "darwin":
         sys.exit("Run this on macOS; the window is drawn with the native style.")
     if Image is None or not hasattr(Image, "Resampling"):
-        sys.exit(PILLOW)
+        sys.exit(PILLOW_REQUIRED)
     if "type_fast" in sys.modules:
         sys.exit("type_fast is already imported, so its settings can't be isolated.")
 
@@ -178,11 +184,23 @@ def main() -> None:
             if name.startswith(("OPENAI_", "AZURE_AI_")):
                 del os.environ[name]
         sys.path.insert(0, str(ROOT))
-        Renderer(args.out).run(Path(home))
+        try:
+            Renderer(args.out).run(Path(home))
+        except RenderError as error:
+            sys.exit(str(error))
+
+
+class RenderError(Exception):
+    """The images can't be drawn faithfully or safely."""
 
 
 class Renderer:
     """Draws the images from real ``MainWindow`` instances into ``out``."""
+
+    # type_fast modules, imported by run() once HOME points at a temporary folder.
+    tf: ModuleType
+    config: ModuleType
+    settings: ModuleType
 
     def __init__(self, out: Path) -> None:
         self.out = out
@@ -190,7 +208,7 @@ class Renderer:
         self.app.setApplicationName("Type Fast")
         hints = self.app.styleHints()
         if not hasattr(hints, "setColorScheme"):
-            sys.exit("PySide6 6.8 or later is required to draw the light appearance.")
+            raise RenderError("PySide6 6.8 or later is required to draw the light appearance.")
         hints.setColorScheme(Qt.ColorScheme.Light)
 
     def run(self, home: Path) -> None:
@@ -198,7 +216,7 @@ class Renderer:
         from type_fast import config, hotkey, providers, settings
 
         if not settings.SETTINGS_FILE.resolve().is_relative_to(home.resolve()):
-            sys.exit(f"Settings would be read from {settings.SETTINGS_FILE}, not {home}.")
+            raise RenderError(f"Settings would be read from {settings.SETTINGS_FILE}, not {home}.")
         self.tf, self.config, self.settings = tf, config, settings
 
         patches = (
@@ -228,7 +246,7 @@ class Renderer:
 
     def _window(
         self, *, source: str, target: str, tone: str, compact: bool, size: tuple[int, int]
-    ):
+    ) -> MainWindow:
         """A Type Fast window with the given settings, never shown."""
         path = self.settings.SETTINGS_FILE
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -239,6 +257,8 @@ class Renderer:
         window.resize(*size)
         window.set_compact(compact)
         # The window is never shown, so draw the input box as focused.
+        if window.input.objectName() != "inputBox":
+            raise RenderError("MainWindow.input is no longer named inputBox; update the focus style.")
         central = window.centralWidget()
         central.setStyleSheet(
             central.styleSheet()
@@ -249,14 +269,14 @@ class Renderer:
         return window
 
     @staticmethod
-    def _fill(window, typed: str, output: str, status: tuple[str, str]) -> None:
+    def _fill(window: MainWindow, typed: str, output: str, status: tuple[str, str]) -> None:
         window.input.setPlainText(typed)
         window.input.moveCursor(QTextCursor.End)
         window.output.setPlainText(output)
         window._set_status(*status)
 
     @staticmethod
-    def _render(window, caret: bool = False) -> QImage:
+    def _render(window: MainWindow, caret: bool = False) -> QImage:
         """The window's contents, with a caret in the input box if ``caret``."""
         image = _image(window.width(), window.height())
         window.render(image)
@@ -268,7 +288,7 @@ class Renderer:
             painter.end()
         return image
 
-    def _popup(self):
+    def _popup(self) -> MainWindow:
         """The window as the hotkey summons it."""
         return self._window(
             source="English", target="Japanese", tone="Polite", compact=True,
@@ -278,10 +298,10 @@ class Renderer:
     def _demo(self, keys: str) -> None:
         window = self._popup()
         opacity = self.config.TRANSPARENCY[self.config.DEFAULT_TRANSPARENCY][0]
-        popups: dict[tuple, QImage] = {}
-        chats: dict[tuple, QImage] = {}
+        popups: dict[tuple[str, str, tuple[str, str]], QImage] = {}
+        chats: dict[tuple[bool, str, bool, bool], QImage] = {}
         steps: list[tuple[QImage, int]] = []
-        still = None
+        still: QImage | None = None
         for frame in timeline(keys, opacity):
             popup = None
             if frame.popup:
@@ -297,6 +317,8 @@ class Renderer:
             steps.append((_scene(chats[key], popup, frame.popup, frame.badge), frame.ms))
             if frame.still:
                 still = steps[-1][0]
+        if still is None:
+            raise RenderError("No demo step is marked as the still.")
         _save_gif(steps, self.out / "demo.gif", self.tf._TEXT_COLORS["light"].values())
         path = self.out / "demo.png"
         _to_pil(still).save(path, optimize=True)
@@ -576,7 +598,7 @@ def _save_gif(steps: list[tuple[QImage, int]], path: Path, text_colors: Iterable
 
 def _save_png(image: QImage, path: Path) -> None:
     if not image.save(str(path)):
-        sys.exit(f"Could not write {path}")
+        raise RenderError(f"Could not write {path}")
     print(f"wrote {path}")
 
 

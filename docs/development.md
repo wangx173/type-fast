@@ -65,7 +65,7 @@ real window with sample text by
 change the UI, regenerate them on a Mac:
 
 ```sh
-pip install -e . "pillow>=9.1"
+pip install -e . "PySide6>=6.8" "pillow>=9.1"
 python scripts/make_screenshots.py
 ```
 

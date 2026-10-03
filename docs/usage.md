@@ -38,8 +38,8 @@ Like Spotlight, Type Fast pops up from any app with a global hotkey:
   on top, and puts the cursor in the input box.
 - Press the hotkey again, or **Esc**, to hide it and return to the app you were
   using. If you have clicked into another app while the window is still shown,
-  the hotkey brings the window back to the front, in the minimal layout,
-  instead.
+  the hotkey brings the window back to the front instead, showing the
+  minimal layout.
 - The current hotkey is shown at the bottom of the full window.
 
 ### Minimal layout
