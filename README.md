@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="assets/icon/type-fast.svg" alt="Type Fast app icon: a keyboard key labeled with the letter A and the Chinese/Japanese character 文 (&quot;text&quot;), with speed lines" width="128" height="128">
+
 # Type Fast
 
 **Type in one language. Get it in another — as you type.**
