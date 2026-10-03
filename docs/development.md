@@ -61,18 +61,16 @@ attaches `Type-Fast-macos-arm64.zip` to a GitHub Release.
 
 The icon's master file is [`assets/icon/type-fast.svg`](../assets/icon/type-fast.svg):
 a keyboard key labeled "A" and "文" with speed lines, on a macOS-style rounded
-square. After you edit it, regenerate the derived files (macOS only, because it
-uses `iconutil`):
+square. Two files are exported from it:
 
-```sh
-python scripts/build_icon.py
-```
+- `assets/icon/TypeFast.icns`, the `.app` bundle's Finder icon.
+- `type_fast/resources/icon.png` (512 px), which the app sets as its Dock and
+  window icon at runtime (this is what you see when running from source).
 
-This writes `assets/icon/TypeFast.icns`, the `.app` bundle's Finder icon, and
-`type_fast/resources/icon.png`, which the app sets as its Dock and window icon
-at runtime (this is what you see when running from source). Commit all three files. Check the result at small sizes
-(16 and 32 px), where only the white key on the indigo background stays
-readable.
+If you edit the SVG, re-export both files: render it to an `.iconset` folder
+and convert that with `iconutil -c icns`. Commit all three files. Check the
+result at small sizes (16 and 32 px), where only the white key on the indigo
+background stays readable.
 
 The icon is original artwork drawn with plain SVG shapes, without fonts or
 third-party images, and is covered by the project's [MIT license](../LICENSE).

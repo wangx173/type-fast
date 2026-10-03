@@ -56,7 +56,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Type Fast.app",
-    # Generated from assets/icon/type-fast.svg by scripts/build_icon.py.
+    # Exported from assets/icon/type-fast.svg.
     icon="assets/icon/TypeFast.icns",
     bundle_identifier="com.typefast.app",
     info_plist={

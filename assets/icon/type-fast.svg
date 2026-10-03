@@ -2,7 +2,7 @@
   <!-- Type Fast app icon: a keycap labeled "A" and "文" (typing + translation)
        with speed lines (fast) on a macOS-style rounded square.
        Original artwork drawn with plain paths (no fonts, filters, or images).
-       Regenerate the .icns and PNG with scripts/build_icon.py after editing. -->
+       Re-export TypeFast.icns and type_fast/resources/icon.png after editing. -->
   <title>Type Fast</title>
   <defs>
     <linearGradient id="background" x1="0" y1="0" x2="0" y2="1">
