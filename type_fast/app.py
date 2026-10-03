@@ -106,7 +106,8 @@ _HOVER_POLL_MS = 120
 _PASTE_DELAY_MS = 100
 
 # How many times, _PASTE_DELAY_MS apart, to look for the app that got focus
-# back while Type Fast is still listed as the frontmost app.
+# back while Type Fast is still listed as the frontmost app (or none is), both
+# to note it and to paste into it.
 _PASTE_TARGET_TRIES = 5
 
 # How long a paste waits for a translation still running when the hotkey hid
@@ -126,7 +127,7 @@ class _PasteTarget(NamedTuple):
 
     shown: int  # MainWindow._shown_count at the hide
     pid: int | None  # that app's process id; None until noted
-    input_count: int | None  # your clicks and key presses by then
+    input_count: int | None  # your clicks and key presses at the hide
 
 
 # Styles for the main window. Neutral gray tints read well in both light and
@@ -497,9 +498,9 @@ class MainWindow(QMainWindow):
         self._deferred_paste_timer.setSingleShot(True)
         self._deferred_paste_timer.setInterval(_DEFERRED_PASTE_TIMEOUT_MS)
         self._deferred_paste_timer.timeout.connect(self._cancel_deferred_paste)
-        # The app that got focus back after such a hide, so a late paste never
-        # lands in an app you switched to, or a spot you clicked or typed in,
-        # since.
+        # Where such a hide's paste may land: the app that got focus back,
+        # once noted, as long as you haven't clicked or typed since the hide.
+        # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
@@ -807,7 +808,7 @@ class MainWindow(QMainWindow):
         elif defer:
             self._deferred_paste = _DeferredPaste(shown, hotkey.pasteboard_change_count())
             self._deferred_paste_timer.start()
-            self._paste_target = _PasteTarget(shown, None, None)
+            self._paste_target = _PasteTarget(shown, None, autopaste.input_event_count())
             QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._remember_paste_target(shown))
 
     def _take_paste_text(self) -> str:
@@ -839,49 +840,50 @@ class MainWindow(QMainWindow):
         """Paste ``text`` once the previous app has focus back."""
         QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown))
 
-    def _paste_into_previous_app(self, text: str, shown: int) -> None:
-        if (
-            shown != self._shown_count
-            or self.isVisible()
-            or not self._is_pasteable(text)
-            or not self._is_paste_target(shown)
-        ):
-            return  # summoned again, or the clipboard, app, or caret changed first
+    def _paste_into_previous_app(
+        self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES
+    ) -> None:
+        if shown != self._shown_count or self.isVisible() or not self._is_pasteable(text):
+            return  # summoned again, or the clipboard changed, before the paste
+        target = self._paste_target
+        if target is not None and target.shown == shown:
+            # A deferred paste: only into the app that got focus back.
+            pid = hotkey.frontmost_app_pid()
+            if not self._is_other_app(pid):
+                if tries > 1:  # macOS may not have handed focus back yet
+                    QTimer.singleShot(
+                        _PASTE_DELAY_MS,
+                        lambda: self._paste_into_previous_app(text, shown, tries - 1),
+                    )
+                return
+            if target.pid not in (None, pid):
+                return  # you switched apps
+            if autopaste.input_event_count() != target.input_count:
+                return  # you clicked or typed, maybe somewhere else
         autopaste.send_paste()
 
     def _remember_paste_target(self, shown: int, tries: int = _PASTE_TARGET_TRIES) -> None:
         """Note the app that got focus back after the hide with ``shown``.
 
         macOS may still list Type Fast as the frontmost app for a moment, so
-        this looks again a few times before giving up.
-        """
-        if shown != self._shown_count or self.isVisible():
-            return
-        pid = hotkey.frontmost_app_pid()
-        if pid is None or pid == os.getpid():
-            if tries > 1:
-                QTimer.singleShot(
-                    _PASTE_DELAY_MS, lambda: self._remember_paste_target(shown, tries - 1)
-                )
-            return
-        self._paste_target = _PasteTarget(shown, pid, autopaste.input_event_count())
-
-    def _is_paste_target(self, shown: int) -> bool:
-        """False if a deferred paste for the hide with ``shown`` may land elsewhere.
-
-        That is when the frontmost app is unknown, is Type Fast, or isn't the
-        app noted after the hide, or when you clicked or typed since then.
-        True for a paste that isn't deferred.
+        this looks again a few times. If it never finds another app, the
+        deferred paste goes to the first one frontmost when it runs.
         """
         target = self._paste_target
-        if target is None or target.shown != shown:
-            return True
+        if target is None or target.shown != shown or self.isVisible():
+            return
         pid = hotkey.frontmost_app_pid()
-        if pid is None or pid == os.getpid():
-            return False
-        if target.pid is None:
-            return True  # the first app to get focus back since the hide
-        return pid == target.pid and autopaste.input_event_count() == target.input_count
+        if self._is_other_app(pid):
+            self._paste_target = target._replace(pid=pid)
+        elif tries > 1:
+            QTimer.singleShot(
+                _PASTE_DELAY_MS, lambda: self._remember_paste_target(shown, tries - 1)
+            )
+
+    @staticmethod
+    def _is_other_app(pid: int | None) -> bool:
+        """True for a known frontmost app that isn't Type Fast."""
+        return pid is not None and pid != os.getpid()
 
     def _take_deferred_paste(self) -> int | None:
         """Return the hide's _shown_count of a paste waiting for this translation.
@@ -903,7 +905,10 @@ class MainWindow(QMainWindow):
             self._schedule_paste(text, shown)
 
     def _cancel_deferred_paste(self) -> None:
-        """Drop a paste still waiting for its translation; it stays copied."""
+        """Drop a paste still waiting for its translation.
+
+        A translation that finishes later is still copied.
+        """
         self._deferred_paste = None
         self._deferred_paste_timer.stop()
 

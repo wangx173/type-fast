@@ -441,6 +441,36 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._finish()
         self.send_paste.assert_called_once_with()
 
+    def test_deferred_paste_waits_for_focus_to_come_back(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self.frontmost_pid = os.getpid()
+        self._hotkey()  # no app noted yet
+        checks: list[int] = []
+
+        def single_shot(delay: int, callback: Callable[[], None]) -> None:
+            checks.append(delay)
+            if len(checks) == 3:
+                self.frontmost_pid = 100  # focus comes back on a later check
+            callback()
+
+        with mock.patch.object(self.app_module.QTimer, "singleShot", single_shot):
+            self._finish()  # right after the hide
+        self.send_paste.assert_called_once_with()
+        self.assertEqual(len(checks), 3)
+
+    def test_deferred_paste_dropped_if_you_type_before_an_app_is_noted(self) -> None:
+        w = self.window
+        w.summon()
+        w.input.setPlainText("Hello.")
+        self.frontmost_pid = os.getpid()
+        self._hotkey()  # no app noted yet
+        self.input_count += 1  # e.g. ⌘Tab to another app
+        self.frontmost_pid = 200
+        self._finish()
+        self.send_paste.assert_not_called()
+
     def test_deferred_paste_dropped_if_the_frontmost_app_is_unknown_or_type_fast(self) -> None:
         w = self.window
         w.summon()
