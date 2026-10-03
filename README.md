@@ -65,8 +65,9 @@ OpenAI or Azure AI Foundry, and copies the result for you.
    - **macOS 14 and earlier:** right-click the app → **Open** → **Open**.
 3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
 
-To use Azure AI Foundry instead, or to run from source, see
-[Configuration](docs/configuration.md) and [Development](docs/development.md).
+To use Azure AI Foundry instead, follow the
+[Foundry setup guide](docs/foundry-setup.md). To run from source, see
+[Development](docs/development.md).
 
 ## Usage
 
@@ -94,6 +95,7 @@ details.
 |------------------------------------------|----------------------------------------------------------|
 | [Usage](docs/usage.md)                   | Window layouts, hotkey, auto-paste, languages, and tone  |
 | [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
+| [Foundry setup](docs/foundry-setup.md)   | Create a Foundry resource, deploy a model, and connect   |
 | [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
 
 ## Roadmap

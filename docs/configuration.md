@@ -28,6 +28,9 @@ chmod 600 ~/.type-fast/api_key  # keep the key private to your account
 
 ## Azure AI Foundry
 
+New to Foundry? The [Foundry setup guide](foundry-setup.md) walks through
+creating a resource, deploying a model, and finding the endpoint and key.
+
 To route translations through a Microsoft (Azure AI) Foundry model, set the
 Foundry endpoint and API key:
 
