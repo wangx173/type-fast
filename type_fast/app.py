@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import string
 import threading
+from pathlib import Path
 
 from PySide6.QtCore import (
     QEasingCurve,
@@ -54,6 +55,7 @@ from PySide6.QtGui import (
     QCursor,
     QDesktopServices,
     QGuiApplication,
+    QIcon,
     QKeySequence,
     QShortcut,
     QTextCursor,
@@ -96,6 +98,10 @@ _FADE_MS = 160
 # How often to check whether the pointer is over the window while another app
 # is active, in milliseconds.
 _HOVER_POLL_MS = 120
+
+# The app icon shown in the Dock and window when running from source. The built
+# .app also gets its Finder icon from assets/icon/TypeFast.icns.
+ICON_PATH = Path(__file__).resolve().parent / "resources" / "icon.png"
 
 # How long to let the previous app take focus back before pasting into it, in
 # milliseconds. Short enough to feel instant.
@@ -1281,10 +1287,16 @@ class MainWindow(QMainWindow):
             self._set_status("Copied to clipboard \u2713", "done")
 
 
+def app_icon() -> QIcon:
+    """Return the Type Fast icon (empty if the image file is missing)."""
+    return QIcon(str(ICON_PATH))
+
+
 def main() -> None:
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Type Fast")
     app.setApplicationDisplayName("Type Fast")
+    app.setWindowIcon(app_icon())
     window = MainWindow()
     window.resize(460, 380)
     # Show on launch so first-time users see the window (and its hotkey hint).

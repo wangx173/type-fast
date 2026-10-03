@@ -19,7 +19,8 @@ a = Analysis(
     ["launch.py"],
     pathex=[],
     binaries=[],
-    datas=[],
+    # Window/Dock icon set at runtime (see type_fast.app.app_icon).
+    datas=[("type_fast/resources/icon.png", "type_fast/resources")],
     hiddenimports=[],
     hookspath=[],
     runtime_hooks=[],
@@ -55,7 +56,8 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name="Type Fast.app",
-    icon=None,
+    # Generated from assets/icon/type-fast.svg by scripts/build_icon.py.
+    icon="assets/icon/TypeFast.icns",
     bundle_identifier="com.typefast.app",
     info_plist={
         "CFBundleName": "Type Fast",
