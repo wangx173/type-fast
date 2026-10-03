@@ -14,7 +14,7 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/demo.png">
-  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, translating &quot;Yes, I will! Are you free for lunch?&quot; into polite Japanese and copying it to the clipboard, ready to paste into the chat." width="720">
+  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, replying twice: each English reply is translated into polite Japanese, pasted into the chat when the hotkey hides Type Fast, and sent." width="720">
 </picture>
 
 <sub>Press <b>⇧⌘Space</b> in any app, type, and press <b>⇧⌘Space</b> again to paste the translation.</sub>
