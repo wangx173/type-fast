@@ -20,7 +20,8 @@ ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `
 or you press Return. As you keep typing, finished lines are kept as they are and
 only the line you are typing is sent for translation; changing the language,
 tone, or model re-translates everything. When a translation finishes, it is
-copied to the clipboard.
+copied to the clipboard, so you can hide the window and paste it into your app
+with ⌘V.
 
 The window is shown when the app launches. After that, summon and dismiss it
 with the [show/hide hotkey](#showhide-hotkey) so it stays out of the way while
@@ -33,10 +34,11 @@ you are not using it.
 Like Spotlight, Type Fast pops up from any app with a global hotkey:
 **⇧⌘Space** (Shift+Command+Space) by default.
 
-- The window appears near the top of the screen under the mouse pointer, stays
+- The window appears near the top of the screen the mouse pointer is on, stays
   on top, and puts the cursor in the input box.
 - Press the hotkey again, or **Esc**, to hide it and return to the app you were
-  using.
+  using. If you have clicked into another app while the window is still shown,
+  the hotkey brings the window back to the front instead.
 - The current hotkey is shown at the bottom of the full window.
 
 ### Minimal layout
