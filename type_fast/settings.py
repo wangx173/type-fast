@@ -1,8 +1,9 @@
-"""Persistent user preferences: languages, tone, hotkey, and transparency.
+"""Persistent user preferences: languages, tone, hotkey, transparency, auto-paste.
 
 Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
-any custom tone instruction, the global show/hide hotkey, and the window
-transparency survive restarts. A
+any custom tone instruction, the global show/hide hotkey, the window
+transparency, and whether hiding with the hotkey pastes the translation survive
+restarts. A
 missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
 ``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
@@ -21,7 +22,7 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 @dataclass
 class Settings:
-    """The selected language pair, tone, custom tone, hotkey, and transparency."""
+    """The language pair, tone, custom tone, hotkey, transparency, and auto-paste."""
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
@@ -31,6 +32,8 @@ class Settings:
     hotkey: str = config.DEFAULT_HOTKEY
     # Name of a :data:`config.TRANSPARENCY` preset.
     transparency: str = config.DEFAULT_TRANSPARENCY
+    # Paste the translation into your app when the hotkey hides the window.
+    auto_paste: bool = config.DEFAULT_AUTO_PASTE
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
@@ -76,6 +79,7 @@ def load() -> Settings:
     ):
         source, target = config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET
     custom = data.get("custom_tone")
+    auto_paste = data.get("auto_paste")
     return Settings(
         source=source,
         target=target,
@@ -90,6 +94,9 @@ def load() -> Settings:
             data.get("transparency"),
             set(config.TRANSPARENCY),
             config.DEFAULT_TRANSPARENCY,
+        ),
+        auto_paste=(
+            auto_paste if isinstance(auto_paste, bool) else config.DEFAULT_AUTO_PASTE
         ),
     )
 

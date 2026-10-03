@@ -2,8 +2,8 @@
 
 Holds the default model, temperature, supported languages and the default
 language pair, translation tone presets, the input debounce interval, the
-default show/hide hotkey, and the window transparency presets so they are easy
-to change in one place.
+default show/hide hotkey, the window transparency presets, and the auto-paste
+default so they are easy to change in one place.
 Provider-specific credential handling and client construction live in
 :mod:`type_fast.providers` (one module per provider).
 """
@@ -107,3 +107,7 @@ TRANSPARENCY = {
     "Strong": (0.8, 0.45),
 }
 DEFAULT_TRANSPARENCY = "Light"
+
+# Whether hiding the window with the show/hide hotkey pastes the finished
+# translation into the app you return to (Settings › Auto-Paste Translation).
+DEFAULT_AUTO_PASTE = True

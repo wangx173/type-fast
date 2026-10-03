@@ -153,7 +153,7 @@ class GlobalHotkeyTests(unittest.TestCase):
         carbon.ensure_handler.return_value = True
         gh = hotkey.GlobalHotkey()
         with mock.patch.object(hotkey, "_load_carbon", return_value=carbon), \
-                mock.patch.object(hotkey, "_is_cocoa", return_value=True), \
+                mock.patch.object(hotkey, "is_cocoa", return_value=True), \
                 mock.patch.object(hotkey, "_carbon", carbon):
             self.assertTrue(gh.register(hotkey.parse("Option+Space")))
             gh.unregister()
@@ -314,9 +314,11 @@ class WindowHotkeyTests(unittest.TestCase):
 
     def test_summon_puts_cursor_at_end(self) -> None:
         w = self.window
+        w.summon()
         w.input.setPlainText("hello")
         w.input.moveCursor(self.app_module.QTextCursor.Start)
-        w.summon()
+        w.summon()  # raising the shown window keeps its input
+        self.assertEqual(w.input.toPlainText(), "hello")
         self.assertEqual(w.input.textCursor().position(), len("hello"))
 
     def test_escape_dismisses_from_input(self) -> None:

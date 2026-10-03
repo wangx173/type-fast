@@ -14,10 +14,10 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 
 <picture>
   <source media="(prefers-reduced-motion: reduce)" srcset="docs/images/demo.png">
-  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, translating &quot;Yes, I will! Are you free for lunch?&quot; into polite Japanese and copying it to the clipboard, ready to paste into the chat." width="720">
+  <img src="docs/images/demo.gif" alt="Type Fast over a chat app, replying twice: each English reply is translated into polite Japanese, pasted into the chat when the hotkey hides Type Fast, and sent." width="720">
 </picture>
 
-<sub>Press <b>⇧⌘Space</b> in any app, type, and paste the translation with <b>⌘V</b>.</sub>
+<sub>Press <b>⇧⌘Space</b> in any app, type, and press <b>⇧⌘Space</b> again to paste the translation.</sub>
 
 </div>
 
@@ -29,8 +29,8 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   minimal window; press it again or **Esc** to go back.
 - 🪟 **Stays out of your way** — the window is slightly see-through and fades
   further while you work in another app.
-- 📋 **Auto-copy** — the finished translation is copied to your clipboard,
-  ready to paste.
+- 📋 **Auto-paste** — press the hotkey again and the finished translation is
+  pasted into your app. It is on your clipboard too.
 - 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
   Spanish, French, German, and [more](docs/usage.md#languages).
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral, or
@@ -72,25 +72,27 @@ To use Azure AI Foundry instead, or to run from source, see
 
 Press **⇧⌘Space** in any app and type in the top box. The translation appears
 below shortly after you pause, or right away when you end a sentence or press
-Return. When it finishes, it is copied to the clipboard: press **⇧⌘Space** or
-**Esc** to go back to your app, then **⌘V** to paste it.
+Return. When it finishes, it is copied to the clipboard. Press **⇧⌘Space** to
+go back to your app and paste it there, or **Esc** to go back without pasting.
+The first time, Type Fast asks you to allow it in **Accessibility** settings
+so it can paste; see [Auto-paste](docs/usage.md#auto-paste).
 
 | Shortcut                   | Action                                    |
 |----------------------------|-------------------------------------------|
-| **⇧⌘Space**                | Show or hide Type Fast from any app       |
-| **Esc**                    | Hide the window                           |
+| **⇧⌘Space**                | Show Type Fast, or hide it and paste      |
+| **Esc**                    | Hide the window without pasting           |
 | **⌘L**                     | Show the language and tone pickers        |
 | **⌘,**                     | Set your OpenAI API key                   |
 
 The **Settings** menu also lets you change the model, the hotkey, the window
-transparency, and the custom tone. See the [usage guide](docs/usage.md) for
+transparency, and the custom tone, and turn auto-paste off. See the [usage guide](docs/usage.md) for
 details.
 
 ## Documentation
 
 | Guide                                    | What's inside                                            |
 |------------------------------------------|----------------------------------------------------------|
-| [Usage](docs/usage.md)                   | Window layouts, show/hide hotkey, languages, and tone    |
+| [Usage](docs/usage.md)                   | Window layouts, hotkey, auto-paste, languages, and tone  |
 | [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
 | [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
 
