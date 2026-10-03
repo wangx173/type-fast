@@ -1,6 +1,7 @@
 """Render the demo GIF and screenshots in docs/images from the real window.
 
-Run on macOS from the repository root, after installing the app and Pillow:
+Run on macOS from the repository root, after installing the app, PySide6 6.8
+or later, and Pillow:
 
     pip install -e . "PySide6>=6.8" "pillow>=9.1"
     python scripts/make_screenshots.py
@@ -14,7 +15,7 @@ Nothing is shown on screen, though Python may appear in the Dock while it runs.
 
 Besides the public API, it relies on these ``type_fast.app`` internals:
 ``MainWindow._set_status`` (the status text), ``_TEXT_COLORS`` (kept exact in
-the GIF palette), and the ``inputBox`` object name (drawn as focused).
+the GIF palette), and the ``inputBox`` focus style (drawn as focused).
 """
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from collections.abc import Iterable
@@ -256,14 +258,12 @@ class Renderer:
         window = self.tf.MainWindow()
         window.resize(*size)
         window.set_compact(compact)
-        # The window is never shown, so draw the input box as focused.
-        if window.input.objectName() != "inputBox":
-            raise RenderError("MainWindow.input is no longer named inputBox; update the focus style.")
+        # The window is never shown, so draw the input box with its focus style.
         central = window.centralWidget()
-        central.setStyleSheet(
-            central.styleSheet()
-            + "\nQPlainTextEdit#inputBox { border: 1px solid palette(highlight); }"
-        )
+        focus = re.search(r"QPlainTextEdit#inputBox:focus[^{]*(\{[^}]*\})", central.styleSheet())
+        if focus is None:
+            raise RenderError("No focus style for QPlainTextEdit#inputBox in MainWindow.")
+        central.setStyleSheet(f"{central.styleSheet()}\nQPlainTextEdit#inputBox {focus[1]}")
         window.input.blockSignals(True)
         self._render(window)  # lay it out
         return window
