@@ -119,6 +119,8 @@ choose() {
 }
 
 # lines_to_array NAME < input  (bash 3.2 has no mapfile)
+# Feed it from a variable that was checked, not from < <(az ...): a failed
+# az call there would look like an empty list.
 lines_to_array() {
     local __name=$1 __line
     eval "$__name=()"
@@ -182,9 +184,10 @@ choose_subscription() {
         return 0
     fi
 
-    local subs=() choice
-    lines_to_array subs < <(az account list --query "[?state=='Enabled'].[name, id]" \
-        --output tsv --only-show-errors | awk -F'\t' '{print $1 " (" $2 ")"}')
+    local subs=() choice out
+    out=$(az account list --query "[?state=='Enabled'].[name, id]" \
+        --output tsv --only-show-errors) || die "Couldn't list your subscriptions."
+    lines_to_array subs <<<"$(printf '%s\n' "$out" | awk -F'\t' 'NF {print $1 " (" $2 ")"}')"
     [ "${#subs[@]}" -gt 0 ] || die "No enabled subscriptions found."
     choose choice "Subscription" "${subs[@]}"
     SUBSCRIPTION_ID=$(printf '%s' "$choice" | sed 's/.*(\(.*\))$/\1/')
@@ -196,8 +199,10 @@ choose_resource_group() {
     choose mode "Resource group" "Use an existing resource group" "Create a new resource group"
 
     if [ "$mode" = "Use an existing resource group" ]; then
-        local groups=()
-        lines_to_array groups < <(az_sub group list --query "sort_by([], &name)[].name" --output tsv)
+        local groups=() out
+        out=$(az_sub group list --query "sort_by([], &name)[].name" --output tsv) \
+            || die "Couldn't list the resource groups."
+        lines_to_array groups <<<"$out"
         [ "${#groups[@]}" -gt 0 ] || die "This subscription has no resource groups. Run again and create one."
         choose GROUP "Resource group" "${groups[@]}"
         GROUP_LOCATION=$(az_sub group show --name "$GROUP" --query location --output tsv)
@@ -228,9 +233,11 @@ choose_resource_group() {
 
 choose_resource() {
     heading "Foundry resource"
-    local existing=() mode="Create a new Foundry resource"
-    lines_to_array existing < <(az_sub cognitiveservices account list --resource-group "$GROUP" \
-        --query "[?kind=='AIServices' || kind=='OpenAI'].name" --output tsv)
+    local existing=() mode="Create a new Foundry resource" out
+    out=$(az_sub cognitiveservices account list --resource-group "$GROUP" \
+        --query "[?kind=='AIServices' || kind=='OpenAI'].name" --output tsv) \
+        || die "Couldn't list the Foundry resources in $GROUP."
+    lines_to_array existing <<<"$out"
 
     if [ "${#existing[@]}" -gt 0 ]; then
         choose mode "Foundry resource" "Use an existing Foundry resource" "Create a new Foundry resource"
@@ -289,11 +296,12 @@ choose_resource() {
 
 choose_deployment() {
     heading "Model deployment"
-    local existing=() mode="Deploy a new model"
-    lines_to_array existing < <(az_sub cognitiveservices account deployment list \
+    local existing=() mode="Deploy a new model" out
+    out=$(az_sub cognitiveservices account deployment list \
         --name "$RESOURCE" --resource-group "$GROUP" \
-        --query "[].[name, properties.model.name]" --output tsv \
-        | awk -F'\t' '{print $1 " (model: " $2 ")"}')
+        --query "[].[name, properties.model.name]" --output tsv) \
+        || die "Couldn't list the deployments in $RESOURCE."
+    lines_to_array existing <<<"$(printf '%s\n' "$out" | awk -F'\t' 'NF {print $1 " (model: " $2 ")"}')"
 
     if [ "${#existing[@]}" -gt 0 ]; then
         choose mode "Model deployment" "Use an existing deployment" "Deploy a new model"
