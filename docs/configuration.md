@@ -23,7 +23,7 @@ when both a Foundry endpoint and key are found, and OpenAI otherwise.
 
 ## OpenAI API key
 
-The easiest way is from the app: **Settings → Set OpenAI API Key…** (⌘,). The
+The easiest way is from the app: **Settings → OpenAI → Set API Key…** (⌘,). The
 key is saved to `~/.type-fast/api_key` and applied immediately, unless the
 `OPENAI_API_KEY` environment variable is set (it takes precedence). If you're
 using Azure AI Foundry, Type Fast asks whether to switch to OpenAI.
@@ -47,7 +47,7 @@ chmod 600 ~/.type-fast/api_key  # keep the key private to your account
 New to Foundry? The [Foundry setup guide](foundry-setup.md) walks through
 creating a resource, deploying a model, and finding the endpoint and key.
 
-The easiest way is from the app: **Settings → Set Up Azure AI Foundry…**. Enter
+The easiest way is from the app: **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**. Enter
 the endpoint, API key, and deployment name, then click **Save**. The settings
 are saved to the `~/.type-fast/` files below, with the key readable only by
 your account, and Type Fast asks whether to switch to Foundry.
@@ -81,10 +81,19 @@ echo 'gpt-4.1-mini' > ~/.type-fast/azure_ai_model
 
 ## Model
 
-Choose **Settings → Set Model…** to pick a model from the list or type any
-model or deployment name. Leave it blank to go back to the default
-(`gpt-4.1-mini`). The choice applies to the active provider and is saved under
-`~/.type-fast/`. An environment variable takes precedence over the file:
+Each provider keeps its own model setting, in its own submenu of **Settings**:
+
+- **OpenAI:** choose **Settings → OpenAI → Set Model…** to pick an OpenAI model from the list or
+  type any other OpenAI model name. It changes the OpenAI model even while
+  Azure AI Foundry is in use.
+- **Azure AI Foundry:** Foundry can only use the models you deployed, so there
+  is no model list. Type your deployment name in **Settings → Azure AI Foundry → Set Deployment…**
+  (or along with the endpoint and key in
+  **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**).
+
+Leave the model or deployment blank to go back to the default
+(`gpt-4.1-mini`). It's saved under `~/.type-fast/`. An environment variable
+takes precedence over the file:
 
 | Provider         | Environment variable | Fallback file                 |
 |------------------|----------------------|-------------------------------|

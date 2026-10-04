@@ -2,10 +2,10 @@
 
 Configured via ``AZURE_AI_ENDPOINT`` and ``AZURE_AI_API_KEY`` (and optionally
 ``AZURE_AI_MODEL`` to pick a deployment), each with a matching ``~/.type-fast/``
-fallback file. The files can also be written from the app (Settings › Set Up
-Azure AI Foundry…). Foundry is reached through its OpenAI-compatible
-``/openai/v1`` endpoint, so the standard OpenAI client and Responses API calls
-work unchanged.
+fallback file. The files can also be written from the app (Settings › Azure AI
+Foundry › Set Endpoint, Key & Deployment… or Set Deployment…). Foundry is
+reached through its OpenAI-compatible ``/openai/v1`` endpoint, so the standard
+OpenAI client and Responses API calls work unchanged.
 """
 
 from __future__ import annotations
@@ -23,6 +23,13 @@ from ._common import CONFIG_DIR, from_env_or_file, write_or_clear, write_private
 NAME = "azure"
 DISPLAY_NAME = "Azure AI Foundry"
 SHORT_NAME = "Azure"
+
+# This provider's items in the app's Settings › Azure AI Foundry submenu. They
+# live here so the error below can point at them.
+SETUP_ITEM = "Set Endpoint, Key & Deployment\u2026"
+DEPLOYMENT_ITEM = "Set Deployment\u2026"
+SETUP_PATH = f"Settings \u203a {DISPLAY_NAME} \u203a {SETUP_ITEM}"
+DEPLOYMENT_PATH = f"Settings \u203a {DISPLAY_NAME} \u203a {DEPLOYMENT_ITEM}"
 
 # Fallback files, used when the matching environment variables are not set.
 ENDPOINT_FILE = CONFIG_DIR / "azure_ai_endpoint"
@@ -67,6 +74,13 @@ def get_model() -> str:
 def save_model(model: str) -> None:
     """Persist ``model`` to the model file; a blank value restores the default."""
     write_or_clear(MODEL_FILE, model)
+
+
+def deployment_problem(model: str) -> str | None:
+    """Return why ``model`` can't be a deployment name, or None if it can."""
+    if any(c.isspace() for c in model):
+        return "The deployment name can't contain spaces."
+    return None
 
 
 def env_overrides() -> list[str]:
@@ -177,8 +191,7 @@ def build_client() -> OpenAI:
     """
     if not is_configured():
         raise MissingCredentialsError(
-            "Azure AI Foundry isn't set up. Choose Settings \u203a Set Up Azure "
-            "AI Foundry\u2026 and enter your endpoint and API key, or switch to "
-            "OpenAI in Settings \u203a Provider."
+            f"{DISPLAY_NAME} isn't set up. Choose {SETUP_PATH} and enter your "
+            "endpoint and API key, or switch to OpenAI in Settings \u203a Provider."
         )
     return OpenAI(base_url=_base_url(get_endpoint()), api_key=get_api_key())
