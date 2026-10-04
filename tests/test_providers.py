@@ -114,6 +114,17 @@ class AzureSettingsTests(_IsolatedProviders):
         self.set_up_azure("")
         self.assertEqual(azure_provider.get_model(), config.DEFAULT_MODEL)
 
+    def test_deployment_problem(self) -> None:
+        self.assertIsNone(azure_provider.deployment_problem("translate"))
+        self.assertIsNone(azure_provider.deployment_problem(""))
+        for bad in ("my deployment", "a\tb", "a\nb"):
+            self.assertIn("spaces", azure_provider.deployment_problem(bad))
+
+    def test_missing_setup_error_names_the_menu_item(self) -> None:
+        with self.assertRaises(azure_provider.MissingCredentialsError) as cm:
+            azure_provider.build_client()
+        self.assertIn(azure_provider.SETUP_PATH, str(cm.exception))
+
     def test_key_file_is_private_even_if_it_existed(self) -> None:
         azure_provider.API_KEY_FILE.write_text("old")
         azure_provider.API_KEY_FILE.chmod(0o644)
@@ -365,6 +376,25 @@ class WindowProviderTests(_IsolatedProviders):
             w.set_deployment_action.trigger()
         get_text.assert_not_called()
         self.assertIn("AZURE_AI_MODEL", info.call_args.args[2])
+
+    def test_set_deployment_says_when_openai_is_in_use(self) -> None:
+        self.set_up_azure("translate")
+        self.set_up_openai()
+        providers.set_choice("openai")
+        w = self.make_window()
+        get_text, _ = self._type_deployment(w, ("", False))
+        self.assertIn("OpenAI is in use now", get_text.call_args.args[2])
+        providers.set_choice("azure")
+        w._reflect_provider()
+        get_text, _ = self._type_deployment(w, ("", False))
+        self.assertNotIn("in use now", get_text.call_args.args[2])
+
+    def test_set_deployment_rejects_line_breaks(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        _, warn = self._type_deployment(w, ("a\nb", True), ("", False))
+        warn.assert_called_once()
+        self.assertEqual(azure_provider.MODEL_FILE.read_text(), "translate")
 
     def test_set_deployment_without_setup_opens_setup(self) -> None:
         w = self.make_window()

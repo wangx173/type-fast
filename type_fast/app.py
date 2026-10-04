@@ -28,8 +28,9 @@ provider (OpenAI or Azure AI Foundry) is picked in Settings › Provider and
 shown with the model at the bottom of the window. Each provider has its own
 submenu under Settings: OpenAI's holds the API key and the model (picked from
 OpenAI's models), and Azure AI Foundry's holds the endpoint, key, and the name
-of the deployment to use (Foundry can only use models you deployed). Changing the languages, tone, provider, or
-model re-translates everything with the new settings. The language pair and
+of the deployment to use (Foundry can only use models you deployed).
+Changing the languages, tone, provider, or model re-translates everything
+with the new settings. The language pair and
 tone (and the hotkey) are remembered across launches.
 
 Because the window floats above other apps, it is slightly see-through, fades
@@ -102,18 +103,13 @@ _SENTENCE_ENDINGS = (
 
 _AUTO_LABEL = "Auto-detect"
 
-# Menu items for each provider's own settings, in Settings › <provider name>.
+# Menu items for OpenAI's own settings, in Settings › OpenAI (Azure AI Foundry's
+# are defined in providers/azure.py).
 _OPENAI_KEY_ITEM = "Set API Key\u2026"
 _OPENAI_MODEL_ITEM = "Set Model\u2026"
-_AZURE_SETUP_ITEM = "Set Endpoint, Key & Deployment\u2026"
-_AZURE_DEPLOYMENT_ITEM = "Set Deployment\u2026"
 # Where to find them, as shown in hints (e.g. "Settings › OpenAI › Set API Key…").
 _OPENAI_KEY_PATH = f"Settings \u203a {openai_provider.DISPLAY_NAME} \u203a {_OPENAI_KEY_ITEM}"
 _OPENAI_MODEL_PATH = f"Settings \u203a {openai_provider.DISPLAY_NAME} \u203a {_OPENAI_MODEL_ITEM}"
-_AZURE_SETUP_PATH = f"Settings \u203a {azure_provider.DISPLAY_NAME} \u203a {_AZURE_SETUP_ITEM}"
-_AZURE_DEPLOYMENT_PATH = (
-    f"Settings \u203a {azure_provider.DISPLAY_NAME} \u203a {_AZURE_DEPLOYMENT_ITEM}"
-)
 
 # How long the window takes to fade between opacities, in milliseconds.
 _FADE_MS = 160
@@ -455,8 +451,9 @@ class AzureSetupDialog(QDialog):
             )
         if not api_key or any(c.isspace() for c in api_key):
             return "Enter the API key (it can't contain spaces).", self.key_edit
-        if any(c.isspace() for c in model):
-            return "The deployment name can't contain spaces.", self.model_edit
+        problem = azure_provider.deployment_problem(model)
+        if problem:
+            return problem, self.model_edit
         return "", None
 
     def accept(self) -> None:
@@ -731,11 +728,11 @@ class MainWindow(QMainWindow):
         # Azure AI Foundry: the endpoint, key, and the name of a model you
         # deployed. There's no model list here: only your deployments work.
         self.azure_menu = menu.addMenu(azure_provider.DISPLAY_NAME)
-        self.set_up_azure_action = QAction(_AZURE_SETUP_ITEM.replace("&", "&&"), self)
+        self.set_up_azure_action = QAction(azure_provider.SETUP_ITEM.replace("&", "&&"), self)
         self.set_up_azure_action.triggered.connect(lambda: self._set_up_azure())
         self.azure_menu.addAction(self.set_up_azure_action)
 
-        self.set_deployment_action = QAction(_AZURE_DEPLOYMENT_ITEM, self)
+        self.set_deployment_action = QAction(azure_provider.DEPLOYMENT_ITEM, self)
         self.set_deployment_action.triggered.connect(self._set_deployment)
         self.azure_menu.addAction(self.set_deployment_action)
         menu.addSeparator()
@@ -1255,7 +1252,7 @@ class MainWindow(QMainWindow):
             if azure_provider.endpoint_host():
                 lines.append(f"Endpoint: {azure_provider.endpoint_host()}")
             lines.append(f"Deployment: {model}")
-            change = _AZURE_DEPLOYMENT_PATH
+            change = azure_provider.DEPLOYMENT_PATH
         else:
             lines.append(f"Model: {model}")
             change = _OPENAI_MODEL_PATH
@@ -1267,7 +1264,7 @@ class MainWindow(QMainWindow):
 
     def _missing_setup_message(self, provider: ModuleType) -> str:
         if provider is azure_provider:
-            return f"Azure AI Foundry isn't set up \u2014 {_AZURE_SETUP_PATH}"
+            return f"Azure AI Foundry isn't set up \u2014 {azure_provider.SETUP_PATH}"
         return f"No API key set \u2014 {_OPENAI_KEY_PATH}"
 
     def _reflect_key_status(self) -> None:
@@ -1408,13 +1405,28 @@ class MainWindow(QMainWindow):
             )
         return env is not None
 
-    def _save_model(self, provider: ModuleType, model: str, title: str) -> None:
+    @staticmethod
+    def _not_in_use_note(provider: ModuleType, what: str) -> str:
+        """A prompt note saying ``provider`` isn't in use yet, if it isn't."""
+        active = providers.active_provider()
+        if active is provider:
+            return ""
+        return (
+            f"\n\n{active.DISPLAY_NAME} is in use now; this {what} is used "
+            f"once you switch to {provider.DISPLAY_NAME}."
+        )
+
+    def _save_model(
+        self, provider: ModuleType, model: str, title: str, what: str
+    ) -> None:
         """Save ``provider``'s model; refresh only if it is the one in use."""
         try:
             provider.save_model(model)
         except OSError as exc:
             QMessageBox.warning(
-                self, title, f"Could not save it to {provider.MODEL_FILE}:\n{exc}"
+                self,
+                title,
+                f"Could not save the {what} to {provider.MODEL_FILE}:\n{exc}",
             )
             return
         if self._provider_state() != self._reflected_provider_state:
@@ -1438,16 +1450,12 @@ class MainWindow(QMainWindow):
             f"OpenAI model (stored in {openai_provider.MODEL_FILE}; leave blank "
             f"for the default, {config.DEFAULT_MODEL}):"
         )
-        if providers.active_provider() is not openai_provider:
-            prompt += (
-                f"\n\n{providers.active_provider().DISPLAY_NAME} is in use now; "
-                "this model is used once you switch to OpenAI."
-            )
+        prompt += self._not_in_use_note(openai_provider, "model")
         model, ok = QInputDialog.getItem(
             self, title, prompt, choices, choices.index(current), True
         )
         if ok:
-            self._save_model(openai_provider, model, title)
+            self._save_model(openai_provider, model, title, "OpenAI model")
 
     def _set_deployment(self) -> None:
         """Type the name of the Azure AI Foundry deployment to use."""
@@ -1459,10 +1467,10 @@ class MainWindow(QMainWindow):
         if self._model_pinned(azure_provider, title, "deployment"):
             return
         prompt = (
-            "Name of a deployment on your Foundry resource, exactly as shown in "
-            f"the Foundry portal (stored in {azure_provider.MODEL_FILE}; leave "
-            f"blank for {config.DEFAULT_MODEL}):"
-        )
+            "Deployment name, exactly as shown in the Foundry portal\n"
+            f"(stored in {azure_provider.MODEL_FILE}; leave blank for "
+            f"{config.DEFAULT_MODEL}):"
+        ) + self._not_in_use_note(azure_provider, "deployment")
         model = azure_provider.saved_model()
         while True:
             model, ok = QInputDialog.getText(
@@ -1471,10 +1479,11 @@ class MainWindow(QMainWindow):
             if not ok:
                 return
             model = model.strip()
-            if not any(c.isspace() for c in model):
+            problem = azure_provider.deployment_problem(model)
+            if not problem:
                 break
-            QMessageBox.warning(self, title, "The deployment name can't contain spaces.")
-        self._save_model(azure_provider, model, title)
+            QMessageBox.warning(self, title, problem)
+        self._save_model(azure_provider, model, title, "deployment name")
 
     def _update_tone_tooltip(self) -> None:
         self.tone.setToolTip(
