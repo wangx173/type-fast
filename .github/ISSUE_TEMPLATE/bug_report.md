@@ -33,7 +33,17 @@ Delete sections that don't apply. Never paste API keys.
 
 ## Logs or screenshots
 
-<!-- Error messages or terminal output. Remove keys and personal text first. -->
+<!--
+Error messages or terminal output. This issue is public: first remove API keys
+(anything like `sk-...`, `OPENAI_API_KEY`, `AZURE_AI_API_KEY`, files in
+`~/.type-fast/`), your Foundry endpoint, and any private text you translated.
+-->
+
+## Out of scope
+
+<!-- What the fix should NOT change. This tells the implementer where to stop. -->
+
+-
 
 ## Acceptance criteria
 
@@ -51,4 +61,4 @@ Delete sections that don't apply. Never paste API keys.
 
 ## Notes
 
-<!-- Optional: likely cause, relevant files (for example `type_fast/autopaste.py`), related issues, things not to change. -->
+<!-- Optional: likely cause, relevant files (for example `type_fast/autopaste.py`), related issues. -->

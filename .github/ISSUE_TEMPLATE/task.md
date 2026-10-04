@@ -22,7 +22,7 @@ Delete sections that don't apply.
 
 -
 
-## Done when
+## Acceptance criteria
 
 <!-- Checkable outcomes. For an investigation, say what the result should be (for example, a summary comment or a doc). -->
 
@@ -31,7 +31,8 @@ Delete sections that don't apply.
 ## Verification
 
 - [ ] `QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v` passes, if code changed
-- [ ] Links in changed docs work
+- [ ] Manual check on a real Mac, if hotkey, auto-paste, Accessibility, or UI code changed:
+- [ ] Links in changed docs work, if docs changed
 
 ## Pointers
 

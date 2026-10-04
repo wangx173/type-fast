@@ -15,6 +15,7 @@ Closes #
 <!-- What you ran and what happened. Give results, not just "tested". -->
 
 - [ ] `QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v`:
+- [ ] CI passes (import check, unit tests, headless window smoke test)
 - [ ] Manual check on a real Mac (hotkey, auto-paste, Accessibility, or UI), or N/A:
 
 ## Risks and follow-ups

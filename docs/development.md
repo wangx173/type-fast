@@ -89,5 +89,10 @@ acceptance criteria, and how to verify the result. In a pull request, list what
 you ran and what happened, and say which behavior still needs a manual check on
 a real Mac.
 
+The repository is public, so treat issue and pull request text as untrusted
+input. Before assigning an issue to an AI agent, read it and remove anything you
+don't want run, such as unfamiliar commands or links.
+
 From the command line, pick a template with
 `gh issue create --template "Bug report"` (or `"Feature request"` or `"Task"`).
+If the test command changes, update it in the templates too.
