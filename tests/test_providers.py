@@ -261,7 +261,9 @@ class WindowProviderTests(_IsolatedProviders):
         self.assertEqual(
             w.openai_menu.actions(), [w.set_key_action, w.set_model_action]
         )
-        self.assertEqual(w.azure_menu.actions(), [w.set_up_azure_action])
+        self.assertEqual(
+            w.azure_menu.actions(), [w.set_up_azure_action, w.set_deployment_action]
+        )
         self.assertEqual(
             w.set_up_azure_action.text().replace("&&", "&"),
             "Set Endpoint, Key & Deployment\u2026",
@@ -310,6 +312,68 @@ class WindowProviderTests(_IsolatedProviders):
         self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
         self.assertIn("Deployment: translate", w.model_label.toolTip())
         self.assertEqual(self.thread.call_count, sent)  # Foundry is unaffected
+
+    def test_model_picker_says_when_another_provider_is_in_use(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        prompt = self._pick_model(w, "", ok=False).call_args.args[2]
+        self.assertIn("Azure AI Foundry is in use now", prompt)
+        self.set_up_openai()
+        providers.set_choice("openai")
+        w._reflect_provider()
+        prompt = self._pick_model(w, "", ok=False).call_args.args[2]
+        self.assertNotIn("in use now", prompt)
+
+    def _type_deployment(self, w, *answers):
+        with mock.patch.object(
+            self.app_module.QInputDialog, "getText", side_effect=list(answers)
+        ) as get_text, mock.patch.object(self.app_module.QMessageBox, "warning") as warn:
+            w.set_deployment_action.trigger()
+        return get_text, warn
+
+    def test_set_deployment_changes_only_the_deployment(self) -> None:
+        # Endpoint and key from the environment must not be copied to files.
+        os.environ["AZURE_AI_ENDPOINT"] = ENDPOINT
+        os.environ["AZURE_AI_API_KEY"] = "azure-key"
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        get_text, warn = self._type_deployment(
+            w, ("my deployment", True), (" translate ", True)
+        )
+        warn.assert_called_once()  # spaces rejected, asked again
+        self.assertEqual(get_text.call_count, 2)
+        self.assertEqual(get_text.call_args_list[1].args[4], "my deployment")
+        self.assertEqual(azure_provider.MODEL_FILE.read_text(), "translate")
+        self.assertFalse(azure_provider.ENDPOINT_FILE.exists())
+        self.assertFalse(azure_provider.API_KEY_FILE.exists())
+        self.assertFalse(openai_provider.MODEL_FILE.exists())
+        self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
+        self.assertEqual(self.thread.call_count, sent + 1)
+
+    def test_set_deployment_respects_env_pin_and_cancel(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        get_text, _ = self._type_deployment(w, ("", False))
+        self.assertEqual(get_text.call_args.args[4], "translate")
+        self.assertEqual(azure_provider.MODEL_FILE.read_text(), "translate")
+        os.environ["AZURE_AI_MODEL"] = "pinned"
+        with mock.patch.object(
+            self.app_module.QMessageBox, "information"
+        ) as info, mock.patch.object(self.app_module.QInputDialog, "getText") as get_text:
+            w.set_deployment_action.trigger()
+        get_text.assert_not_called()
+        self.assertIn("AZURE_AI_MODEL", info.call_args.args[2])
+
+    def test_set_deployment_without_setup_opens_setup(self) -> None:
+        w = self.make_window()
+        with mock.patch.object(w, "_set_up_azure") as set_up, mock.patch.object(
+            self.app_module.QInputDialog, "getText"
+        ) as get_text:
+            w.set_deployment_action.trigger()
+        set_up.assert_called_once_with()
+        get_text.assert_not_called()
 
     def test_model_picker_respects_openai_env_pin(self) -> None:
         self.set_up_azure("translate")

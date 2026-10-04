@@ -87,8 +87,9 @@ Each provider keeps its own model setting, in its own submenu of **Settings**:
   type any other OpenAI model name. It changes the OpenAI model even while
   Azure AI Foundry is in use.
 - **Azure AI Foundry:** Foundry can only use the models you deployed, so there
-  is no model list. Enter your deployment name in
-  **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**.
+  is no model list. Type your deployment name in **Settings → Azure AI Foundry → Set Deployment…**
+  (or along with the endpoint and key in
+  **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**).
 
 Leave the model or deployment blank to go back to the default
 (`gpt-4.1-mini`). It's saved under `~/.type-fast/`. An environment variable

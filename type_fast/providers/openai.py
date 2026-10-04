@@ -3,7 +3,8 @@
 The API key is read from the ``OPENAI_API_KEY`` environment variable, or, when
 that is not set, from the fallback file ``~/.type-fast/api_key``. The model is
 read from ``OPENAI_MODEL`` or ``~/.type-fast/openai_model`` (settable in the app
-via Settings › OpenAI › Set Model…), defaulting to :data:`type_fast.config.DEFAULT_MODEL`.
+via Settings › OpenAI › Set Model…), defaulting to
+:data:`type_fast.config.DEFAULT_MODEL`.
 This is the default provider (see :mod:`type_fast.providers` for how one is chosen).
 """
 

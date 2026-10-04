@@ -294,10 +294,10 @@ Notes:
   pick one there, it uses Foundry whenever both an endpoint and a key are
   found, even if an OpenAI key is also set. If you picked OpenAI earlier,
   choose **Settings → Provider → Azure AI Foundry**.
-- To change the deployment later, open
-  **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…** again.
+- To change the deployment later, choose
+  **Settings → Azure AI Foundry → Set Deployment…**.
   It's saved to `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
-  takes precedence, and the window says so.
+  pins the deployment and the app asks you to unset it first.
 - Changes made in the app apply right away. If you change the files, or run
   the [setup script](#set-up-with-a-script), while Type Fast is open, switch to
   Type Fast and it picks them up. After changing environment variables, quit
@@ -360,7 +360,7 @@ can't see those variables; set them in the app or use the
 - The model setting doesn't match a deployment name on this resource. Type
   Fast sends the **deployment name**, which can differ from the model name
   (for example, a deployment called `translate` that runs `gpt-4.1-mini`).
-  Set it in **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**,
+  Set it in **Settings → Azure AI Foundry → Set Deployment…**,
   `AZURE_AI_MODEL`, or
   `~/.type-fast/azure_ai_model`. To list your deployments:
 

@@ -74,13 +74,14 @@ def get_model() -> str:
     return active_provider().get_model()
 
 
-def model_env_override() -> Optional[str]:
-    """Return the env var name if it currently pins the active provider's model.
+def model_env_override(provider: Optional[ModuleType] = None) -> Optional[str]:
+    """Return the env var name if it currently pins ``provider``'s model.
 
-    An environment variable takes precedence over the saved model file, so a
-    model chosen in the app has no effect while this returns a name.
+    ``provider`` defaults to the active one. An environment variable takes
+    precedence over the saved model file, so a model chosen in the app has no
+    effect while this returns a name.
     """
-    env = active_provider().MODEL_ENV
+    env = (provider or active_provider()).MODEL_ENV
     return env if os.environ.get(env, "").strip() else None
 
 

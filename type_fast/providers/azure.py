@@ -3,9 +3,9 @@
 Configured via ``AZURE_AI_ENDPOINT`` and ``AZURE_AI_API_KEY`` (and optionally
 ``AZURE_AI_MODEL`` to pick a deployment), each with a matching ``~/.type-fast/``
 fallback file. The files can also be written from the app (Settings › Azure AI
-Foundry › Set Endpoint, Key & Deployment…). Foundry is reached through its OpenAI-compatible
-``/openai/v1`` endpoint, so the standard OpenAI client and Responses API calls
-work unchanged.
+Foundry › Set Endpoint, Key & Deployment… or Set Deployment…). Foundry is
+reached through its OpenAI-compatible ``/openai/v1`` endpoint, so the standard
+OpenAI client and Responses API calls work unchanged.
 """
 
 from __future__ import annotations

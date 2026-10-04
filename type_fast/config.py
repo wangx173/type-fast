@@ -15,7 +15,7 @@ DEFAULT_MODEL = "gpt-4.1-mini"
 # OpenAI models offered in Settings › OpenAI › Set Model…. The dialog is
 # editable, so any other OpenAI model name can be typed in as well. Azure AI
 # Foundry doesn't use this list: it can only use the deployments you created,
-# so its deployment name is entered with its endpoint and key.
+# so you type a deployment name in Settings › Azure AI Foundry instead.
 MODEL_CHOICES = (
     "gpt-4.1-mini",
     "gpt-4.1",
