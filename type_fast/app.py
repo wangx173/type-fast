@@ -1108,8 +1108,10 @@ class MainWindow(QMainWindow):
 
     def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
         if state == Qt.ApplicationActive:
-            # Settings may have changed outside the app (e.g. the setup script).
-            self._reflect_provider()
+            # Settings may have changed outside the app (e.g. the setup script);
+            # if so, apply them to the current text too, not just the footer.
+            if self._provider_state() != self._reflected_provider_state:
+                self._after_provider_change()
         # Reactivating the app (Dock icon, ⌘Tab) while dismissed shows the window.
         if state == Qt.ApplicationActive and self._dismissed and not self.isVisible():
             self.summon()
@@ -1203,8 +1205,14 @@ class MainWindow(QMainWindow):
         self._save_prefs(title, "hotkey")
         return True
 
+    def _provider_state(self) -> tuple[str, ...]:
+        """The settings a translation depends on: provider, endpoint, key, model."""
+        provider = providers.active_provider()
+        return (provider.NAME, *provider.client_key(), providers.get_model())
+
     def _reflect_provider(self) -> None:
         """Show the active provider and model in the footer, menu, and status."""
+        self._reflected_provider_state = self._provider_state()
         provider = providers.active_provider()
         model = providers.get_model()
         self.model_label.setText(f"{provider.SHORT_NAME} \u00b7 {model}")

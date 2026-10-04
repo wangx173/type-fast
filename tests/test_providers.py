@@ -318,6 +318,21 @@ class WindowProviderTests(_IsolatedProviders):
         self.assertEqual(self.checked_provider(w), "azure")
         self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
 
+    def test_app_activation_retranslates_only_after_changes(self) -> None:
+        from PySide6.QtCore import Qt
+
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        w._on_app_state_changed(Qt.ApplicationActive)
+        self.assertEqual(self.thread.call_count, sent)  # nothing changed
+        azure_provider.save_model("other")  # e.g. the setup script ran
+        w._on_app_state_changed(Qt.ApplicationActive)
+        self.assertEqual(self.thread.call_count, sent + 1)
+        self.assertEqual(w.model_label.text(), "Azure \u00b7 other")
+
     def test_azure_dialog_validates_input(self) -> None:
         from PySide6.QtWidgets import QDialog
 

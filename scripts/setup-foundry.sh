@@ -139,7 +139,7 @@ version_at_least() {
 
 # 2-64 letters, digits, and hyphens; starts and ends with a letter or digit.
 valid_name() {
-    printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9-]{0,62}[A-Za-z0-9])?$'
+    printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9-]{0,62}[A-Za-z0-9]$'
 }
 
 # Like valid_name, but periods and underscores are allowed too (gpt-4.1-mini).

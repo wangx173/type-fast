@@ -10,6 +10,7 @@ absent.
 from __future__ import annotations
 
 import os
+import threading
 from types import ModuleType
 from typing import Optional
 
@@ -24,6 +25,7 @@ PROVIDERS: tuple[ModuleType, ...] = (openai_provider, azure_provider)
 # The saved provider choice; missing means "automatic".
 PROVIDER_FILE = CONFIG_DIR / "provider"
 
+_client_lock = threading.Lock()  # translation workers call get_client()
 _client: Optional[OpenAI] = None
 _client_key: Optional[tuple[str, ...]] = None
 
@@ -95,16 +97,18 @@ def get_client() -> OpenAI:
     rebuilds the client and keeps it in sync with :func:`get_model`.
     """
     global _client, _client_key
-    provider = active_provider()
-    key = (provider.NAME, *provider.client_key())
-    if _client is None or _client_key != key:
-        _client = provider.build_client()
-        _client_key = key
-    return _client
+    with _client_lock:
+        provider = active_provider()
+        key = (provider.NAME, *provider.client_key())
+        if _client is None or _client_key != key:
+            _client = provider.build_client()
+            _client_key = key
+        return _client
 
 
 def reset_client() -> None:
     """Discard the cached client so the next call picks up new credentials."""
     global _client, _client_key
-    _client = None
-    _client_key = None
+    with _client_lock:
+        _client = None
+        _client_key = None
