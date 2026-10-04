@@ -34,3 +34,6 @@ type-fast = "type_fast.app:main"
 
 [tool.setuptools]
 packages = ["type_fast", "type_fast.providers"]
+
+[tool.setuptools.package-data]
+type_fast = ["resources/*.png"]

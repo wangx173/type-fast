@@ -1,8 +1,8 @@
 """Paste into the frontmost app with a synthetic ⌘V (macOS).
 
 When the show/hide hotkey hides the window, the previous app gets focus back
-and the finished translation is already on the clipboard; posting ⌘V there
-pastes it, so you don't have to.
+and the finished translation is on the clipboard (or soon will be, once it
+finishes); posting ⌘V there pastes it, so you don't have to.
 
 Posting keystrokes to another app needs the Accessibility permission (System
 Settings › Privacy & Security › Accessibility). Without it nothing is posted,
@@ -23,7 +23,11 @@ from . import hotkey
 
 _APP_SERVICES = "/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
 _kCGEventSourceStateCombinedSessionState = 0
+_kCGEventSourceStateHIDSystemState = 1
 _kCGSessionEventTap = 1
+# kCGEventLeftMouseDown, kCGEventRightMouseDown, kCGEventKeyDown,
+# kCGEventOtherMouseDown: the clicks and key presses that can move the caret.
+_INPUT_EVENT_TYPES = (1, 3, 10, 25)
 # Physical V key; the same U.S.-layout table the hotkey uses.
 _kVK_ANSI_V = hotkey.KEYCODES["V"]
 # kCGEventFlagMaskCommand, plus the left-Command device bit that some apps check.
@@ -59,6 +63,8 @@ def _load() -> ctypes.CDLL | None:
             lib.CGEventPost.restype = None
             lib.CFRelease.argtypes = [ctypes.c_void_p]
             lib.CFRelease.restype = None
+            lib.CGEventSourceCounterForEventType.argtypes = [ctypes.c_int32, ctypes.c_uint32]
+            lib.CGEventSourceCounterForEventType.restype = ctypes.c_uint32
             _lib = lib
         except (OSError, AttributeError):
             _lib_failed = True
@@ -79,6 +85,22 @@ def has_permission() -> bool:
     """
     lib = _load()
     return bool(lib and lib.AXIsProcessTrusted())
+
+
+def input_event_count() -> int | None:
+    """Return how many key presses and mouse clicks you have made, or None.
+
+    It counts hardware input only, in any app, so a change shows that you
+    clicked or typed somewhere since an earlier call; keystrokes posted by
+    apps, such as :func:`send_paste`, don't count. None off macOS/Cocoa.
+    """
+    lib = _load()
+    if lib is None:
+        return None
+    return sum(
+        lib.CGEventSourceCounterForEventType(_kCGEventSourceStateHIDSystemState, kind)
+        for kind in _INPUT_EVENT_TYPES
+    )
 
 
 def send_paste() -> bool:

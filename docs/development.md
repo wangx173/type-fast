@@ -4,6 +4,7 @@
 - [Run from source](#run-from-source)
 - [Run tests](#run-tests)
 - [Build the macOS app](#build-the-macos-app)
+- [Update the app icon](#update-the-app-icon)
 
 ## Requirements
 
@@ -55,3 +56,21 @@ launched from Finder.
 Pushing a version tag (for example `v0.4.0`) runs the
 [release workflow](../.github/workflows/release.yml), which builds the app and
 attaches `Type-Fast-macos-arm64.zip` to a GitHub Release.
+
+## Update the app icon
+
+The icon's master file is [`assets/icon/type-fast.svg`](../assets/icon/type-fast.svg):
+a keyboard key labeled "A" and "文" with speed lines, on a macOS-style rounded
+square. Two files are exported from it:
+
+- `assets/icon/TypeFast.icns`, the `.app` bundle's Finder icon.
+- `type_fast/resources/icon.png` (512 px), which the app sets as its Dock and
+  window icon at runtime (this is what you see when running from source).
+
+If you edit the SVG, re-export both files: render it to an `.iconset` folder
+and convert that with `iconutil -c icns`. Commit all three files. Check the
+result at small sizes (16 and 32 px), where only the white key on the indigo
+background stays readable.
+
+The icon is original artwork drawn with plain SVG shapes, without fonts or
+third-party images, and is covered by the project's [MIT license](../LICENSE).
