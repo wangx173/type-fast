@@ -89,8 +89,8 @@ def save_model(model: str) -> None:
     active_provider().save_model(model)
 
 
-def get_client() -> OpenAI:
-    """Return the cached client for the active provider, building it if needed.
+def get_client(provider: Optional[ModuleType] = None) -> OpenAI:
+    """Return the cached client for ``provider`` (default: the active one).
 
     The cache is keyed on the active provider and its endpoint and key, so
     switching provider or changing credentials (in the app or in the files)
@@ -98,7 +98,7 @@ def get_client() -> OpenAI:
     """
     global _client, _client_key
     with _client_lock:
-        provider = active_provider()
+        provider = provider or active_provider()
         key = (provider.NAME, *provider.client_key())
         if _client is None or _client_key != key:
             _client = provider.build_client()

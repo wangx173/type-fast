@@ -333,6 +333,57 @@ class WindowProviderTests(_IsolatedProviders):
         self.assertEqual(self.thread.call_count, sent + 1)
         self.assertEqual(w.model_label.text(), "Azure \u00b7 other")
 
+    def test_activation_refreshes_pinned_or_automatic(self) -> None:
+        from PySide6.QtCore import Qt
+
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        self.assertIn("(chosen automatically)", w.model_label.toolTip())
+        providers.set_choice("azure")  # same provider, now pinned outside the app
+        w._on_app_state_changed(Qt.ApplicationActive)
+        self.assertNotIn("(chosen automatically)", w.model_label.toolTip())
+        self.assertNotIn("(chosen automatically)", w.model_label.accessibleDescription())
+        self.assertEqual(self.thread.call_count, sent)  # nothing to retranslate
+
+    def test_request_is_bound_to_its_provider_client(self) -> None:
+        self.set_up_openai()
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        client = self.thread.call_args.kwargs["args"][-1]
+        self.assertIn("example.services.ai.azure.com", str(client.base_url))
+        # Switching before the worker runs must not change what it sends with.
+        w.provider_actions["openai"].trigger()
+        self.assertIn("example.services.ai.azure.com", str(client.base_url))
+        newer = self.thread.call_args.kwargs["args"][-1]
+        self.assertIsNot(newer, client)
+        self.assertNotIn("azure", str(newer.base_url))
+
+    def test_missing_setup_error_reaches_the_worker(self) -> None:
+        providers.set_choice("azure")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        error = self.thread.call_args.kwargs["args"][-1]
+        self.assertIsInstance(error, azure_provider.MissingCredentialsError)
+
+    def test_credential_change_clears_frozen_lines(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("one\ntwo")
+        w._retranslate()
+        # Pretend the first line finished with the old key.
+        w._on_finished(w._request_id, "uno")
+        self.assertEqual(w._frozen_src, "one\n")
+        azure_provider.save_settings(ENDPOINT, "rotated-key", "translate")
+        w._after_provider_change()
+        self.assertEqual(w._frozen_out, "")
+        self.assertEqual(self.thread.call_args.kwargs["args"][1], "one")
+
     def test_azure_dialog_validates_input(self) -> None:
         from PySide6.QtWidgets import QDialog
 

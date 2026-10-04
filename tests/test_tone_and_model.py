@@ -145,6 +145,17 @@ class TranslateStreamTests(unittest.TestCase):
         for model in ("gpt-5-mini", "o4-mini", "GPT-5"):
             self.assertNotIn("temperature", self._run(model))
 
+    def test_uses_the_client_it_is_given(self) -> None:
+        stream_cm = mock.MagicMock()
+        stream_cm.__enter__.return_value = iter([])
+        client = mock.Mock()
+        client.responses.stream.return_value = stream_cm
+        with mock.patch.object(
+            providers, "get_client", side_effect=AssertionError("resolved again")
+        ):
+            list(translator.translate_stream("hello", model="m", client=client))
+        client.responses.stream.assert_called_once()
+
     def test_retries_without_temperature_when_rejected(self) -> None:
         import openai
 

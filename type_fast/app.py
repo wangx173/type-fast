@@ -45,6 +45,7 @@ from pathlib import Path
 from types import ModuleType
 from typing import NamedTuple
 
+from openai import OpenAI
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
@@ -1112,6 +1113,9 @@ class MainWindow(QMainWindow):
             # if so, apply them to the current text too, not just the footer.
             if self._provider_state() != self._reflected_provider_state:
                 self._after_provider_change()
+            else:
+                # Only display details (e.g. pinned vs automatic) may differ.
+                self._reflect_provider()
         # Reactivating the app (Dock icon, ⌘Tab) while dismissed shows the window.
         if state == Qt.ApplicationActive and self._dismissed and not self.isVisible():
             self.summon()
@@ -1205,10 +1209,10 @@ class MainWindow(QMainWindow):
         self._save_prefs(title, "hotkey")
         return True
 
-    def _provider_state(self) -> tuple[str, ...]:
+    def _provider_state(self, provider: ModuleType | None = None) -> tuple[str, ...]:
         """The settings a translation depends on: provider, endpoint, key, model."""
-        provider = providers.active_provider()
-        return (provider.NAME, *provider.client_key(), providers.get_model())
+        provider = provider or providers.active_provider()
+        return (provider.NAME, *provider.client_key(), provider.get_model())
 
     def _reflect_provider(self) -> None:
         """Show the active provider and model in the footer, menu, and status."""
@@ -1544,12 +1548,13 @@ class MainWindow(QMainWindow):
         full = self.input.toPlainText()
         source, target = self.prefs.source, self.prefs.target
         tone = self.prefs.instruction()
-        provider = providers.active_provider().NAME
-        model = providers.get_model()
+        provider = providers.active_provider()
+        model = provider.get_model()
+        provider_state = self._provider_state(provider)
 
-        # A language, tone, provider, or model change makes the frozen
-        # translation stale.
-        context = (source, target, tone, provider, model)
+        # A language, tone, provider, endpoint, key, or model change makes the
+        # frozen translation stale.
+        context = (source, target, tone, *provider_state)
         if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""
@@ -1598,7 +1603,7 @@ class MainWindow(QMainWindow):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target, tone, provider, model, should_freeze)
+        key = (self._frozen_src, active, source, target, tone, *provider_state, should_freeze)
         if key == self._last_sent_key:
             return
         self._last_sent_key = key
@@ -1607,6 +1612,14 @@ class MainWindow(QMainWindow):
         self._active_prefix = self._frozen_out + ("\n" if self._frozen_out else "")
         self._pending_freeze = (should_freeze, frozen_after, self._active_prefix)
 
+        # Bind the request to this provider's client now, so a switch made
+        # before the worker starts can't send it with other settings.
+        client: OpenAI | Exception
+        try:
+            client = providers.get_client(provider)
+        except Exception as exc:  # reported by the worker, like API errors
+            client = exc
+
         self._request_id += 1
         request_id = self._request_id
         self._translating = True
@@ -1614,7 +1627,7 @@ class MainWindow(QMainWindow):
 
         thread = threading.Thread(
             target=self._translate_worker,
-            args=(request_id, active, source, target, tone, model),
+            args=(request_id, active, source, target, tone, model, client),
             daemon=True,
         )
         thread.start()
@@ -1635,18 +1648,22 @@ class MainWindow(QMainWindow):
         target: str,
         tone: str,
         model: str,
+        client: OpenAI | Exception,
     ) -> None:
         def superseded() -> bool:
             return request_id != self._request_id
 
         chunks: list[str] = []
         try:
+            if isinstance(client, Exception):
+                raise client
             for chunk in translate_stream(
                 text,
                 source,
                 target,
                 tone=tone,
                 model=model,
+                client=client,
                 should_cancel=superseded,
             ):
                 if superseded():
