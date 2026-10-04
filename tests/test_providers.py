@@ -141,6 +141,7 @@ class AzureSettingsTests(_IsolatedProviders):
             ENDPOINT + "/",
             ENDPOINT + "/openai/v1",
             ENDPOINT + "/openai/v1/",
+            ENDPOINT + "/OpenAI/V1",
             ENDPOINT + "/api/projects/type-fast",
             ENDPOINT + "/api/projects/type-fast/",
         ):
@@ -309,6 +310,33 @@ class WindowProviderTests(_IsolatedProviders):
             w.set_up_azure_action.trigger()
         self.assertEqual(providers.get_choice(), "azure")
         self.assertEqual(self.checked_provider(w), "azure")
+
+    def test_setup_does_not_switch_when_choice_cannot_be_saved(self) -> None:
+        self.set_up_openai()
+        w = self.make_window()
+        values = (ENDPOINT, "azure-key", "translate")
+        with mock.patch.object(w, "_ask_azure_settings", return_value=values), mock.patch.object(
+            w, "_confirm_switch", return_value=False
+        ) as confirm, mock.patch.object(
+            providers, "set_choice", side_effect=OSError("read-only")
+        ), mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
+            self.assertFalse(w._set_up_azure())
+        warning.assert_called_once()
+        confirm.assert_not_called()
+        # Nothing was saved, so the automatic choice still picks OpenAI.
+        self.assertFalse(azure_provider.is_configured())
+        self.assertIs(providers.active_provider(), openai_provider)
+        self.assertEqual(self.checked_provider(w), "openai")
+
+    def test_failed_setup_keeps_automatic_choice(self) -> None:
+        self.set_up_openai()
+        w = self.make_window()
+        values = (ENDPOINT, "azure-key", "translate")
+        with mock.patch.object(w, "_ask_azure_settings", return_value=values), mock.patch.object(
+            azure_provider, "save_settings", side_effect=OSError("disk full")
+        ), mock.patch.object(self.app_module.QMessageBox, "warning"):
+            self.assertFalse(w._set_up_azure())
+        self.assertIsNone(providers.get_choice())
 
     def test_updating_active_provider_does_not_ask(self) -> None:
         self.set_up_azure()

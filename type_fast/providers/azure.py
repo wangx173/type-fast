@@ -35,6 +35,7 @@ MODEL_ENV = "AZURE_AI_MODEL"
 # The Foundry portal shows a project endpoint (``…/api/projects/<name>``); the
 # OpenAI-compatible API lives at the resource root instead.
 _PROJECT_PATH = re.compile(r"/api/projects(/.*)?$", re.IGNORECASE)
+_OPENAI_V1_PATH = re.compile(r"/openai/v1$", re.IGNORECASE)
 # Endpoint paths _base_url() understands: none, /openai/v1, or a project.
 _SUPPORTED_PATH = re.compile(r"(/openai/v1|/api/projects/[^/]+)?/?", re.IGNORECASE)
 
@@ -159,9 +160,8 @@ def _base_url(endpoint: str) -> str:
     """
     base = endpoint.strip().rstrip("/")
     base = _PROJECT_PATH.sub("", base)
-    if not base.endswith("/openai/v1"):
-        base = f"{base}/openai/v1"
-    return base
+    base = _OPENAI_V1_PATH.sub("", base)
+    return f"{base}/openai/v1"
 
 
 def client_key() -> tuple[str, ...]:

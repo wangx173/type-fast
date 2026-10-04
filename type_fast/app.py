@@ -1337,9 +1337,24 @@ class MainWindow(QMainWindow):
         if values is None:
             return False
         before = providers.active_provider()
+        # Once Foundry is set up, the automatic choice picks it. Unless we're
+        # switching anyway, pin the current provider first, so a failure to
+        # save the choice can't switch providers behind your back.
+        pinned = (
+            switch is not True
+            and before is not azure_provider
+            and providers.get_choice() is None
+        )
+        if pinned and not self._save_provider_choice(before.NAME):
+            return False
         try:
             azure_provider.save_settings(*values)
         except OSError as exc:
+            if pinned:
+                try:
+                    providers.set_choice(None)  # back to automatic, as before
+                except OSError:
+                    pass
             QMessageBox.warning(
                 self,
                 "Set Up Azure AI Foundry",
