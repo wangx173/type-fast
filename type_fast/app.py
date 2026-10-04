@@ -638,20 +638,22 @@ class MainWindow(QMainWindow):
         # Whether that request is still running.
         self._translating = False
 
-        # The last (frozen_src, active, source, target, tone, provider, model,
+        # The last (frozen_src, active, source, target, tone, *provider state,
         # should_freeze) actually sent, used to skip redundant requests when
-        # nothing relevant changed. ``should_freeze`` is part of the key so that
+        # nothing relevant changed. The provider state (see _provider_state)
+        # is the provider, its endpoint and key, and the model, so its length
+        # depends on the provider. ``should_freeze`` is part of the key so that
         # adding a newline (which must advance the freeze boundary) is never
         # skipped as a duplicate.
-        self._last_sent_key: tuple[str, str, str, str, str, str, str, bool] | None = None
+        self._last_sent_key: tuple[str | bool, ...] | None = None
 
         # Source prefix whose translation is finalized, and its translation.
         # Only the input text *after* ``_frozen_src`` is ever sent to the API.
         self._frozen_src = ""
         self._frozen_out = ""
-        # (source, target, tone, provider, model) the frozen translation was
+        # (source, target, tone, *provider state) the frozen translation was
         # produced with; changing any of them invalidates it.
-        self._frozen_context: tuple[str, str, str, str, str] | None = None
+        self._frozen_context: tuple[str, ...] | None = None
 
         # Display prefix (frozen translations + separator) shown while the
         # active line streams, plus how to freeze that line once it lands:
