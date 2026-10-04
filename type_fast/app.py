@@ -186,6 +186,7 @@ _TEXT_COLORS = {
     "light": {"muted": "#56565a", "busy": "#0a56ba", "done": "#17662b"},
     "dark": {"muted": "#b3b3b7", "busy": "#71b9ff", "done": "#5fd47c"},
 }
+_ERROR_COLORS = {"light": "#b8000f", "dark": "#ff7b72"}
 
 
 def _is_dark_mode() -> bool:
@@ -345,6 +346,8 @@ class AzureSetupDialog(QDialog):
         )
         info.setWordWrap(True)
         info.setOpenExternalLinks(True)
+        # Let Tab reach the link and Return open it, not just a mouse click.
+        info.setTextInteractionFlags(Qt.TextBrowserInteraction)
 
         self.endpoint_edit = QLineEdit(endpoint)
         self.endpoint_edit.setPlaceholderText("https://<resource>.services.ai.azure.com")
@@ -355,13 +358,17 @@ class AzureSetupDialog(QDialog):
         self.model_edit.setPlaceholderText(config.DEFAULT_MODEL)
 
         form = QFormLayout()
+        # macOS keeps fields at their hint width; widen them to show endpoints.
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
         form.addRow("Endpoint:", self.endpoint_edit)
         form.addRow("API key:", self.key_edit)
         form.addRow("Deployment:", self.model_edit)
 
         self.error_label = QLabel()
         self.error_label.setWordWrap(True)
-        self.error_label.setStyleSheet("color: #d70015;")
+        self.error_label.setStyleSheet(
+            f"color: {_ERROR_COLORS['dark' if _is_dark_mode() else 'light']};"
+        )
         self.error_label.hide()
 
         layout = QVBoxLayout(self)
@@ -382,25 +389,32 @@ class AzureSetupDialog(QDialog):
         layout.addWidget(buttons)
         self.setMinimumWidth(460)
 
-    def _problem(self, endpoint: str, api_key: str, model: str) -> str:
-        """Return what is wrong with the entered values, or ""."""
+    def _problem(self, endpoint: str, api_key: str, model: str) -> tuple[str, QLineEdit | None]:
+        """Return what is wrong with the entered values and the field to fix."""
         url = QUrl(endpoint)
         if url.scheme().lower() != "https" or not url.host() or any(c.isspace() for c in endpoint):
-            return "Enter the endpoint as an https:// URL, e.g. https://<resource>.services.ai.azure.com."
+            return (
+                "Enter the endpoint as an https:// URL, e.g. https://<resource>.services.ai.azure.com.",
+                self.endpoint_edit,
+            )
         if not api_key or any(c.isspace() for c in api_key):
-            return "Enter the API key (it can't contain spaces)."
+            return "Enter the API key (it can't contain spaces).", self.key_edit
         if any(c.isspace() for c in model):
-            return "The deployment name can't contain spaces."
-        return ""
+            return "The deployment name can't contain spaces.", self.model_edit
+        return "", None
 
     def accept(self) -> None:
         endpoint = self.endpoint_edit.text().strip()
         api_key = self.key_edit.text().strip()
         model = self.model_edit.text().strip()
-        problem = self._problem(endpoint, api_key, model)
-        if problem:
+        problem, field = self._problem(endpoint, api_key, model)
+        for edit in (self.endpoint_edit, self.key_edit, self.model_edit):
+            edit.setAccessibleDescription(problem if edit is field else "")
+        if field is not None:
             self.error_label.setText(problem)
             self.error_label.show()
+            # Moving focus makes VoiceOver read the field and its error.
+            field.setFocus()
             return
         self.endpoint, self.api_key, self.model = endpoint, api_key, model
         super().accept()
@@ -632,6 +646,8 @@ class MainWindow(QMainWindow):
 
         self.set_key_action = QAction("Set OpenAI API Key\u2026", self)
         self.set_key_action.setShortcut(QKeySequence("Ctrl+,"))
+        # The lambdas drop QAction's ``checked`` argument, which would
+        # otherwise arrive as ``switch=False`` and skip the switch prompt.
         self.set_key_action.triggered.connect(lambda: self._set_api_key())
         menu.addAction(self.set_key_action)
 
@@ -1058,6 +1074,7 @@ class MainWindow(QMainWindow):
         lines.append(f"Model: {model}")
         lines.append("Change them in Settings \u203a Provider and Settings \u203a Set Model\u2026")
         self.model_label.setToolTip("\n".join(lines))
+        self.model_label.setAccessibleDescription(" ".join(lines))
         self.provider_actions[provider.NAME].setChecked(True)
         self._reflect_key_status()
 
@@ -1079,6 +1096,8 @@ class MainWindow(QMainWindow):
     def _after_provider_change(self) -> None:
         providers.reset_client()  # so the next translation uses the new settings
         self._reflect_provider()
+        # The same text may have failed with the old settings; send it again.
+        self._last_sent_key = None
         self._retranslate()
 
     def _choose_provider(self, name: str) -> None:
@@ -1142,11 +1161,10 @@ class MainWindow(QMainWindow):
 
     def _ask_azure_settings(self) -> tuple[str, str, str] | None:
         """Show the Foundry setup dialog; return (endpoint, key, model) or None."""
-        current_model = azure_provider.get_model()
         dialog = AzureSetupDialog(
             azure_provider.get_endpoint(),
             azure_provider.get_api_key(),
-            current_model if azure_provider.is_configured() else "",
+            azure_provider.saved_model(),
             azure_provider.env_overrides(),
             self,
         )

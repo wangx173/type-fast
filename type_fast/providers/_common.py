@@ -33,16 +33,18 @@ def write_or_clear(file_path: Path, value: str) -> None:
 
 
 def write_private(file_path: Path, value: str) -> None:
-    """Write ``value`` to ``file_path`` so only your account can read it.
+    """Write ``value``, trimmed, to ``file_path`` so only your account can read it.
 
     The file is created with owner-only permissions, and an existing file is
     restricted before anything is written to it.
     """
     file_path.parent.mkdir(parents=True, exist_ok=True)
+    data = value.strip().encode("utf-8")
     fd = os.open(file_path, os.O_WRONLY | os.O_CREAT, 0o600)
     try:
         os.fchmod(fd, 0o600)
         os.ftruncate(fd, 0)
-        os.write(fd, value.strip().encode("utf-8"))
+        while data:
+            data = data[os.write(fd, data):]
     finally:
         os.close(fd)

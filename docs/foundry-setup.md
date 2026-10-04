@@ -322,14 +322,13 @@ If you see `[error] …` in the lower box instead, see
 Errors from Foundry appear in the output box as
 `[error] Error code: <status> - {…}`, followed by Foundry's message.
 
-**The window shows OpenAI · …, or `[error] No OpenAI API key found…`**
+### The window shows OpenAI · …, or `[error] No OpenAI API key found…`
 
 Type Fast is using OpenAI. Choose **Settings → Provider → Azure AI Foundry**.
 Don't add an OpenAI key; **Settings → Set OpenAI API Key…** sets only an
 OpenAI key and doesn't configure Foundry.
 
-**"Azure AI Foundry isn't set up", at the bottom of the window or in the
-output box**
+### "Azure AI Foundry isn't set up", at the bottom of the window or in the output box
 
 Azure AI Foundry is the chosen provider, but Type Fast didn't find both an
 endpoint and a key. Choose **Settings → Set Up Azure AI Foundry…** and enter
@@ -337,13 +336,13 @@ them. If you used `export` but opened the app from Finder or the Dock, it
 can't see those variables; set them in the app or use the
 [`~/.type-fast/` files](#5-configure-type-fast) instead.
 
-**401 — "Access denied due to invalid subscription key or wrong API endpoint"**
+### 401 — "Access denied due to invalid subscription key or wrong API endpoint"
 
 - The key is wrong, or belongs to a different resource than the endpoint.
   Copy both again from the same resource.
 - The key was regenerated. Copy the new one.
 
-**403 — access denied**
+### 403 — access denied
 
 - "Key based authentication is disabled for this resource"
   (`AuthenticationTypeDisabled`): the resource has key authentication turned
@@ -356,8 +355,7 @@ can't see those variables; set them in the app or use the
   private endpoints. Connect from an allowed network, or ask your
   administrator to allow yours.
 
-**404 — `DeploymentNotFound`, "The API deployment for this resource does not
-exist"**
+### 404 — `DeploymentNotFound`, "The API deployment for this resource does not exist"
 
 - The model setting doesn't match a deployment name on this resource. Type
   Fast sends the **deployment name**, which can differ from the model name
@@ -372,27 +370,27 @@ exist"**
 
 - The deployment is brand new. Wait a few minutes and try again.
 
-**404 — "Resource not found", without `DeploymentNotFound`**
+### 404 — "Resource not found", without `DeploymentNotFound`
 
 The endpoint path is wrong. Use the bare resource URL
-(`https://<resource>.services.ai.azure.com`) or one ending in exactly
-`/openai/v1`. Remove anything else, such as `/openai/deployments/…`,
+(`https://<resource>.services.ai.azure.com`), the project endpoint (ending in
+`/api/projects/<project>`), or one ending in exactly `/openai/v1`. Remove anything else, such as `/openai/deployments/…`,
 `/openai/responses`, or `?api-version=…`. Type Fast uses the v1 API, which
 doesn't need an `api-version`.
 
-**400 — other model or parameter errors**
+### 400 — other model or parameter errors
 
 The deployment's model may not support the Responses API; deploy one of the
 models in [step 3](#3-deploy-a-model). If a deployment rejects `temperature`,
 Type Fast retries without it automatically.
 
-**429 — rate limit reached**
+### 429 — rate limit reached
 
 You've used the deployment's tokens-per-minute limit. Type Fast's OpenAI
 client retries a couple of times before showing the error. Wait a moment, or
 raise the deployment's capacity (see [Quota](#3-deploy-a-model)).
 
-**Connection errors**
+### Connection errors
 
 Check the resource name in the endpoint, your network, and any VPN or proxy.
 

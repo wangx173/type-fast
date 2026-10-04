@@ -280,6 +280,28 @@ class WindowProviderTests(_IsolatedProviders):
         self.assertIsNone(providers.get_choice())
         self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
 
+    def test_fixing_settings_resends_the_same_text(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        w._retranslate()
+        self.assertEqual(self.thread.call_count, sent)  # deduplicated
+        values = (ENDPOINT, "rotated-key", "translate")
+        with mock.patch.object(w, "_ask_azure_settings", return_value=values):
+            w.set_up_azure_action.trigger()
+        self.assertEqual(self.thread.call_count, sent + 1)
+
+    def test_setup_dialog_keeps_saved_deployment(self) -> None:
+        azure_provider.MODEL_FILE.write_text("translate", encoding="utf-8")
+        w = self.make_window()
+        dialog = mock.MagicMock()
+        dialog.return_value.exec.return_value = 0
+        with mock.patch.object(self.app_module, "AzureSetupDialog", dialog):
+            self.assertIsNone(w._ask_azure_settings())
+        self.assertEqual(dialog.call_args.args[2], "translate")
+
     def test_app_activation_picks_up_outside_changes(self) -> None:
         self.set_up_openai()
         w = self.make_window()
@@ -306,6 +328,8 @@ class WindowProviderTests(_IsolatedProviders):
         dialog.key_edit.setText("has space")
         dialog.accept()
         self.assertIn("API key", dialog.error_label.text())
+        self.assertIn("API key", dialog.key_edit.accessibleDescription())
+        self.assertEqual(dialog.endpoint_edit.accessibleDescription(), "")
         dialog.key_edit.setText(" azure-key ")
         dialog.model_edit.setText("translate")
         dialog.accept()

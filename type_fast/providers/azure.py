@@ -50,9 +50,14 @@ def get_api_key() -> str:
     return from_env_or_file(API_KEY_ENV, API_KEY_FILE)
 
 
+def saved_model() -> str:
+    """Return the deployment name from the environment or file, or ""."""
+    return from_env_or_file(MODEL_ENV, MODEL_FILE)
+
+
 def get_model() -> str:
     """Return the Foundry model/deployment name (or the shared default)."""
-    return from_env_or_file(MODEL_ENV, MODEL_FILE) or config.DEFAULT_MODEL
+    return saved_model() or config.DEFAULT_MODEL
 
 
 def save_model(model: str) -> None:

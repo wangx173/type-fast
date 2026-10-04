@@ -54,9 +54,9 @@ def set_choice(name: Optional[str]) -> None:
 
 def active_provider() -> ModuleType:
     """Return the module for the currently active provider."""
-    chosen = get_choice()
+    chosen = by_name(get_choice() or "")
     if chosen is not None:
-        return by_name(chosen)
+        return chosen
     if azure_provider.is_configured():
         return azure_provider
     return openai_provider
