@@ -81,6 +81,8 @@ def translate_stream(
     if not text:
         return
 
+    if should_cancel is not None and should_cancel():
+        return  # superseded before it started: don't open a request
     client = client or providers.get_client()
     model = model or providers.get_model()
     use_temperature = (

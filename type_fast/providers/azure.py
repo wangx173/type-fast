@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import os
 import re
+from pathlib import Path
 from urllib.parse import urlsplit
 
 from openai import OpenAI
@@ -34,6 +35,8 @@ MODEL_ENV = "AZURE_AI_MODEL"
 # The Foundry portal shows a project endpoint (``…/api/projects/<name>``); the
 # OpenAI-compatible API lives at the resource root instead.
 _PROJECT_PATH = re.compile(r"/api/projects(/.*)?$", re.IGNORECASE)
+# Endpoint paths _base_url() understands: none, /openai/v1, or a project.
+_SUPPORTED_PATH = re.compile(r"(/openai/v1|/api/projects/[^/]+)?/?", re.IGNORECASE)
 
 
 class MissingCredentialsError(RuntimeError):
@@ -83,9 +86,45 @@ def save_settings(endpoint: str, api_key: str, model: str) -> None:
     api_key = api_key.strip()
     if not endpoint or not api_key:
         raise ValueError("Both an endpoint and an API key are needed.")
-    write_or_clear(ENDPOINT_FILE, endpoint)
-    write_private(API_KEY_FILE, api_key)
-    save_model(model)
+    files = (ENDPOINT_FILE, API_KEY_FILE, MODEL_FILE)
+    previous = {path: _read_for_restore(path) for path in files}
+    try:
+        write_or_clear(ENDPOINT_FILE, endpoint)
+        write_private(API_KEY_FILE, api_key)
+        save_model(model)
+    except BaseException:
+        # Don't leave a mix of old and new settings behind.
+        for path, value in previous.items():
+            _restore(path, value)
+        raise
+
+
+_UNREADABLE = object()
+
+
+def _read_for_restore(path: Path) -> object:
+    """Return the text of ``path``, None if it doesn't exist, or _UNREADABLE."""
+    try:
+        return path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError):
+        return _UNREADABLE
+
+
+def _restore(path: Path, value: object) -> None:
+    """Put back what :func:`_read_for_restore` returned, as far as possible."""
+    if value is _UNREADABLE:
+        return
+    try:
+        if value is None:
+            path.unlink(missing_ok=True)
+        elif path == API_KEY_FILE:
+            write_private(path, str(value))
+        else:
+            path.write_text(str(value), encoding="utf-8")
+    except OSError:
+        pass
 
 
 def is_configured() -> bool:
@@ -99,6 +138,15 @@ def endpoint_host() -> str:
         return urlsplit(get_endpoint()).hostname or ""
     except ValueError:  # e.g. "https://[" from the environment or a file
         return ""
+
+
+def has_supported_path(endpoint: str) -> bool:
+    """Return True if ``endpoint`` has no path, ``/openai/v1``, or a project path."""
+    try:
+        path = urlsplit(endpoint.strip()).path
+    except ValueError:
+        return False
+    return _SUPPORTED_PATH.fullmatch(path) is not None
 
 
 def _base_url(endpoint: str) -> str:

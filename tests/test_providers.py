@@ -148,6 +148,44 @@ class AzureSettingsTests(_IsolatedProviders):
                 azure_provider._base_url(endpoint), ENDPOINT + "/openai/v1", endpoint
             )
 
+    def test_supported_endpoint_paths(self) -> None:
+        for endpoint in (
+            ENDPOINT,
+            ENDPOINT + "/",
+            ENDPOINT + "/openai/v1",
+            ENDPOINT + "/OpenAI/v1/",
+            ENDPOINT + "/api/projects/type-fast",
+            ENDPOINT + "/api/projects/type-fast/",
+        ):
+            self.assertTrue(azure_provider.has_supported_path(endpoint), endpoint)
+        for endpoint in (
+            ENDPOINT + "/openai/deployments/foo",
+            ENDPOINT + "/openai",
+            ENDPOINT + "/api/projects",
+            ENDPOINT + "/api/projects/a/b",
+            "https://[",
+        ):
+            self.assertFalse(azure_provider.has_supported_path(endpoint), endpoint)
+
+    def test_failed_save_restores_previous_settings(self) -> None:
+        azure_provider.save_settings(ENDPOINT, "old-key", "old-model")
+        with mock.patch.object(
+            azure_provider, "write_private", side_effect=[OSError("disk full"), None]
+        ):
+            with self.assertRaises(OSError):
+                azure_provider.save_settings("https://new.example.com", "new-key", "new")
+        self.assertEqual(azure_provider.get_endpoint(), ENDPOINT)
+        self.assertEqual(azure_provider.get_api_key(), "old-key")
+        self.assertEqual(azure_provider.saved_model(), "old-model")
+
+    def test_failed_first_save_leaves_nothing_behind(self) -> None:
+        with mock.patch.object(azure_provider, "save_model", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                azure_provider.save_settings(ENDPOINT, "azure-key", "translate")
+        self.assertFalse(azure_provider.ENDPOINT_FILE.exists())
+        self.assertFalse(azure_provider.API_KEY_FILE.exists())
+        self.assertFalse(azure_provider.is_configured())
+
     def test_malformed_endpoint_has_no_host(self) -> None:
         os.environ["AZURE_AI_ENDPOINT"] = "https://["
         self.assertEqual(azure_provider.endpoint_host(), "")
@@ -394,7 +432,11 @@ class WindowProviderTests(_IsolatedProviders):
         dialog.accept()
         self.assertNotEqual(dialog.result(), QDialog.Accepted)
         self.assertIn("https://", dialog.error_label.text())
-        for bad in (ENDPOINT + "?api-version=2024-10-21", ENDPOINT + "#keys"):
+        for bad in (
+            ENDPOINT + "?api-version=2024-10-21",
+            ENDPOINT + "#keys",
+            ENDPOINT + "/openai/deployments/translate",
+        ):
             dialog.endpoint_edit.setText(bad)
             dialog.accept()
             self.assertNotEqual(dialog.result(), QDialog.Accepted)

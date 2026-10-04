@@ -156,6 +156,16 @@ class TranslateStreamTests(unittest.TestCase):
             list(translator.translate_stream("hello", model="m", client=client))
         client.responses.stream.assert_called_once()
 
+    def test_superseded_before_start_sends_nothing(self) -> None:
+        client = mock.Mock()
+        out = list(
+            translator.translate_stream(
+                "hello", model="m", client=client, should_cancel=lambda: True
+            )
+        )
+        self.assertEqual(out, [])
+        client.responses.stream.assert_not_called()
+
     def test_retries_without_temperature_when_rejected(self) -> None:
         import openai
 
@@ -195,10 +205,12 @@ class TranslateStreamTests(unittest.TestCase):
         client = mock.Mock()
         client.responses.stream.return_value = bad_cm
         self.addCleanup(translator._models_without_temperature.clear)
+        # Superseded after the first attempt was sent, before the retry.
+        cancel = iter([False])
         with mock.patch.object(providers, "get_client", return_value=client):
             out = list(
                 translator.translate_stream(
-                    "hello", model="my-deploy", should_cancel=lambda: True
+                    "hello", model="my-deploy", should_cancel=lambda: next(cancel, True)
                 )
             )
         self.assertEqual(out, [])

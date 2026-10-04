@@ -430,10 +430,12 @@ class AzureSetupDialog(QDialog):
             or url.hasQuery()
             or url.hasFragment()
             or any(c.isspace() for c in endpoint)
+            or not azure_provider.has_supported_path(endpoint)
         ):
             return (
-                "Enter the endpoint as an https:// URL without ?\u2026 or #\u2026, "
-                "e.g. https://<resource>.services.ai.azure.com.",
+                "Enter the endpoint as an https:// URL, e.g. "
+                "https://<resource>.services.ai.azure.com. It can end in /openai/v1 "
+                "or /api/projects/<project>, but not other paths, ?\u2026, or #\u2026.",
                 self.endpoint_edit,
             )
         if not api_key or any(c.isspace() for c in api_key):

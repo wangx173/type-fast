@@ -195,7 +195,7 @@ choose_subscription() {
 
 choose_resource_group() {
     heading "Resource group"
-    local mode
+    local mode exists
     choose mode "Resource group" "Use an existing resource group" "Create a new resource group"
 
     if [ "$mode" = "Use an existing resource group" ]; then
@@ -215,7 +215,9 @@ choose_resource_group() {
             say "Use up to 90 letters, digits, and - _ . ( ), not ending in a period."
             continue
         fi
-        if [ "$(az_sub group exists --name "$GROUP")" = "true" ]; then
+        exists=$(az_sub group exists --name "$GROUP") \
+            || die "Couldn't check whether resource group '$GROUP' exists."
+        if [ "$exists" = "true" ]; then
             say "A resource group named '$GROUP' already exists."
             if confirm "Use it?" y; then
                 GROUP_LOCATION=$(az_sub group show --name "$GROUP" --query location --output tsv)
@@ -233,7 +235,7 @@ choose_resource_group() {
 
 choose_resource() {
     heading "Foundry resource"
-    local existing=() mode="Create a new Foundry resource" out
+    local existing=() mode="Create a new Foundry resource" out local_auth_off
     out=$(az_sub cognitiveservices account list --resource-group "$GROUP" \
         --query "[?kind=='AIServices' || kind=='OpenAI'].name" --output tsv) \
         || die "Couldn't list the Foundry resources in $GROUP."
@@ -247,8 +249,10 @@ choose_resource() {
         choose RESOURCE "Foundry resource" "${existing[@]}"
         RESOURCE_LOCATION=$(az_sub cognitiveservices account show --name "$RESOURCE" \
             --resource-group "$GROUP" --query location --output tsv)
-        if [ "$(az_sub cognitiveservices account show --name "$RESOURCE" --resource-group "$GROUP" \
-            --query properties.disableLocalAuth --output tsv)" = "true" ]; then
+        local_auth_off=$(az_sub cognitiveservices account show --name "$RESOURCE" \
+            --resource-group "$GROUP" --query properties.disableLocalAuth --output tsv) \
+            || die "Couldn't check whether '$RESOURCE' allows API key authentication."
+        if [ "$local_auth_off" = "true" ]; then
             die "'$RESOURCE' has API key authentication turned off, which Type Fast needs. Pick or create another resource."
         fi
         return 0
