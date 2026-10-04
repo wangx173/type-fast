@@ -80,6 +80,7 @@ class ModelSelectionTests(unittest.TestCase):
             (azure_provider, "MODEL_FILE", "azure_ai_model"),
             (azure_provider, "ENDPOINT_FILE", "azure_ai_endpoint"),
             (azure_provider, "API_KEY_FILE", "azure_ai_api_key"),
+            (providers, "PROVIDER_FILE", "provider"),
         ]:
             patcher = mock.patch.object(target, attr, root / name)
             patcher.start()

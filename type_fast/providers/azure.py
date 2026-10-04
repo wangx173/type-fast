@@ -95,7 +95,10 @@ def is_configured() -> bool:
 
 def endpoint_host() -> str:
     """Return the host name of the configured endpoint, or an empty string."""
-    return urlsplit(get_endpoint()).hostname or ""
+    try:
+        return urlsplit(get_endpoint()).hostname or ""
+    except ValueError:  # e.g. "https://[" from the environment or a file
+        return ""
 
 
 def _base_url(endpoint: str) -> str:

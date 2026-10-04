@@ -148,6 +148,10 @@ class AzureSettingsTests(_IsolatedProviders):
                 azure_provider._base_url(endpoint), ENDPOINT + "/openai/v1", endpoint
             )
 
+    def test_malformed_endpoint_has_no_host(self) -> None:
+        os.environ["AZURE_AI_ENDPOINT"] = "https://["
+        self.assertEqual(azure_provider.endpoint_host(), "")
+
     def test_env_overrides_listed(self) -> None:
         self.assertEqual(azure_provider.env_overrides(), [])
         os.environ["AZURE_AI_ENDPOINT"] = ENDPOINT
@@ -324,6 +328,11 @@ class WindowProviderTests(_IsolatedProviders):
         dialog.accept()
         self.assertNotEqual(dialog.result(), QDialog.Accepted)
         self.assertIn("https://", dialog.error_label.text())
+        for bad in (ENDPOINT + "?api-version=2024-10-21", ENDPOINT + "#keys"):
+            dialog.endpoint_edit.setText(bad)
+            dialog.accept()
+            self.assertNotEqual(dialog.result(), QDialog.Accepted)
+            self.assertIn("https://", dialog.error_label.text())
         dialog.endpoint_edit.setText(ENDPOINT)
         dialog.key_edit.setText("has space")
         dialog.accept()

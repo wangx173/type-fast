@@ -423,9 +423,16 @@ class AzureSetupDialog(QDialog):
     def _problem(self, endpoint: str, api_key: str, model: str) -> tuple[str, QLineEdit | None]:
         """Return what is wrong with the entered values and the field to fix."""
         url = QUrl(endpoint)
-        if url.scheme().lower() != "https" or not url.host() or any(c.isspace() for c in endpoint):
+        if (
+            url.scheme().lower() != "https"
+            or not url.host()
+            or url.hasQuery()
+            or url.hasFragment()
+            or any(c.isspace() for c in endpoint)
+        ):
             return (
-                "Enter the endpoint as an https:// URL, e.g. https://<resource>.services.ai.azure.com.",
+                "Enter the endpoint as an https:// URL without ?\u2026 or #\u2026, "
+                "e.g. https://<resource>.services.ai.azure.com.",
                 self.endpoint_edit,
             )
         if not api_key or any(c.isspace() for c in api_key):
