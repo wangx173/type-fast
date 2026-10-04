@@ -25,8 +25,10 @@ prefix transparently re-translates from that point.
 A tone selector next to the language pickers controls the register of the
 translation (polite, casual, business, ... or a custom instruction). The
 provider (OpenAI or Azure AI Foundry) is picked in Settings › Provider and
-shown with the model at the bottom of the window, and the model can be
-switched from Settings › Set Model…. Changing the languages, tone, provider, or
+shown with the model at the bottom of the window. Each provider has its own
+submenu under Settings: OpenAI's holds the API key and the model (picked from
+OpenAI's models), and Azure AI Foundry's holds the endpoint, key, and the name
+of the deployment to use. Changing the languages, tone, provider, or
 model re-translates everything with the new settings. The language pair and
 tone (and the hotkey) are remembered across launches.
 
@@ -99,6 +101,15 @@ _SENTENCE_ENDINGS = (
 )
 
 _AUTO_LABEL = "Auto-detect"
+
+# Menu items for each provider's own settings, in Settings › <provider name>.
+_OPENAI_KEY_ITEM = "Set API Key\u2026"
+_OPENAI_MODEL_ITEM = "Set Model\u2026"
+_AZURE_SETUP_ITEM = "Set Endpoint, Key & Deployment\u2026"
+# Where to find them, as shown in hints (e.g. "Settings › OpenAI › Set API Key…").
+_OPENAI_KEY_PATH = f"Settings \u203a {openai_provider.DISPLAY_NAME} \u203a {_OPENAI_KEY_ITEM}"
+_OPENAI_MODEL_PATH = f"Settings \u203a {openai_provider.DISPLAY_NAME} \u203a {_OPENAI_MODEL_ITEM}"
+_AZURE_SETUP_PATH = f"Settings \u203a {azure_provider.DISPLAY_NAME} \u203a {_AZURE_SETUP_ITEM}"
 
 # How long the window takes to fade between opacities, in milliseconds.
 _FADE_MS = 160
@@ -680,8 +691,8 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         # On macOS this becomes part of the global menu bar at the top of the
-        # screen. "Set OpenAI API Key…" lands in the app menu automatically
-        # because of its role-like text, so we add it to a Settings menu too.
+        # screen. Each provider's own settings (credentials, model or
+        # deployment) live in a submenu named after it; the rest are shared.
         menu = self.menuBar().addMenu("Settings")
 
         # Which service translates; the checked item is the one in use.
@@ -700,20 +711,26 @@ class MainWindow(QMainWindow):
         )
         menu.addSeparator()
 
-        self.set_key_action = QAction("Set OpenAI API Key\u2026", self)
+        # OpenAI: an API key and a model picked from OpenAI's models.
+        self.openai_menu = menu.addMenu(openai_provider.DISPLAY_NAME)
+        self.set_key_action = QAction(_OPENAI_KEY_ITEM, self)
         self.set_key_action.setShortcut(QKeySequence("Ctrl+,"))
         # The lambdas drop QAction's ``checked`` argument, which would
         # otherwise arrive as ``switch=False`` and skip the switch prompt.
         self.set_key_action.triggered.connect(lambda: self._set_api_key())
-        menu.addAction(self.set_key_action)
+        self.openai_menu.addAction(self.set_key_action)
 
-        self.set_up_azure_action = QAction("Set Up Azure AI Foundry\u2026", self)
-        self.set_up_azure_action.triggered.connect(lambda: self._set_up_azure())
-        menu.addAction(self.set_up_azure_action)
-
-        self.set_model_action = QAction("Set Model\u2026", self)
+        self.set_model_action = QAction(_OPENAI_MODEL_ITEM, self)
         self.set_model_action.triggered.connect(self._set_model)
-        menu.addAction(self.set_model_action)
+        self.openai_menu.addAction(self.set_model_action)
+
+        # Azure AI Foundry: the endpoint, key, and the name of a model you
+        # deployed. There's no model list here: only deployments exist.
+        self.azure_menu = menu.addMenu(azure_provider.DISPLAY_NAME)
+        self.set_up_azure_action = QAction(_AZURE_SETUP_ITEM.replace("&", "&&"), self)
+        self.set_up_azure_action.triggered.connect(lambda: self._set_up_azure())
+        self.azure_menu.addAction(self.set_up_azure_action)
+        menu.addSeparator()
 
         self.set_custom_tone_action = QAction("Set Custom Tone\u2026", self)
         self.set_custom_tone_action.triggered.connect(self._set_custom_tone)
@@ -1226,10 +1243,15 @@ class MainWindow(QMainWindow):
         self.model_label.setText(f"{provider.SHORT_NAME} \u00b7 {model}")
         how = "" if providers.get_choice() else " (chosen automatically)"
         lines = [f"Provider: {provider.DISPLAY_NAME}{how}"]
-        if provider is azure_provider and azure_provider.endpoint_host():
-            lines.append(f"Endpoint: {azure_provider.endpoint_host()}")
-        lines.append(f"Model: {model}")
-        lines.append("Change them in Settings \u203a Provider and Settings \u203a Set Model\u2026")
+        if provider is azure_provider:
+            if azure_provider.endpoint_host():
+                lines.append(f"Endpoint: {azure_provider.endpoint_host()}")
+            lines.append(f"Deployment: {model}")
+            change = _AZURE_SETUP_PATH
+        else:
+            lines.append(f"Model: {model}")
+            change = _OPENAI_MODEL_PATH
+        lines.append(f"Change them in Settings \u203a Provider and {change}")
         self.model_label.setToolTip("\n".join(lines))
         self.model_label.setAccessibleDescription(" ".join(lines))
         self.provider_actions[provider.NAME].setChecked(True)
@@ -1237,8 +1259,8 @@ class MainWindow(QMainWindow):
 
     def _missing_setup_message(self, provider: ModuleType) -> str:
         if provider is azure_provider:
-            return "Azure AI Foundry isn't set up \u2014 Settings \u203a Set Up Azure AI Foundry\u2026"
-        return "No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026"
+            return f"Azure AI Foundry isn't set up \u2014 {_AZURE_SETUP_PATH}"
+        return f"No API key set \u2014 {_OPENAI_KEY_PATH}"
 
     def _reflect_key_status(self) -> None:
         provider = providers.active_provider()
@@ -1367,26 +1389,30 @@ class MainWindow(QMainWindow):
         return True
 
     def _set_model(self) -> None:
-        provider = providers.active_provider()
-        env = providers.model_env_override()
-        if env:
+        """Pick the OpenAI model, whichever provider is active.
+
+        Azure AI Foundry has no model list: it can only use models you have
+        deployed, so its deployment name is set with its endpoint and key.
+        """
+        title = "Set OpenAI Model"
+        env = openai_provider.MODEL_ENV
+        if os.environ.get(env, "").strip():
             QMessageBox.information(
                 self,
-                "Set Model",
-                f"The model is pinned by the {env} environment variable "
-                f"({providers.get_model()}). Unset it to choose a model here.",
+                title,
+                f"The OpenAI model is pinned by the {env} environment variable "
+                f"({openai_provider.get_model()}). Unset it to choose a model here.",
             )
             return
-        current = providers.get_model()
+        current = openai_provider.get_model()
         choices = list(config.MODEL_CHOICES)
         if current not in choices:
             choices.insert(0, current)
         model, ok = QInputDialog.getItem(
             self,
-            "Set Model",
-            f"{provider.DISPLAY_NAME} model or deployment name\n"
-            f"(stored in {provider.MODEL_FILE}; leave blank for "
-            f"the default, {config.DEFAULT_MODEL}):",
+            title,
+            f"OpenAI model (stored in {openai_provider.MODEL_FILE}; leave blank "
+            f"for the default, {config.DEFAULT_MODEL}):",
             choices,
             choices.index(current),
             True,
@@ -1394,14 +1420,16 @@ class MainWindow(QMainWindow):
         if not ok:
             return
         try:
-            providers.save_model(model)
+            openai_provider.save_model(model)
         except OSError as exc:
             QMessageBox.warning(
-                self, "Set Model", f"Could not save the model to {provider.MODEL_FILE}:\n{exc}"
+                self, title, f"Could not save the model to {openai_provider.MODEL_FILE}:\n{exc}"
             )
             return
-        self._reflect_provider()
-        self._retranslate()
+        if self._provider_state() != self._reflected_provider_state:
+            # Only when OpenAI is in use; Foundry keeps its own deployment.
+            self._reflect_provider()
+            self._retranslate()
 
     def _update_tone_tooltip(self) -> None:
         self.tone.setToolTip(

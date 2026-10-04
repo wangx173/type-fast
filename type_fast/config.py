@@ -12,8 +12,10 @@ from __future__ import annotations
 
 DEFAULT_MODEL = "gpt-4.1-mini"
 
-# Models offered in Settings › Set Model…. The dialog is editable, so any other
-# model (or Azure AI Foundry deployment) name can be typed in as well.
+# OpenAI models offered in Settings › OpenAI › Set Model…. The dialog is
+# editable, so any other OpenAI model name can be typed in as well. Azure AI
+# Foundry doesn't use this list: it can only use the deployments you created,
+# so its deployment name is entered with its endpoint and key.
 MODEL_CHOICES = (
     "gpt-4.1-mini",
     "gpt-4.1",

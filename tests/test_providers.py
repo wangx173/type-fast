@@ -245,11 +245,83 @@ class WindowProviderTests(_IsolatedProviders):
     def test_missing_setup_status_names_the_provider(self) -> None:
         w = self.make_window()
         self.assertEqual(w.model_label.text(), f"OpenAI \u00b7 {config.DEFAULT_MODEL}")
-        self.assertIn("Set OpenAI API Key", w.status.text())
+        self.assertIn("Settings \u203a OpenAI \u203a Set API Key\u2026", w.status.text())
         providers.set_choice("azure")
         w._reflect_provider()
-        self.assertIn("Set Up Azure AI Foundry", w.status.text())
+        self.assertIn(
+            "Settings \u203a Azure AI Foundry \u203a Set Endpoint, Key & Deployment\u2026",
+            w.status.text(),
+        )
         self.assertEqual(self.checked_provider(w), "azure")
+
+    def test_each_provider_has_its_own_submenu(self) -> None:
+        w = self.make_window()
+        self.assertEqual(w.openai_menu.title(), "OpenAI")
+        self.assertEqual(w.azure_menu.title(), "Azure AI Foundry")
+        self.assertEqual(
+            w.openai_menu.actions(), [w.set_key_action, w.set_model_action]
+        )
+        self.assertEqual(w.azure_menu.actions(), [w.set_up_azure_action])
+        self.assertEqual(
+            w.set_up_azure_action.text().replace("&&", "&"),
+            "Set Endpoint, Key & Deployment\u2026",
+        )
+        self.assertEqual(w.set_key_action.shortcut().toString(), "Ctrl+,")
+        # The model list belongs to OpenAI only, not the whole Settings menu.
+        settings_menu = w.openai_menu.menuAction().associatedObjects()[0]
+        self.assertNotIn(w.set_model_action, settings_menu.actions())
+
+    def _pick_model(self, w, model: str, ok: bool = True):
+        with mock.patch.object(
+            self.app_module.QInputDialog, "getItem", return_value=(model, ok)
+        ) as get_item:
+            w.set_model_action.trigger()
+        return get_item
+
+    def test_model_picker_sets_openai_model_and_retranslates(self) -> None:
+        self.set_up_openai()
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        get_item = self._pick_model(w, "gpt-4.1")
+        title, prompt, choices = get_item.call_args.args[1:4]
+        self.assertEqual(title, "Set OpenAI Model")
+        self.assertIn("OpenAI model", prompt)
+        self.assertEqual(choices, list(config.MODEL_CHOICES))
+        self.assertEqual(openai_provider.MODEL_FILE.read_text(), "gpt-4.1")
+        self.assertEqual(w.model_label.text(), "OpenAI \u00b7 gpt-4.1")
+        self.assertEqual(self.thread.call_count, sent + 1)
+
+    def test_model_picker_never_changes_the_azure_deployment(self) -> None:
+        self.set_up_azure("translate")
+        w = self.make_window()
+        w.input.setPlainText("hello")
+        w._retranslate()
+        sent = self.thread.call_count
+        get_item = self._pick_model(w, "gpt-5")
+        # The list starts at the OpenAI model, not the Foundry deployment.
+        choices, current = get_item.call_args.args[3:5]
+        self.assertNotIn("translate", choices)
+        self.assertEqual(choices[current], config.DEFAULT_MODEL)
+        self.assertEqual(azure_provider.MODEL_FILE.read_text(), "translate")
+        self.assertEqual(openai_provider.MODEL_FILE.read_text(), "gpt-5")
+        self.assertEqual(providers.get_model(), "translate")
+        self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
+        self.assertIn("Deployment: translate", w.model_label.toolTip())
+        self.assertEqual(self.thread.call_count, sent)  # Foundry is unaffected
+
+    def test_model_picker_respects_openai_env_pin(self) -> None:
+        self.set_up_azure("translate")
+        os.environ["OPENAI_MODEL"] = "gpt-4o"
+        w = self.make_window()
+        with mock.patch.object(
+            self.app_module.QMessageBox, "information"
+        ) as info, mock.patch.object(self.app_module.QInputDialog, "getItem") as get_item:
+            w.set_model_action.trigger()
+        get_item.assert_not_called()
+        self.assertIn("OPENAI_MODEL", info.call_args.args[2])
+        self.assertFalse(openai_provider.MODEL_FILE.exists())
 
     def test_switching_saves_choice_and_retranslates(self) -> None:
         self.set_up_openai()

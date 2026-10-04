@@ -2,8 +2,8 @@
 
 Configured via ``AZURE_AI_ENDPOINT`` and ``AZURE_AI_API_KEY`` (and optionally
 ``AZURE_AI_MODEL`` to pick a deployment), each with a matching ``~/.type-fast/``
-fallback file. The files can also be written from the app (Settings › Set Up
-Azure AI Foundry…). Foundry is reached through its OpenAI-compatible
+fallback file. The files can also be written from the app (Settings › Azure AI
+Foundry › Set Endpoint, Key & Deployment…). Foundry is reached through its OpenAI-compatible
 ``/openai/v1`` endpoint, so the standard OpenAI client and Responses API calls
 work unchanged.
 """
@@ -177,8 +177,8 @@ def build_client() -> OpenAI:
     """
     if not is_configured():
         raise MissingCredentialsError(
-            "Azure AI Foundry isn't set up. Choose Settings \u203a Set Up Azure "
-            "AI Foundry\u2026 and enter your endpoint and API key, or switch to "
-            "OpenAI in Settings \u203a Provider."
+            "Azure AI Foundry isn't set up. Choose Settings \u203a Azure AI "
+            "Foundry \u203a Set Endpoint, Key & Deployment\u2026 and enter your "
+            "endpoint and API key, or switch to OpenAI in Settings \u203a Provider."
         )
     return OpenAI(base_url=_base_url(get_endpoint()), api_key=get_api_key())

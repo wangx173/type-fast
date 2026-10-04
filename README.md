@@ -37,7 +37,7 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   Spanish, French, German, and [more](docs/usage.md#languages).
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral, or
   your own custom instruction.
-- 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick any model.
+- 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick an OpenAI model or your own Foundry deployment.
 
 ## Screenshots
 
@@ -65,9 +65,9 @@ OpenAI or Azure AI Foundry, and copies the result for you.
    - **macOS 15 and later:** open the app once, then go to **System Settings →
      Privacy & Security** and click **Open Anyway**.
    - **macOS 14 and earlier:** right-click the app → **Open** → **Open**.
-3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
+3. Set your OpenAI API key in **Settings → OpenAI → Set API Key…** (⌘,).
 
-To use Azure AI Foundry instead, choose **Settings → Set Up Azure AI Foundry…**,
+To use Azure AI Foundry instead, choose **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**,
 or follow the [Foundry setup guide](docs/foundry-setup.md), or let
 [a setup script](docs/foundry-setup.md#set-up-with-a-script) do it for you.
 Switch between them in **Settings → Provider**; the bottom of the window shows
@@ -93,7 +93,8 @@ so it can paste; see [Auto-paste](docs/usage.md#auto-paste).
 | **⌘L**                     | Show the language and tone pickers        |
 | **⌘,**                     | Set your OpenAI API key                   |
 
-The **Settings** menu also lets you change the model, the hotkey, the window
+The **Settings** menu also lets you change the model (OpenAI) or deployment
+(Azure AI Foundry), the hotkey, the window
 transparency, and the custom tone, and turn auto-paste off. See the [usage guide](docs/usage.md) for
 details.
 

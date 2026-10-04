@@ -241,7 +241,7 @@ Give Type Fast the endpoint and key, and the deployment name if it isn't
 `gpt-4.1-mini`. The full reference is in
 [Configuration → Azure AI Foundry](configuration.md#azure-ai-foundry).
 
-**In the app (easiest).** Choose **Settings → Set Up Azure AI Foundry…**. Enter
+**In the app (easiest).** Choose **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**. Enter
 the endpoint, paste the API key, enter the deployment name, and click
 **Save**. When Type Fast asks whether to use Azure AI Foundry now, click
 **Yes**. You can also choose **Settings → Provider → Azure AI Foundry**, which
@@ -294,10 +294,10 @@ Notes:
   pick one there, it uses Foundry whenever both an endpoint and a key are
   found, even if an OpenAI key is also set. If you picked OpenAI earlier,
   choose **Settings → Provider → Azure AI Foundry**.
-- Once the endpoint and key are set, you can also set the deployment name in
-  the app: **Settings → Set Model…**. It's saved to
-  `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
-  pins the model and the app asks you to unset it first.
+- To change the deployment later, open
+  **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…** again.
+  It's saved to `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
+  takes precedence, and the window says so.
 - Changes made in the app apply right away. If you change the files, or run
   the [setup script](#set-up-with-a-script), while Type Fast is open, switch to
   Type Fast and it picks them up. After changing environment variables, quit
@@ -325,13 +325,13 @@ Errors from Foundry appear in the output box as
 ### The window shows OpenAI · …, or `[error] No OpenAI API key found…`
 
 Type Fast is using OpenAI. Choose **Settings → Provider → Azure AI Foundry**.
-Don't add an OpenAI key; **Settings → Set OpenAI API Key…** sets only an
+Don't add an OpenAI key; **Settings → OpenAI → Set API Key…** sets only an
 OpenAI key and doesn't configure Foundry.
 
 ### "Azure AI Foundry isn't set up", at the bottom of the window or in the output box
 
 Azure AI Foundry is the chosen provider, but Type Fast didn't find both an
-endpoint and a key. Choose **Settings → Set Up Azure AI Foundry…** and enter
+endpoint and a key. Choose **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…** and enter
 them. If you used `export` but opened the app from Finder or the Dock, it
 can't see those variables; set them in the app or use the
 [`~/.type-fast/` files](#5-configure-type-fast) instead.
@@ -360,7 +360,8 @@ can't see those variables; set them in the app or use the
 - The model setting doesn't match a deployment name on this resource. Type
   Fast sends the **deployment name**, which can differ from the model name
   (for example, a deployment called `translate` that runs `gpt-4.1-mini`).
-  Set it in **Settings → Set Model…**, `AZURE_AI_MODEL`, or
+  Set it in **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**,
+  `AZURE_AI_MODEL`, or
   `~/.type-fast/azure_ai_model`. To list your deployments:
 
   ```sh
