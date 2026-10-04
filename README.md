@@ -35,7 +35,7 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   Spanish, French, German, and [more](docs/usage.md#languages).
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral, or
   your own custom instruction.
-- 🔌 **OpenAI or Azure AI Foundry** — bring your own key and pick any model.
+- 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick any model.
 
 ## Screenshots
 
@@ -65,9 +65,12 @@ OpenAI or Azure AI Foundry, and copies the result for you.
    - **macOS 14 and earlier:** right-click the app → **Open** → **Open**.
 3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
 
-To use Azure AI Foundry instead, follow the
-[Foundry setup guide](docs/foundry-setup.md), or let
+To use Azure AI Foundry instead, choose **Settings → Set Up Azure AI Foundry…**,
+or follow the [Foundry setup guide](docs/foundry-setup.md), or let
 [a setup script](docs/foundry-setup.md#set-up-with-a-script) do it for you.
+Switch between them in **Settings → Provider**; the bottom of the window shows
+which one is in use.
+
 To run from source, see [Development](docs/development.md).
 
 ## Usage

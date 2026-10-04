@@ -4,7 +4,8 @@
 #
 # Walks you through choosing (or creating) a resource group, a Foundry
 # resource, and a model deployment, then saves the endpoint, API key, and
-# deployment name to ~/.type-fast/ and sends a test request.
+# deployment name to ~/.type-fast/, makes Azure AI Foundry Type Fast's
+# provider, and sends a test request.
 #
 # Usage: bash scripts/setup-foundry.sh
 #
@@ -59,7 +60,7 @@ on_exit() {
 trap on_exit EXIT
 
 usage() {
-    sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '3,13p' "$0" | sed 's/^# \{0,1\}//'
 }
 
 # ask VAR "Prompt" [default]
@@ -375,7 +376,9 @@ save_config() {
     printf '%s\n' "$KEY" >"$CONFIG_DIR/azure_ai_api_key"
     printf '%s\n' "$ENDPOINT" >"$CONFIG_DIR/azure_ai_endpoint"
     printf '%s\n' "$DEPLOYMENT" >"$CONFIG_DIR/azure_ai_model"
-    say "Saved the endpoint, API key, and deployment name to $CONFIG_DIR."
+    printf 'azure\n' >"$CONFIG_DIR/provider"
+    say "Saved the endpoint, API key, and deployment name to $CONFIG_DIR,"
+    say "and chose Azure AI Foundry as Type Fast's provider."
 }
 
 test_connection() {
@@ -420,15 +423,16 @@ summary() {
     heading "Done"
     say "Endpoint:   $ENDPOINT"
     say "Deployment: $DEPLOYMENT"
-    say "Settings:   $CONFIG_DIR/azure_ai_endpoint, azure_ai_api_key, azure_ai_model"
+    say "Settings:   $CONFIG_DIR/azure_ai_endpoint, azure_ai_api_key, azure_ai_model, provider"
     for var in AZURE_AI_ENDPOINT AZURE_AI_API_KEY AZURE_AI_MODEL; do
         if [ -n "${!var-}" ]; then
             warn "$var is set in this shell. It overrides the saved setting when you start Type Fast from this shell."
         fi
     done
     say ""
-    say "Quit and reopen Type Fast. Hover over 'Model: $DEPLOYMENT' at the bottom of"
-    say "the window; the tooltip should read 'Provider: Azure AI Foundry'."
+    say "Open Type Fast, or switch to it if it's running. The bottom of the window"
+    say "should read 'Azure · $DEPLOYMENT', and Settings › Provider should have"
+    say "Azure AI Foundry checked."
     [ "$test_ok" = "yes" ] || exit 1
 }
 

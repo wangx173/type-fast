@@ -77,7 +77,8 @@ The script:
 - Uses an existing model deployment or deploys a model (`gpt-4.1-mini`,
   Global Standard, 50K tokens per minute unless you choose otherwise).
 - Saves the endpoint, API key, and deployment name to `~/.type-fast`, with the
-  key file readable only by you. It asks before replacing existing settings.
+  key file readable only by you, and makes Azure AI Foundry the provider. It
+  asks before replacing existing settings.
 - Sends a short test request to the deployment.
 
 The script never deletes anything. If it stops partway, it lists what it has
@@ -203,8 +204,8 @@ Type Fast needs the resource endpoint, which looks like
 - In the [Foundry portal](https://ai.azure.com), the project's overview page
   shows the **API key** and the endpoints. If you only see a *project*
   endpoint, such as
-  `https://<resource>.services.ai.azure.com/api/projects/type-fast`, use the
-  part before `/api/projects/`.
+  `https://<resource>.services.ai.azure.com/api/projects/type-fast`, you can
+  use it as is; Type Fast uses only the part before `/api/projects/`.
 - Or, in the [Azure portal](https://portal.azure.com), open the Foundry
   resource and go to **Resource Management** → **Keys and Endpoint**. The
   `https://<resource>.cognitiveservices.azure.com/` endpoint shown there also
@@ -240,8 +241,16 @@ Give Type Fast the endpoint and key, and the deployment name if it isn't
 `gpt-4.1-mini`. The full reference is in
 [Configuration → Azure AI Foundry](configuration.md#azure-ai-foundry).
 
-**Packaged app (recommended).** An app opened from Finder or the Dock does not
-see variables you set in your shell, so use the files in `~/.type-fast/`:
+**In the app (easiest).** Choose **Settings → Set Up Azure AI Foundry…**. Enter
+the endpoint, paste the API key, enter the deployment name, and click
+**Save**. When Type Fast asks whether to use Azure AI Foundry now, click
+**Yes**. You can also choose **Settings → Provider → Azure AI Foundry**, which
+opens the same window if Foundry isn't set up yet. The key is saved to
+`~/.type-fast/azure_ai_api_key`, readable only by your account, and the
+change applies right away.
+
+**With files.** An app opened from Finder or the Dock does not see variables
+you set in your shell, so use the files in `~/.type-fast/`:
 
 ```sh
 mkdir -p ~/.type-fast
@@ -281,20 +290,26 @@ Notes:
 - The endpoint can be the bare resource URL, as above, or already end in
   `/openai/v1`. Type Fast adds `/openai/v1` when it's missing, and ignores a
   trailing `/`.
-- When both an endpoint and a key are found, Type Fast uses Foundry instead of
-  OpenAI, even if an OpenAI key is also set.
+- Type Fast uses the provider checked in **Settings → Provider**. Until you
+  pick one there, it uses Foundry whenever both an endpoint and a key are
+  found, even if an OpenAI key is also set. If you picked OpenAI earlier,
+  choose **Settings → Provider → Azure AI Foundry**.
 - Once the endpoint and key are set, you can also set the deployment name in
   the app: **Settings → Set Model…**. It's saved to
   `~/.type-fast/azure_ai_model`. If `AZURE_AI_MODEL` is set, it
   pins the model and the app asks you to unset it first.
-- **Quit and reopen Type Fast** (⌘Q) after changing the endpoint or key.
+- Changes made in the app apply right away. If you change the files, or run
+  the [setup script](#set-up-with-a-script), while Type Fast is open, switch to
+  Type Fast and it picks them up. After changing environment variables, quit
+  Type Fast (⌘Q) and start it again from that shell.
 
 ## 6. Check that it works
 
-1. Open Type Fast. At the bottom of the window shown at launch, it shows
-   **Model: gpt-4.1-mini** (or your deployment name). Hover over it: the
-   tooltip should read **Provider: Azure AI Foundry**. If it says
-   **Provider: OpenAI**, Type Fast didn't find both the endpoint and the key.
+1. Open Type Fast. The bottom of the window shows the provider and model:
+   **Azure · gpt-4.1-mini** (or your deployment name), and
+   **Settings → Provider** has **Azure AI Foundry** checked. Hover over the
+   provider and model to see the endpoint's host name. If it shows
+   **OpenAI · …**, choose **Settings → Provider → Azure AI Foundry**.
 2. Type a sentence, such as `Thank you for your help.`, and end it with a
    period. The translation should stream into the lower box within a second or
    two.
@@ -307,15 +322,20 @@ If you see `[error] …` in the lower box instead, see
 Errors from Foundry appear in the output box as
 `[error] Error code: <status> - {…}`, followed by Foundry's message.
 
-**`[error] No OpenAI API key found…`, or the tooltip says Provider: OpenAI**
+**The window shows OpenAI · …, or `[error] No OpenAI API key found…`**
 
-Type Fast didn't find both a Foundry endpoint and a key, so it fell back to
-OpenAI. Don't add an OpenAI key; fix the Foundry settings instead. If you used
-`export` but opened the app from Finder or the Dock, it can't see those
-variables; use the [`~/.type-fast/` files](#5-configure-type-fast). Check that
-both `azure_ai_endpoint` and `azure_ai_api_key` exist and aren't empty, then
-quit and reopen Type Fast. **Settings → Set OpenAI API Key…** sets only an
-OpenAI key; it doesn't configure Foundry.
+Type Fast is using OpenAI. Choose **Settings → Provider → Azure AI Foundry**.
+Don't add an OpenAI key; **Settings → Set OpenAI API Key…** sets only an
+OpenAI key and doesn't configure Foundry.
+
+**"Azure AI Foundry isn't set up", at the bottom of the window or in the
+output box**
+
+Azure AI Foundry is the chosen provider, but Type Fast didn't find both an
+endpoint and a key. Choose **Settings → Set Up Azure AI Foundry…** and enter
+them. If you used `export` but opened the app from Finder or the Dock, it
+can't see those variables; set them in the app or use the
+[`~/.type-fast/` files](#5-configure-type-fast) instead.
 
 **401 — "Access denied due to invalid subscription key or wrong API endpoint"**
 
@@ -359,12 +379,6 @@ The endpoint path is wrong. Use the bare resource URL
 `/openai/v1`. Remove anything else, such as `/openai/deployments/…`,
 `/openai/responses`, or `?api-version=…`. Type Fast uses the v1 API, which
 doesn't need an `api-version`.
-
-**400 — "Invalid value: ''. Supported values are: …"**
-
-The endpoint is a *project* endpoint, ending in `/api/projects/<project>`.
-Use the part before `/api/projects/`, such as
-`https://<resource>.services.ai.azure.com`.
 
 **400 — other model or parameter errors**
 
@@ -430,10 +444,11 @@ until they're purged. To reuse the name, purge it:
 az cognitiveservices account purge --name <resource> --resource-group <group> --location <region>
 ```
 
-Then remove the Foundry settings so Type Fast goes back to OpenAI:
+Then remove the Foundry settings and the provider choice so Type Fast goes
+back to OpenAI:
 
 ```sh
-rm -f ~/.type-fast/azure_ai_endpoint ~/.type-fast/azure_ai_api_key ~/.type-fast/azure_ai_model
+rm -f ~/.type-fast/azure_ai_endpoint ~/.type-fast/azure_ai_api_key ~/.type-fast/azure_ai_model ~/.type-fast/provider
 unset AZURE_AI_ENDPOINT AZURE_AI_API_KEY AZURE_AI_MODEL
 ```
 
