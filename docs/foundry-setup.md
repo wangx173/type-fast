@@ -3,9 +3,11 @@
 This guide takes you from an Azure subscription to Type Fast translating
 through a model you deploy in Microsoft Foundry (formerly Azure AI Foundry).
 If you already have a Foundry resource and a model deployment, skip to
-[Configure Type Fast](#5-configure-type-fast).
+[Configure Type Fast](#5-configure-type-fast). To let a script create and
+configure everything, see [Set up with a script](#set-up-with-a-script).
 
 - [1. Before you start](#1-before-you-start)
+  - [Set up with a script](#set-up-with-a-script)
 - [2. Create a Foundry resource and project](#2-create-a-foundry-resource-and-project)
 - [3. Deploy a model](#3-deploy-a-model)
 - [4. Get the endpoint and API key](#4-get-the-endpoint-and-api-key)
@@ -42,6 +44,45 @@ You need:
 
 Type Fast signs in with an **API key**, so the resource must allow key
 authentication. This is the default for new resources.
+
+### Set up with a script
+
+If you have the Azure CLI, a script can do steps 2 to 5 for you. It asks a
+few questions, such as whether to use an existing resource group or create a
+new one, and suggests an answer for each; press Return to accept it.
+
+From a clone of the repository, run:
+
+```sh
+bash scripts/setup-foundry.sh
+```
+
+Or download the script, then run it:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/wangx173/type-fast/main/scripts/setup-foundry.sh -o setup-foundry.sh
+bash setup-foundry.sh
+```
+
+Don't pipe it straight into `bash`; it reads your answers from the terminal.
+
+The script:
+
+- Uses your current subscription, or one you pick, without changing your
+  default subscription.
+- Uses an existing resource group or creates one (`type-fast-rg` in
+  `eastus2` unless you choose otherwise).
+- Uses an existing Foundry resource or creates one, and can add a
+  `type-fast` project.
+- Uses an existing model deployment or deploys a model (`gpt-4.1-mini`,
+  Global Standard, 50K tokens per minute unless you choose otherwise).
+- Saves the endpoint, API key, and deployment name to `~/.type-fast`, with the
+  key file readable only by you. It asks before replacing existing settings.
+- Sends a short test request to the deployment.
+
+The script never deletes anything. If it stops partway, it lists what it has
+already created; see [Clean up](#clean-up) to remove it. When it finishes,
+continue with [6. Check that it works](#6-check-that-it-works).
 
 ## 2. Create a Foundry resource and project
 

@@ -66,8 +66,9 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 3. Set your OpenAI API key in **Settings → Set OpenAI API Key…** (⌘,).
 
 To use Azure AI Foundry instead, follow the
-[Foundry setup guide](docs/foundry-setup.md). To run from source, see
-[Development](docs/development.md).
+[Foundry setup guide](docs/foundry-setup.md), or let
+[a setup script](docs/foundry-setup.md#set-up-with-a-script) do it for you.
+To run from source, see [Development](docs/development.md).
 
 ## Usage
 
