@@ -80,6 +80,7 @@ class ModelSelectionTests(unittest.TestCase):
             (azure_provider, "MODEL_FILE", "azure_ai_model"),
             (azure_provider, "ENDPOINT_FILE", "azure_ai_endpoint"),
             (azure_provider, "API_KEY_FILE", "azure_ai_api_key"),
+            (providers, "PROVIDER_FILE", "provider"),
         ]:
             patcher = mock.patch.object(target, attr, root / name)
             patcher.start()
@@ -144,6 +145,27 @@ class TranslateStreamTests(unittest.TestCase):
         for model in ("gpt-5-mini", "o4-mini", "GPT-5"):
             self.assertNotIn("temperature", self._run(model))
 
+    def test_uses_the_client_it_is_given(self) -> None:
+        stream_cm = mock.MagicMock()
+        stream_cm.__enter__.return_value = iter([])
+        client = mock.Mock()
+        client.responses.stream.return_value = stream_cm
+        with mock.patch.object(
+            providers, "get_client", side_effect=AssertionError("resolved again")
+        ):
+            list(translator.translate_stream("hello", model="m", client=client))
+        client.responses.stream.assert_called_once()
+
+    def test_superseded_before_start_sends_nothing(self) -> None:
+        client = mock.Mock()
+        out = list(
+            translator.translate_stream(
+                "hello", model="m", client=client, should_cancel=lambda: True
+            )
+        )
+        self.assertEqual(out, [])
+        client.responses.stream.assert_not_called()
+
     def test_retries_without_temperature_when_rejected(self) -> None:
         import openai
 
@@ -183,10 +205,12 @@ class TranslateStreamTests(unittest.TestCase):
         client = mock.Mock()
         client.responses.stream.return_value = bad_cm
         self.addCleanup(translator._models_without_temperature.clear)
+        # Superseded after the first attempt was sent, before the retry.
+        cancel = iter([False])
         with mock.patch.object(providers, "get_client", return_value=client):
             out = list(
                 translator.translate_stream(
-                    "hello", model="my-deploy", should_cancel=lambda: True
+                    "hello", model="my-deploy", should_cancel=lambda: next(cancel, True)
                 )
             )
         self.assertEqual(out, [])

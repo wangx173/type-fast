@@ -54,6 +54,7 @@ def translate_stream(
     *,
     tone: Optional[str] = None,
     model: Optional[str] = None,
+    client: Optional[openai.OpenAI] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
 ) -> Iterator[str]:
     """Yield translated text chunks for ``text`` as they stream from the model.
@@ -66,6 +67,9 @@ def translate_stream(
             :func:`system_prompt`).
         model: Model/deployment to use; defaults to the active provider's
             configured model.
+        client: Client to send the request with; defaults to the active
+            provider's client. Pass one together with ``model`` to pin both to
+            the same provider.
         should_cancel: Optional callback polled between chunks; when it returns
             ``True`` the stream is abandoned. Useful when a newer translation
             supersedes this one on a worker thread.
@@ -77,7 +81,9 @@ def translate_stream(
     if not text:
         return
 
-    client = providers.get_client()
+    if should_cancel is not None and should_cancel():
+        return  # superseded before it started: don't open a request
+    client = client or providers.get_client()
     model = model or providers.get_model()
     use_temperature = (
         config.supports_temperature(model)

@@ -4,7 +4,7 @@ The API key is read from the ``OPENAI_API_KEY`` environment variable, or, when
 that is not set, from the fallback file ``~/.type-fast/api_key``. The model is
 read from ``OPENAI_MODEL`` or ``~/.type-fast/openai_model`` (settable in the app
 via Settings › Set Model…), defaulting to :data:`type_fast.config.DEFAULT_MODEL`.
-This is the default provider, used whenever Azure AI Foundry is not configured.
+This is the default provider (see :mod:`type_fast.providers` for how one is chosen).
 """
 
 from __future__ import annotations
@@ -12,10 +12,11 @@ from __future__ import annotations
 from openai import OpenAI
 
 from .. import config
-from ._common import CONFIG_DIR, from_env_or_file, write_or_clear
+from ._common import CONFIG_DIR, from_env_or_file, write_or_clear, write_private
 
 NAME = "openai"
 DISPLAY_NAME = "OpenAI"
+SHORT_NAME = "OpenAI"
 
 # Fallback key file, used when OPENAI_API_KEY is not in the environment.
 API_KEY_FILE = CONFIG_DIR / "api_key"
@@ -68,10 +69,12 @@ def get_api_key() -> str:
 
 def save_api_key(key: str) -> None:
     """Write ``key`` to the key file with owner-only permissions."""
-    key = key.strip()
-    API_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
-    API_KEY_FILE.write_text(key, encoding="utf-8")
-    API_KEY_FILE.chmod(0o600)
+    write_private(API_KEY_FILE, key)
+
+
+def client_key() -> tuple[str, ...]:
+    """Return the settings the client is built from, to detect changes."""
+    return (_api_key(),)
 
 
 def build_client() -> OpenAI:

@@ -14,7 +14,8 @@ The full window has:
 - source and target language pickers with a **⇄** swap button,
 - a tone selector,
 - an input box and an output box that streams the translation, and
-- the active model and the show/hide hotkey, shown at the bottom.
+- the provider and model in use (for example **Azure · gpt-4.1-mini**; switch
+  in **Settings → Provider**) and the show/hide hotkey, shown at the bottom.
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`)

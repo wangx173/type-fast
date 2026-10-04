@@ -23,9 +23,11 @@ the same for every supported language. Editing inside a frozen
 prefix transparently re-translates from that point.
 
 A tone selector next to the language pickers controls the register of the
-translation (polite, casual, business, ... or a custom instruction), and the
-model can be switched from Settings › Set Model…. Changing the languages, tone,
-or model re-translates everything with the new settings. The language pair and
+translation (polite, casual, business, ... or a custom instruction). The
+provider (OpenAI or Azure AI Foundry) is picked in Settings › Provider and
+shown with the model at the bottom of the window, and the model can be
+switched from Settings › Set Model…. Changing the languages, tone, provider, or
+model re-translates everything with the new settings. The language pair and
 tone (and the hotkey) are remembered across launches.
 
 Because the window floats above other apps, it is slightly see-through, fades
@@ -40,8 +42,10 @@ import os
 import string
 import threading
 from pathlib import Path
+from types import ModuleType
 from typing import NamedTuple
 
+from openai import OpenAI
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
@@ -68,6 +72,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFormLayout,
     QHBoxLayout,
     QInputDialog,
     QKeySequenceEdit,
@@ -83,7 +88,7 @@ from PySide6.QtWidgets import (
 )
 
 from . import autopaste, config, hotkey, providers, settings
-from .providers import openai as openai_provider
+from .providers import azure as azure_provider, openai as openai_provider
 from .translator import translate_stream
 
 # Characters that, when at the end of the input, trigger an immediate
@@ -213,6 +218,7 @@ _TEXT_COLORS = {
     "light": {"muted": "#56565a", "busy": "#0a56ba", "done": "#17662b"},
     "dark": {"muted": "#b3b3b7", "busy": "#71b9ff", "done": "#5fd47c"},
 }
+_ERROR_COLORS = {"light": "#b8000f", "dark": "#ff7b72"}
 
 
 def _is_dark_mode() -> bool:
@@ -338,6 +344,121 @@ class HotkeyDialog(QDialog):
             )
             return
         self._finish(str(parsed))
+
+
+_FOUNDRY_GUIDE_URL = "https://github.com/wangx173/type-fast/blob/main/docs/foundry-setup.md"
+
+
+class AzureSetupDialog(QDialog):
+    """Asks for the Azure AI Foundry endpoint, API key, and deployment name.
+
+    After ``exec()`` returns Accepted, :attr:`endpoint`, :attr:`api_key`, and
+    :attr:`model` hold the trimmed values (``model`` may be blank).
+    """
+
+    def __init__(
+        self,
+        endpoint: str,
+        api_key: str,
+        model: str,
+        env_overrides: list[str],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Set Up Azure AI Foundry")
+        self.endpoint = endpoint
+        self.api_key = api_key
+        self.model = model
+
+        info = QLabel(
+            "Enter your Foundry resource's endpoint and API key (Keys and "
+            "Endpoint in the Azure portal) and the name of your model "
+            f'deployment. New to Foundry? See the <a href="{_FOUNDRY_GUIDE_URL}">'
+            "setup guide</a>."
+        )
+        info.setWordWrap(True)
+        info.setOpenExternalLinks(True)
+        # Let Tab reach the link and Return open it, not just a mouse click.
+        info.setTextInteractionFlags(Qt.TextBrowserInteraction)
+
+        self.endpoint_edit = QLineEdit(endpoint)
+        self.endpoint_edit.setPlaceholderText("https://<resource>.services.ai.azure.com")
+        self.key_edit = QLineEdit(api_key)
+        self.key_edit.setEchoMode(QLineEdit.Password)
+        self.key_edit.setPlaceholderText("Key 1 or Key 2")
+        self.model_edit = QLineEdit(model)
+        self.model_edit.setPlaceholderText(config.DEFAULT_MODEL)
+
+        form = QFormLayout()
+        # macOS keeps fields at their hint width; widen them to show endpoints.
+        form.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        form.addRow("Endpoint:", self.endpoint_edit)
+        form.addRow("API key:", self.key_edit)
+        form.addRow("Deployment:", self.model_edit)
+
+        self.error_label = QLabel()
+        self.error_label.setWordWrap(True)
+        self.error_label.setStyleSheet(
+            f"color: {_ERROR_COLORS['dark' if _is_dark_mode() else 'light']};"
+        )
+        self.error_label.hide()
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(info)
+        layout.addLayout(form)
+        if env_overrides:
+            note = QLabel(
+                f"{', '.join(env_overrides)} "
+                f"{'is' if len(env_overrides) == 1 else 'are'} set in the environment "
+                "and take precedence over what you save here."
+            )
+            note.setWordWrap(True)
+            layout.addWidget(note)
+        layout.addWidget(self.error_label)
+        buttons = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        self.setMinimumWidth(460)
+
+    def _problem(self, endpoint: str, api_key: str, model: str) -> tuple[str, QLineEdit | None]:
+        """Return what is wrong with the entered values and the field to fix."""
+        url = QUrl(endpoint)
+        if (
+            url.scheme().lower() != "https"
+            or not url.host()
+            or url.hasQuery()
+            or url.hasFragment()
+            or any(c.isspace() for c in endpoint)
+            or not azure_provider.has_supported_path(endpoint)
+        ):
+            return (
+                "Enter the endpoint as an https:// URL, e.g. "
+                "https://<resource>.services.ai.azure.com. It can end in /openai/v1 "
+                "or /api/projects/<project>, but not other paths, ?\u2026, or #\u2026.",
+                self.endpoint_edit,
+            )
+        if not api_key or any(c.isspace() for c in api_key):
+            return "Enter the API key (it can't contain spaces).", self.key_edit
+        if any(c.isspace() for c in model):
+            return "The deployment name can't contain spaces.", self.model_edit
+        return "", None
+
+    def accept(self) -> None:
+        endpoint = self.endpoint_edit.text().strip()
+        api_key = self.key_edit.text().strip()
+        model = self.model_edit.text().strip()
+        problem, field = self._problem(endpoint, api_key, model)
+        for edit in (self.endpoint_edit, self.key_edit, self.model_edit):
+            edit.setAccessibleDescription(problem if edit is field else "")
+        if field is not None:
+            self.error_label.setText(problem)
+            self.error_label.show()
+            # Moving focus makes VoiceOver read the field and its error.
+            field.setFocus()
+            return
+        self.endpoint, self.api_key, self.model = endpoint, api_key, model
+        super().accept()
 
 
 class Bridge(QObject):
@@ -468,8 +589,7 @@ class MainWindow(QMainWindow):
 
         self._build_menu()
         self._update_labels()
-        self._reflect_key_status()
-        self._reflect_model()
+        self._reflect_provider()
 
         # Esc dismisses the window, even while typing in the input box
         # (QPlainTextEdit does not claim Esc, so the window shortcut wins).
@@ -518,20 +638,22 @@ class MainWindow(QMainWindow):
         # Whether that request is still running.
         self._translating = False
 
-        # The last (frozen_src, active, source, target, tone, model,
+        # The last (frozen_src, active, source, target, tone, *provider state,
         # should_freeze) actually sent, used to skip redundant requests when
-        # nothing relevant changed. ``should_freeze`` is part of the key so that
+        # nothing relevant changed. The provider state (see _provider_state)
+        # is the provider, its endpoint and key, and the model, so its length
+        # depends on the provider. ``should_freeze`` is part of the key so that
         # adding a newline (which must advance the freeze boundary) is never
         # skipped as a duplicate.
-        self._last_sent_key: tuple[str, str, str, str, str, str, bool] | None = None
+        self._last_sent_key: tuple[str | bool, ...] | None = None
 
         # Source prefix whose translation is finalized, and its translation.
         # Only the input text *after* ``_frozen_src`` is ever sent to the API.
         self._frozen_src = ""
         self._frozen_out = ""
-        # (source, target, tone, model) the frozen translation was produced
-        # with; a language, tone, or model change invalidates it.
-        self._frozen_context: tuple[str, str, str, str] | None = None
+        # (source, target, tone, *provider state) the frozen translation was
+        # produced with; changing any of them invalidates it.
+        self._frozen_context: tuple[str, ...] | None = None
 
         # Display prefix (frozen translations + separator) shown while the
         # active line streams, plus how to freeze that line once it lands:
@@ -561,10 +683,33 @@ class MainWindow(QMainWindow):
         # screen. "Set OpenAI API Key…" lands in the app menu automatically
         # because of its role-like text, so we add it to a Settings menu too.
         menu = self.menuBar().addMenu("Settings")
+
+        # Which service translates; the checked item is the one in use.
+        provider_menu = menu.addMenu("Provider")
+        self.provider_group = QActionGroup(self)
+        self.provider_group.setExclusive(True)
+        self.provider_actions: dict[str, QAction] = {}
+        for provider in providers.PROVIDERS:
+            action = QAction(provider.DISPLAY_NAME, self, checkable=True)
+            action.setData(provider.NAME)
+            self.provider_group.addAction(action)
+            provider_menu.addAction(action)
+            self.provider_actions[provider.NAME] = action
+        self.provider_group.triggered.connect(
+            lambda action: self._choose_provider(action.data())
+        )
+        menu.addSeparator()
+
         self.set_key_action = QAction("Set OpenAI API Key\u2026", self)
         self.set_key_action.setShortcut(QKeySequence("Ctrl+,"))
-        self.set_key_action.triggered.connect(self._set_api_key)
+        # The lambdas drop QAction's ``checked`` argument, which would
+        # otherwise arrive as ``switch=False`` and skip the switch prompt.
+        self.set_key_action.triggered.connect(lambda: self._set_api_key())
         menu.addAction(self.set_key_action)
+
+        self.set_up_azure_action = QAction("Set Up Azure AI Foundry\u2026", self)
+        self.set_up_azure_action.triggered.connect(lambda: self._set_up_azure())
+        menu.addAction(self.set_up_azure_action)
 
         self.set_model_action = QAction("Set Model\u2026", self)
         self.set_model_action.triggered.connect(self._set_model)
@@ -967,6 +1112,14 @@ class MainWindow(QMainWindow):
         self.move(x, y)
 
     def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
+        if state == Qt.ApplicationActive:
+            # Settings may have changed outside the app (e.g. the setup script);
+            # if so, apply them to the current text too, not just the footer.
+            if self._provider_state() != self._reflected_provider_state:
+                self._after_provider_change()
+            else:
+                # Only display details (e.g. pinned vs automatic) may differ.
+                self._reflect_provider()
         # Reactivating the app (Dock icon, ⌘Tab) while dismissed shows the window.
         if state == Qt.ApplicationActive and self._dismissed and not self.isVisible():
             self.summon()
@@ -1060,12 +1213,158 @@ class MainWindow(QMainWindow):
         self._save_prefs(title, "hotkey")
         return True
 
-    def _reflect_model(self) -> None:
+    def _provider_state(self, provider: ModuleType | None = None) -> tuple[str, ...]:
+        """The settings a translation depends on: provider, endpoint, key, model."""
+        provider = provider or providers.active_provider()
+        return (provider.NAME, *provider.client_key(), provider.get_model())
+
+    def _reflect_provider(self) -> None:
+        """Show the active provider and model in the footer, menu, and status."""
+        self._reflected_provider_state = self._provider_state()
         provider = providers.active_provider()
-        self.model_label.setText(f"Model: {providers.get_model()}")
-        self.model_label.setToolTip(
-            f"Provider: {provider.DISPLAY_NAME} \u2014 change it in Settings \u203a Set Model\u2026"
+        model = providers.get_model()
+        self.model_label.setText(f"{provider.SHORT_NAME} \u00b7 {model}")
+        how = "" if providers.get_choice() else " (chosen automatically)"
+        lines = [f"Provider: {provider.DISPLAY_NAME}{how}"]
+        if provider is azure_provider and azure_provider.endpoint_host():
+            lines.append(f"Endpoint: {azure_provider.endpoint_host()}")
+        lines.append(f"Model: {model}")
+        lines.append("Change them in Settings \u203a Provider and Settings \u203a Set Model\u2026")
+        self.model_label.setToolTip("\n".join(lines))
+        self.model_label.setAccessibleDescription(" ".join(lines))
+        self.provider_actions[provider.NAME].setChecked(True)
+        self._reflect_key_status()
+
+    def _missing_setup_message(self, provider: ModuleType) -> str:
+        if provider is azure_provider:
+            return "Azure AI Foundry isn't set up \u2014 Settings \u203a Set Up Azure AI Foundry\u2026"
+        return "No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026"
+
+    def _reflect_key_status(self) -> None:
+        provider = providers.active_provider()
+        if not provider.is_configured():
+            self._set_status(self._missing_setup_message(provider))
+        elif self.status.text() in {
+            self._missing_setup_message(p) for p in providers.PROVIDERS
+        }:
+            # Only clear our own hint, not e.g. a translation in progress.
+            self._set_status("")
+
+    def _after_provider_change(self) -> None:
+        providers.reset_client()  # so the next translation uses the new settings
+        self._reflect_provider()
+        # The same text may have failed with the old settings; send it again.
+        self._last_sent_key = None
+        self._retranslate()
+
+    def _choose_provider(self, name: str) -> None:
+        """Switch to provider ``name``, setting it up first if needed."""
+        provider = providers.by_name(name)
+        if provider is None:
+            return
+        if not provider.is_configured():
+            # Setting it up switches to it; cancelling keeps the current one.
+            if provider is azure_provider:
+                self._set_up_azure(switch=True)
+            else:
+                self._set_api_key(switch=True)
+            self._reflect_provider()
+            return
+        if self._save_provider_choice(name):
+            self._after_provider_change()
+        else:
+            self._reflect_provider()
+
+    def _save_provider_choice(self, name: str) -> bool:
+        try:
+            providers.set_choice(name)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Provider",
+                f"Could not save the provider to {providers.PROVIDER_FILE}:\n{exc}",
+            )
+            return False
+        return True
+
+    def _confirm_switch(self, provider: ModuleType) -> bool:
+        """Ask whether to start using ``provider`` now."""
+        answer = QMessageBox.question(
+            self,
+            "Provider",
+            f"Use {provider.DISPLAY_NAME} for translations now?\n"
+            f"You can switch any time in Settings \u203a Provider.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes,
         )
+        return answer == QMessageBox.Yes
+
+    def _finish_setup(
+        self, provider: ModuleType, before: ModuleType, switch: bool | None
+    ) -> None:
+        """After ``provider`` is set up, switch to it if wanted, and refresh.
+
+        ``before`` is the provider that was active before the setup. If you
+        don't switch, it stays active even if the automatic choice would now
+        pick ``provider``.
+        """
+        if switch is None:
+            switch = before is not provider and self._confirm_switch(provider)
+        if switch:
+            self._save_provider_choice(provider.NAME)
+        elif providers.active_provider() is not before:
+            self._save_provider_choice(before.NAME)
+        self._after_provider_change()
+
+    def _ask_azure_settings(self) -> tuple[str, str, str] | None:
+        """Show the Foundry setup dialog; return (endpoint, key, model) or None."""
+        dialog = AzureSetupDialog(
+            azure_provider.get_endpoint(),
+            azure_provider.get_api_key(),
+            azure_provider.saved_model(),
+            azure_provider.env_overrides(),
+            self,
+        )
+        if dialog.exec() != QDialog.Accepted:
+            return None
+        return dialog.endpoint, dialog.api_key, dialog.model
+
+    def _set_up_azure(self, switch: bool | None = None) -> bool:
+        """Set up Azure AI Foundry; return True if the settings were saved.
+
+        ``switch`` says whether to start using it; None asks when it isn't
+        already the active provider.
+        """
+        values = self._ask_azure_settings()
+        if values is None:
+            return False
+        before = providers.active_provider()
+        # Once Foundry is set up, the automatic choice picks it. Unless we're
+        # switching anyway, pin the current provider first, so a failure to
+        # save the choice can't switch providers behind your back.
+        pinned = (
+            switch is not True
+            and before is not azure_provider
+            and providers.get_choice() is None
+        )
+        if pinned and not self._save_provider_choice(before.NAME):
+            return False
+        try:
+            azure_provider.save_settings(*values)
+        except OSError as exc:
+            if pinned:
+                try:
+                    providers.set_choice(None)  # back to automatic, as before
+                except OSError:
+                    pass
+            QMessageBox.warning(
+                self,
+                "Set Up Azure AI Foundry",
+                f"Could not save the settings to {azure_provider.ENDPOINT_FILE.parent}:\n{exc}",
+            )
+            return False
+        self._finish_setup(azure_provider, before, switch)
+        return True
 
     def _set_model(self) -> None:
         provider = providers.active_provider()
@@ -1101,7 +1400,7 @@ class MainWindow(QMainWindow):
                 self, "Set Model", f"Could not save the model to {provider.MODEL_FILE}:\n{exc}"
             )
             return
-        self._reflect_model()
+        self._reflect_provider()
         self._retranslate()
 
     def _update_tone_tooltip(self) -> None:
@@ -1208,13 +1507,12 @@ class MainWindow(QMainWindow):
         self.timer.stop()
         self.run_translation()
 
-    def _reflect_key_status(self) -> None:
-        if providers.has_credentials():
-            self._set_status("")
-        else:
-            self._set_status("No API key set \u2014 Settings \u203a Set OpenAI API Key\u2026")
+    def _set_api_key(self, switch: bool | None = None) -> bool:
+        """Set the OpenAI API key; return True if one was saved.
 
-    def _set_api_key(self) -> None:
+        ``switch`` says whether to start using OpenAI; None asks when it isn't
+        already the active provider.
+        """
         current = ""
         try:
             current = openai_provider.get_api_key()
@@ -1228,14 +1526,22 @@ class MainWindow(QMainWindow):
             current,
         )
         if not ok:
-            return
+            return False
         key = key.strip()
         if not key:
-            return
-        openai_provider.save_api_key(key)
-        providers.reset_client()  # so the next translation uses the new key
-        self._reflect_key_status()
-        self._reflect_model()
+            return False
+        before = providers.active_provider()
+        try:
+            openai_provider.save_api_key(key)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Set OpenAI API Key",
+                f"Could not save the key to {openai_provider.API_KEY_FILE}:\n{exc}",
+            )
+            return False
+        self._finish_setup(openai_provider, before, switch)
+        return True
 
     def _update_labels(self) -> None:
         source, target = self.prefs.source, self.prefs.target
@@ -1261,10 +1567,13 @@ class MainWindow(QMainWindow):
         full = self.input.toPlainText()
         source, target = self.prefs.source, self.prefs.target
         tone = self.prefs.instruction()
-        model = providers.get_model()
+        provider = providers.active_provider()
+        model = provider.get_model()
+        provider_state = self._provider_state(provider)
 
-        # A language, tone, or model change makes the frozen translation stale.
-        context = (source, target, tone, model)
+        # A language, tone, provider, endpoint, key, or model change makes the
+        # frozen translation stale.
+        context = (source, target, tone, *provider_state)
         if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""
@@ -1313,7 +1622,7 @@ class MainWindow(QMainWindow):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target, tone, model, should_freeze)
+        key = (self._frozen_src, active, source, target, tone, *provider_state, should_freeze)
         if key == self._last_sent_key:
             return
         self._last_sent_key = key
@@ -1322,6 +1631,14 @@ class MainWindow(QMainWindow):
         self._active_prefix = self._frozen_out + ("\n" if self._frozen_out else "")
         self._pending_freeze = (should_freeze, frozen_after, self._active_prefix)
 
+        # Bind the request to this provider's client now, so a switch made
+        # before the worker starts can't send it with other settings.
+        client: OpenAI | Exception
+        try:
+            client = providers.get_client(provider)
+        except Exception as exc:  # reported by the worker, like API errors
+            client = exc
+
         self._request_id += 1
         request_id = self._request_id
         self._translating = True
@@ -1329,7 +1646,7 @@ class MainWindow(QMainWindow):
 
         thread = threading.Thread(
             target=self._translate_worker,
-            args=(request_id, active, source, target, tone, model),
+            args=(request_id, active, source, target, tone, model, client),
             daemon=True,
         )
         thread.start()
@@ -1350,18 +1667,22 @@ class MainWindow(QMainWindow):
         target: str,
         tone: str,
         model: str,
+        client: OpenAI | Exception,
     ) -> None:
         def superseded() -> bool:
             return request_id != self._request_id
 
         chunks: list[str] = []
         try:
+            if isinstance(client, Exception):
+                raise client
             for chunk in translate_stream(
                 text,
                 source,
                 target,
                 tone=tone,
                 model=model,
+                client=client,
                 should_cancel=superseded,
             ):
                 if superseded():

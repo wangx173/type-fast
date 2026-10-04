@@ -1,16 +1,32 @@
 # Configuration
 
+- [Choose a provider](#choose-a-provider)
 - [OpenAI API key](#openai-api-key)
 - [Azure AI Foundry](#azure-ai-foundry)
 - [Model](#model)
 - [Where settings are stored](#where-settings-are-stored)
 
+## Choose a provider
+
+Type Fast translates with either **OpenAI** or **Azure AI Foundry**. The
+bottom of the window shows which one is in use, followed by the model, for
+example **OpenAI · gpt-4.1-mini** or **Azure · gpt-4.1-mini**. Hover over it
+for the full provider name, and for Foundry the endpoint's host name.
+
+To switch, choose **Settings → Provider** and pick one; the checked item is the
+one in use. If the provider you pick isn't set up yet, Type Fast asks for its
+key (and, for Foundry, its endpoint and deployment) first. The choice is
+saved to `~/.type-fast/provider` and applies right away.
+
+Until you pick a provider, Type Fast chooses automatically: Azure AI Foundry
+when both a Foundry endpoint and key are found, and OpenAI otherwise.
+
 ## OpenAI API key
 
 The easiest way is from the app: **Settings → Set OpenAI API Key…** (⌘,). The
 key is saved to `~/.type-fast/api_key` and applied immediately, unless the
-`OPENAI_API_KEY` environment variable is set (it takes precedence) or
-[Azure AI Foundry](#azure-ai-foundry) is configured.
+`OPENAI_API_KEY` environment variable is set (it takes precedence). If you're
+using Azure AI Foundry, Type Fast asks whether to switch to OpenAI.
 
 Type Fast reads the key from the `OPENAI_API_KEY` environment variable or, if
 that is not set, from `~/.type-fast/api_key`. The packaged app uses the file,
@@ -28,8 +44,15 @@ chmod 600 ~/.type-fast/api_key  # keep the key private to your account
 
 ## Azure AI Foundry
 
-To route translations through a Microsoft (Azure AI) Foundry model, set the
-Foundry endpoint and API key:
+New to Foundry? The [Foundry setup guide](foundry-setup.md) walks through
+creating a resource, deploying a model, and finding the endpoint and key.
+
+The easiest way is from the app: **Settings → Set Up Azure AI Foundry…**. Enter
+the endpoint, API key, and deployment name, then click **Save**. The settings
+are saved to the `~/.type-fast/` files below, with the key readable only by
+your account, and Type Fast asks whether to switch to Foundry.
+
+You can also set the Foundry endpoint and API key yourself:
 
 ```sh
 export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
@@ -38,10 +61,11 @@ export AZURE_AI_API_KEY='<your-foundry-key>'
 export AZURE_AI_MODEL='gpt-4.1-mini'
 ```
 
-When both `AZURE_AI_ENDPOINT` and `AZURE_AI_API_KEY` are set, Foundry takes
-precedence over OpenAI. The endpoint may be the bare resource URL, as above, or
-already include the `/openai/v1` path. Requests use Foundry's OpenAI-compatible
-Responses API.
+Unless you've picked OpenAI in [**Settings → Provider**](#choose-a-provider),
+Foundry is used when both an endpoint and a key are found. The endpoint may be
+the bare resource URL, as above, a project endpoint ending in
+`/api/projects/<project>`, or one that already includes the `/openai/v1` path.
+Requests use Foundry's OpenAI-compatible Responses API.
 
 As with the OpenAI key, each variable has a `~/.type-fast/` fallback file so
 the packaged app works when launched from Finder:
@@ -79,6 +103,7 @@ Everything lives in `~/.type-fast/`:
 | File                | Contents                                                               |
 |---------------------|------------------------------------------------------------------------|
 | `settings.json`     | Language pair, tone, custom tone, hotkey, transparency, and auto-paste |
+| `provider`          | Provider picked in Settings → Provider (`openai` or `azure`)           |
 | `api_key`           | OpenAI API key                                                         |
 | `openai_model`      | OpenAI model override                                                  |
 | `azure_ai_endpoint` | Azure AI Foundry endpoint                                              |
