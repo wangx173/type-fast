@@ -1,5 +1,6 @@
 <!-- Keep it short. Delete sections that don't apply. -->
 
+<!-- The issue this PR resolves. Delete the line if there is none. -->
 Closes #
 
 ## Summary
@@ -16,7 +17,7 @@ Closes #
 
 - [ ] `QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v`:
 - [ ] CI passes (import check, unit tests, headless window smoke test)
-- [ ] Manual check on a real Mac (hotkey, auto-paste, Accessibility, or UI), or N/A:
+- [ ] Manual check on a real Mac, if hotkey, auto-paste, Accessibility, or UI code changed (what you checked):
 
 ## Risks and follow-ups
 
@@ -28,7 +29,7 @@ Closes #
 
 ## Checklist
 
-- [ ] Changes stay within the linked issue's scope
+- [ ] Changes stay within the linked issue's scope, if there is one
 - [ ] Tests added or updated for new behavior
 - [ ] `README.md` or `docs/` updated if behavior or settings changed
 - [ ] No API keys, tokens, or personal data in code, logs, or screenshots

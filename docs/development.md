@@ -82,6 +82,9 @@ New issues and pull requests start from templates in
 [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/) (bug report, feature
 request, and chore) and
 [`.github/pull_request_template.md`](../.github/pull_request_template.md).
+Use **Bug report** when something is broken, **Feature request** for new or
+changed behavior, and **Chore** for everything else, such as docs, maintenance,
+refactoring, or an investigation.
 
 Write an issue so that a person or an AI coding agent can work on it without
 asking questions: state the goal, what is in and out of scope, testable

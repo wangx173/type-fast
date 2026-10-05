@@ -1,6 +1,6 @@
 ---
 name: Feature request
-about: Suggest a new feature or a change in behavior
+about: Suggest a new feature or a change to how something works
 title: ""
 labels: enhancement
 ---
@@ -28,7 +28,7 @@ Delete sections that don't apply.
 
 ## Acceptance criteria
 
-<!-- Testable conditions that mean "done". -->
+<!-- What must be true when this is done. Each item should be checkable. -->
 
 - [ ]
 - [ ] Tests cover the new behavior, where practical
@@ -36,11 +36,11 @@ Delete sections that don't apply.
 
 ## Verification
 
-<!-- How to prove it works. Hotkey, auto-paste, and Accessibility behavior need a manual check on a real Mac. -->
+<!-- How to check the acceptance criteria. Hotkey, auto-paste, and Accessibility behavior need a manual check on a real Mac. -->
 
 - [ ] `QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v` passes
-- [ ] Manual check on a real Mac:
+- [ ] Manual check on a real Mac, if needed (list the steps):
 
-## Pointers
+## Notes
 
 <!-- Optional: relevant files, docs, related issues, or examples. -->
