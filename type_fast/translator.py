@@ -11,6 +11,7 @@ The underlying client (OpenAI or Microsoft Azure AI Foundry) is built by
 
 from __future__ import annotations
 
+import threading
 from typing import Callable, Iterator, Optional
 
 import openai
@@ -30,6 +31,9 @@ _models_without_temperature: set[tuple[str, str]] = set()
 # family that don't support its effort: ``"low"`` after ``"none"`` was
 # rejected, or None to omit the setting after ``"low"`` was rejected too.
 _reasoning_fallbacks: dict[tuple[str, str], Optional[str]] = {}
+# Translations run on overlapping worker threads; this makes each step down
+# atomic so a stored None is never overwritten with "low".
+_reasoning_fallbacks_lock = threading.Lock()
 
 
 def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
@@ -129,9 +133,12 @@ def translate_stream(
                 )
                 effort = "low" if effort == "none" and not unsupported else None
                 # Only ever step down: a concurrent request may have already
-                # learned that the setting must be omitted.
-                if _reasoning_fallbacks.get(key, "") is not None:
-                    _reasoning_fallbacks[key] = effort
+                # learned that the setting must be omitted, so adopt that.
+                with _reasoning_fallbacks_lock:
+                    if _reasoning_fallbacks.get(key, "") is None:
+                        effort = None
+                    else:
+                        _reasoning_fallbacks[key] = effort
                 # With reasoning on, a reasoning model rejects temperature.
                 use_temperature = (
                     use_temperature and config.supports_temperature(model, effort)

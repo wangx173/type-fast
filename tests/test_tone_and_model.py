@@ -377,6 +377,27 @@ class TranslateStreamTests(unittest.TestCase):
         self.assertEqual(sent["reasoning"], {"effort": "none"})
         self.assertIn("temperature", sent)
 
+    def test_learned_omission_is_never_raised_back_to_low(self) -> None:
+        # Another request learned that reasoning must be omitted while this
+        # one was waiting on its rejection of "none".
+        client = mock.Mock(base_url="https://api.example/v1/")
+        key = ("https://api.example/v1/", "gpt-5.4-pro")
+
+        def reject_none(**kwargs):
+            translator._reasoning_fallbacks[key] = None
+            return self._bad_cm("Unsupported value", param="reasoning.effort")
+
+        calls = iter([reject_none, lambda **kwargs: self._ok_cm()])
+        client.responses.stream.side_effect = lambda **kwargs: next(calls)(**kwargs)
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        out = list(
+            translator.translate_stream("hello", model="gpt-5.4-pro", client=client)
+        )
+        self.assertEqual(out, ["hi"])
+        self.assertIsNone(translator._reasoning_fallbacks[key])
+        self.assertNotIn("reasoning", client.responses.stream.call_args_list[1].kwargs)
+
     def test_retries_are_bounded(self) -> None:
         import openai
 
