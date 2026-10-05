@@ -105,7 +105,7 @@ details.
 | [Usage](docs/usage.md)                   | Window layouts, hotkey, auto-paste, languages, and tone  |
 | [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
 | [Foundry setup](docs/foundry-setup.md)   | Create a Foundry resource, deploy a model, and connect   |
-| [Development](docs/development.md)       | Run from source, run tests, and build the `.app`         |
+| [Development](docs/development.md)       | Run from source, test, build the `.app`, file issues/PRs |
 
 ## Roadmap
 
