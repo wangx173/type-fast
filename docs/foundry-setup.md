@@ -74,7 +74,7 @@ The script:
   `eastus2` unless you choose otherwise).
 - Uses an existing Foundry resource or creates one, and can add a
   `type-fast` project.
-- Uses an existing model deployment or deploys a model (`gpt-4.1-mini`,
+- Uses an existing model deployment or deploys a model (`gpt-5.4-mini`,
   Global Standard, 50K tokens per minute unless you choose otherwise).
 - Saves the endpoint, API key, and deployment name to `~/.type-fast`, with the
   key file readable only by you, and makes Azure AI Foundry the provider. It
@@ -132,18 +132,18 @@ choose another.
 
 ## 3. Deploy a model
 
-Type Fast uses `gpt-4.1-mini` by default. It is fast and inexpensive, which
+Type Fast uses `gpt-5.4-mini` by default. It is fast and accurate, which
 suits translating as you type. You can deploy any chat model that supports the
-Responses API, such as `gpt-4.1-nano` or `gpt-4.1`; see
+Responses API, such as `gpt-5.4-nano` or `gpt-4.1-mini`; see
 [Cost tips](#cost-tips) before picking a larger or reasoning model.
 
 **Portal**
 
 1. In your project, open the model catalog (**Discover** → **Models**, or
    **Models + endpoints** → **Deploy model**).
-2. Search for **gpt-4.1-mini**, then select **Deploy**.
+2. Search for **gpt-5.4-mini**, then select **Deploy**.
 3. Keep the **deployment name** (by default the same as the model name, such
-   as `gpt-4.1-mini`) and choose the deployment type (see below).
+   as `gpt-5.4-mini`) and choose the deployment type (see below).
 4. Select **Deploy**.
 
 **Azure CLI**
@@ -152,15 +152,15 @@ List the versions and deployment types available in your region, then deploy:
 
 ```sh
 az cognitiveservices model list --location eastus2 \
-    --query "[?model.name=='gpt-4.1-mini'].{version:model.version,skus:join(',',model.skus[].name)}" \
+    --query "[?model.name=='gpt-5.4-mini'].{version:model.version,skus:join(',',model.skus[].name)}" \
     --output table
 
 az cognitiveservices account deployment create \
     --name <resource> \
     --resource-group type-fast-rg \
-    --deployment-name gpt-4.1-mini \
-    --model-name gpt-4.1-mini \
-    --model-version 2025-04-14 \
+    --deployment-name gpt-5.4-mini \
+    --model-name gpt-5.4-mini \
+    --model-version 2026-03-17 \
     --model-format OpenAI \
     --sku-name GlobalStandard \
     --sku-capacity 50
@@ -191,8 +191,10 @@ the same model and type, or request more quota in the portal. You pay for the
 tokens you use, not for the capacity.
 
 > **Note the deployment name.** Type Fast sends the *deployment* name, not the
-> model name. If you name the deployment something other than `gpt-4.1-mini`,
-> you'll need that name in [step 5](#5-configure-type-fast).
+> model name. If you name the deployment something other than `gpt-5.4-mini`,
+> you'll need that name in [step 5](#5-configure-type-fast). The default used
+> to be `gpt-4.1-mini`; if you deployed that and never saved its name, set it
+> in step 5 now.
 
 ## 4. Get the endpoint and API key
 
@@ -238,7 +240,7 @@ regenerate one while the other is in use.
 ## 5. Configure Type Fast
 
 Give Type Fast the endpoint and key, and the deployment name if it isn't
-`gpt-4.1-mini`. The full reference is in
+`gpt-5.4-mini`. The full reference is in
 [Configuration → Azure AI Foundry](configuration.md#azure-ai-foundry).
 
 **In the app (easiest).** Choose **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**. Enter
@@ -255,7 +257,7 @@ you set in your shell, so use the files in `~/.type-fast/`:
 ```sh
 mkdir -p ~/.type-fast
 echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
-# Only if your deployment isn't named gpt-4.1-mini:
+# Only if your deployment isn't named gpt-5.4-mini:
 echo '<deployment-name>' > ~/.type-fast/azure_ai_model
 ```
 
@@ -306,7 +308,7 @@ Notes:
 ## 6. Check that it works
 
 1. Open Type Fast. The bottom of the window shows the provider and model:
-   **Azure · gpt-4.1-mini** (or your deployment name), and
+   **Azure · gpt-5.4-mini** (or your deployment name), and
    **Settings → Provider** has **Azure AI Foundry** checked. Hover over the
    provider and model to see the endpoint's host name. If it shows
    **OpenAI · …**, choose **Settings → Provider → Azure AI Foundry**.
@@ -400,11 +402,15 @@ Check the resource name in the endpoint, your network, and any VPN or proxy.
 Type Fast translates while you type, so it makes many small requests. To keep
 it fast and cheap:
 
-- **Use a small model.** `gpt-4.1-mini` (the default) is a good balance.
-  `gpt-4.1-nano` is cheaper and faster; larger models such as `gpt-4.1` cost
-  more and are slower to respond.
-- **Avoid reasoning models** (`gpt-5*`, `o`-series) for live translation. They
-  spend extra time and tokens thinking before they answer.
+- **Use a small model.** `gpt-5.4-mini` (the default) is a good balance.
+  `gpt-5.4-nano` and `gpt-4.1-mini` are cheaper; larger models such as
+  `gpt-4.1` cost more and are slower to respond.
+- **Avoid reasoning models that can't turn reasoning off** (`gpt-5`,
+  `gpt-5-mini`, `gpt-5-nano`, and the `o`-series) for live translation. They
+  spend extra time and tokens thinking before they answer. Newer ones, such as
+  `gpt-5.4-mini`, are asked not to think, so they answer quickly, but only when
+  the deployment is named after the model (for example `gpt-5.4-mini`): Type
+  Fast picks the reasoning setting from the deployment name.
 - **Use Global Standard** pay-per-token deployments. Provisioned throughput
   (PTU) is billed by the hour, whether you use it or not.
 - **Set a budget.** In the Azure portal, create a budget with alerts under

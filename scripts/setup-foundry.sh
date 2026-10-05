@@ -17,7 +17,7 @@ set -euo pipefail
 DEFAULT_GROUP="type-fast-rg"
 DEFAULT_LOCATION="eastus2"
 DEFAULT_PROJECT="type-fast"
-DEFAULT_MODEL="gpt-4.1-mini"
+DEFAULT_MODEL="gpt-5.4-mini"
 DEFAULT_SKU="GlobalStandard"
 DEFAULT_CAPACITY="50"
 MIN_AZ_VERSION="2.80.0"
@@ -142,7 +142,7 @@ valid_name() {
     printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9-]{0,62}[A-Za-z0-9]$'
 }
 
-# Like valid_name, but periods and underscores are allowed too (gpt-4.1-mini).
+# Like valid_name, but periods and underscores are allowed too (gpt-5.4-mini).
 valid_deployment_name() {
     printf '%s' "$1" | grep -Eq '^[A-Za-z0-9]([A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$'
 }

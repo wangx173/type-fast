@@ -1,22 +1,31 @@
 """Shared, provider-agnostic configuration for type-fast.
 
-Holds the default model, temperature, supported languages and the default
-language pair, translation tone presets, the input debounce interval, the
-default show/hide hotkey, the window transparency presets, and the auto-paste
-default so they are easy to change in one place.
+Holds the default models, temperature, reasoning efforts, supported languages
+and the default language pair, translation tone presets, the input debounce
+interval, the default show/hide hotkey, the window transparency presets, and
+the auto-paste default so they are easy to change in one place.
 Provider-specific credential handling and client construction live in
 :mod:`type_fast.providers` (one module per provider).
 """
 
 from __future__ import annotations
 
-DEFAULT_MODEL = "gpt-4.1-mini"
+from typing import Optional
+
+# Default model for both providers: the OpenAI model, and the Azure AI Foundry
+# deployment name the setup script and guide create. With reasoning turned off
+# it starts streaming sooner than gpt-4.1-mini and translates more accurately.
+DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
 
 # OpenAI models offered in Settings › OpenAI › Set Model…. The dialog is
 # editable, so any other OpenAI model name can be typed in as well. Azure AI
 # Foundry doesn't use this list: it can only use the deployments you created,
 # so you type a deployment name in Settings › Azure AI Foundry instead.
 MODEL_CHOICES = (
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
+    "gpt-5.6-luna",
+    "gpt-6-luna",
     "gpt-4.1-mini",
     "gpt-4.1",
     "gpt-4.1-nano",
@@ -31,12 +40,42 @@ MODEL_CHOICES = (
 DEFAULT_TEMPERATURE = 0.2
 
 # Model-name prefixes for reasoning models that reject the ``temperature``
-# sampling parameter; requests to these models omit it.
-NO_TEMPERATURE_MODEL_PREFIXES = ("o1", "o3", "o4", "gpt-5")
+# sampling parameter at their default reasoning effort; requests to these
+# models omit it unless reasoning is turned off (see REASONING_EFFORTS).
+NO_TEMPERATURE_MODEL_PREFIXES = ("o1", "o3", "o4", "gpt-5", "gpt-6")
+
+# Fastest reasoning effort for newer reasoning-model families, so translations
+# stream without a thinking delay (several default to "medium"). The first
+# matching prefix wins, so list specific names before their family.
+REASONING_EFFORTS = (
+    ("gpt-6-astra", "low"),  # doesn't support "none"
+    ("gpt-6.1-sol", "low"),  # doesn't support "none"
+    ("gpt-6", "none"),
+    ("gpt-5.6", "none"),
+    ("gpt-5.5", "none"),
+    ("gpt-5.4", "none"),
+    ("gpt-5.2", "none"),
+    ("gpt-5.1", "none"),
+)
 
 
-def supports_temperature(model: str) -> bool:
-    """Return False for reasoning models that do not accept ``temperature``."""
+def reasoning_effort(model: str) -> Optional[str]:
+    """Return the reasoning effort to request for ``model``, or None to omit it."""
+    name = model.strip().lower()
+    for prefix, effort in REASONING_EFFORTS:
+        if name.startswith(prefix):
+            return effort
+    return None
+
+
+def supports_temperature(model: str, effort: Optional[str] = None) -> bool:
+    """Return whether ``model`` accepts ``temperature`` at reasoning ``effort``.
+
+    Reasoning models accept it only with reasoning turned off (``"none"``);
+    without an explicit effort they reason by default and reject it.
+    """
+    if effort is not None:
+        return effort == "none"
     return not model.strip().lower().startswith(NO_TEMPERATURE_MODEL_PREFIXES)
 
 

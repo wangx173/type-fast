@@ -112,7 +112,7 @@ class AzureSettingsTests(_IsolatedProviders):
         self.assertEqual(azure_provider.get_model(), "translate")
         self.assertEqual(azure_provider.endpoint_host(), "example.services.ai.azure.com")
         self.set_up_azure("")
-        self.assertEqual(azure_provider.get_model(), config.DEFAULT_MODEL)
+        self.assertEqual(azure_provider.get_model(), config.DEFAULT_OPENAI_MODEL)
 
     def test_deployment_problem(self) -> None:
         self.assertIsNone(azure_provider.deployment_problem("translate"))
@@ -255,7 +255,7 @@ class WindowProviderTests(_IsolatedProviders):
 
     def test_missing_setup_status_names_the_provider(self) -> None:
         w = self.make_window()
-        self.assertEqual(w.model_label.text(), f"OpenAI \u00b7 {config.DEFAULT_MODEL}")
+        self.assertEqual(w.model_label.text(), f"OpenAI \u00b7 {config.DEFAULT_OPENAI_MODEL}")
         self.assertIn("Settings \u203a OpenAI \u203a Set API Key\u2026", w.status.text())
         providers.set_choice("azure")
         w._reflect_provider()
@@ -316,7 +316,7 @@ class WindowProviderTests(_IsolatedProviders):
         # The list starts at the OpenAI model, not the Foundry deployment.
         choices, current = get_item.call_args.args[3:5]
         self.assertNotIn("translate", choices)
-        self.assertEqual(choices[current], config.DEFAULT_MODEL)
+        self.assertEqual(choices[current], config.DEFAULT_OPENAI_MODEL)
         self.assertEqual(azure_provider.MODEL_FILE.read_text(), "translate")
         self.assertEqual(openai_provider.MODEL_FILE.read_text(), "gpt-5")
         self.assertEqual(providers.get_model(), "translate")
