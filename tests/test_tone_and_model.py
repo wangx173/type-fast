@@ -342,6 +342,36 @@ class TranslateStreamTests(unittest.TestCase):
             self.assertNotIn("reasoning", call.kwargs)
             self.assertNotIn("temperature", call.kwargs)
 
+    def test_unsupported_reasoning_setting_is_dropped_without_trying_low(self) -> None:
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm("Unsupported parameter: 'reasoning'", param="reasoning"),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            list(translator.translate_stream("hello", model="gpt-5.4-mini"))
+        self.assertNotIn("reasoning", client.responses.stream.call_args_list[1].kwargs)
+
+    def test_rejections_are_remembered_per_endpoint(self) -> None:
+        foundry = mock.Mock(base_url="https://foundry.example/openai/v1/")
+        foundry.responses.stream.side_effect = [
+            self._bad_cm("Unsupported value", param="reasoning.effort"),
+            self._ok_cm(),
+        ]
+        openai_client = mock.Mock(base_url="https://api.openai.com/v1/")
+        openai_client.responses.stream.return_value = self._ok_cm()
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        list(translator.translate_stream("hello", model="gpt-5.4-mini", client=foundry))
+        list(
+            translator.translate_stream("hello", model="gpt-5.4-mini", client=openai_client)
+        )
+        sent = openai_client.responses.stream.call_args.kwargs
+        self.assertEqual(sent["reasoning"], {"effort": "none"})
+        self.assertIn("temperature", sent)
+
     def test_retries_are_bounded(self) -> None:
         import openai
 

@@ -17,16 +17,19 @@ import openai
 
 from . import config, providers
 
+# Both stores below are keyed by (endpoint, model name), so an OpenAI model and
+# a Foundry deployment with the same name are tracked separately.
+
 # Models (or deployments) that rejected ``temperature`` at runtime. Lets custom
 # Azure deployment names backed by reasoning models work despite not matching
 # :data:`config.NO_TEMPERATURE_MODEL_PREFIXES`.
-_models_without_temperature: set[str] = set()
+_models_without_temperature: set[tuple[str, str]] = set()
 
 # Reasoning effort to use instead for models (or deployments) that rejected
 # theirs at runtime, such as variants of a :data:`config.REASONING_EFFORTS`
 # family that don't support its effort: ``"low"`` after ``"none"`` was
 # rejected, or None to omit the setting after ``"low"`` was rejected too.
-_reasoning_fallbacks: dict[str, Optional[str]] = {}
+_reasoning_fallbacks: dict[tuple[str, str], Optional[str]] = {}
 
 
 def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
@@ -82,8 +85,9 @@ def translate_stream(
 
     Newer reasoning models are asked for their fastest reasoning effort (see
     :func:`config.reasoning_effort`). If the request is rejected because of
-    ``temperature`` or ``reasoning``, it is retried without that setting, and
-    the model is remembered so later requests omit it too.
+    ``temperature``, it is retried without it; if reasoning effort ``"none"``
+    is rejected, it is retried with ``"low"``, and then without the setting.
+    The model is remembered so later requests skip the rejected settings.
 
     Yields:
         Successive pieces of the translated text.
@@ -96,10 +100,11 @@ def translate_stream(
         return  # superseded before it started: don't open a request
     client = client or providers.get_client()
     model = model or providers.get_model()
-    effort = _reasoning_fallbacks.get(model, config.reasoning_effort(model))
+    key = (str(getattr(client, "base_url", "")), model)
+    effort = _reasoning_fallbacks.get(key, config.reasoning_effort(model))
     use_temperature = (
         config.supports_temperature(model, effort)
-        and model not in _models_without_temperature
+        and key not in _models_without_temperature
     )
     while True:
         try:
@@ -112,13 +117,21 @@ def translate_stream(
             # three. The error names the rejected field in ``param`` when it
             # can; otherwise look for it in the message, checking temperature
             # first because its error can mention reasoning too.
-            rejected = (getattr(exc, "param", None) or str(exc)).lower()
+            rejected = str(getattr(exc, "param", None) or exc).lower()
             if use_temperature and "temperature" in rejected:
-                _models_without_temperature.add(model)
+                _models_without_temperature.add(key)
                 use_temperature = False
             elif effort is not None and "reasoning" in rejected:
-                effort = "low" if effort == "none" else None
-                _reasoning_fallbacks[model] = effort
+                # Try low effort next, unless the whole setting is unsupported.
+                unsupported = (
+                    rejected == "reasoning"
+                    or getattr(exc, "code", None) == "unsupported_parameter"
+                )
+                effort = "low" if effort == "none" and not unsupported else None
+                # Only ever step down: a concurrent request may have already
+                # learned that the setting must be omitted.
+                if _reasoning_fallbacks.get(key, "") is not None:
+                    _reasoning_fallbacks[key] = effort
                 # With reasoning on, a reasoning model rejects temperature.
                 use_temperature = (
                     use_temperature and config.supports_temperature(model, effort)
