@@ -22,10 +22,11 @@ from . import config, providers
 # :data:`config.NO_TEMPERATURE_MODEL_PREFIXES`.
 _models_without_temperature: set[str] = set()
 
-# Models (or deployments) that rejected the ``reasoning`` setting at runtime,
-# such as variants of a :data:`config.REASONING_EFFORTS` family that don't
-# support its effort. They are sent without it from then on.
-_models_without_reasoning: set[str] = set()
+# Reasoning effort to use instead for models (or deployments) that rejected
+# theirs at runtime, such as variants of a :data:`config.REASONING_EFFORTS`
+# family that don't support its effort: ``"low"`` after ``"none"`` was
+# rejected, or None to omit the setting after ``"low"`` was rejected too.
+_reasoning_fallbacks: dict[str, Optional[str]] = {}
 
 
 def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
@@ -79,6 +80,11 @@ def translate_stream(
             ``True`` the stream is abandoned. Useful when a newer translation
             supersedes this one on a worker thread.
 
+    Newer reasoning models are asked for their fastest reasoning effort (see
+    :func:`config.reasoning_effort`). If the request is rejected because of
+    ``temperature`` or ``reasoning``, it is retried without that setting, and
+    the model is remembered so later requests omit it too.
+
     Yields:
         Successive pieces of the translated text.
     """
@@ -90,9 +96,7 @@ def translate_stream(
         return  # superseded before it started: don't open a request
     client = client or providers.get_client()
     model = model or providers.get_model()
-    effort = (
-        None if model in _models_without_reasoning else config.reasoning_effort(model)
-    )
+    effort = _reasoning_fallbacks.get(model, config.reasoning_effort(model))
     use_temperature = (
         config.supports_temperature(model, effort)
         and model not in _models_without_temperature
@@ -104,17 +108,21 @@ def translate_stream(
             return
         except openai.BadRequestError as exc:
             # The request is rejected before any output streams, so retrying is
-            # safe. Each retry drops one setting, so this ends after at most two.
-            # Check temperature first: its error can mention reasoning too.
-            message = f"{getattr(exc, 'param', None) or ''} {exc}".lower()
-            if use_temperature and "temperature" in message:
+            # safe. Each retry relaxes one setting, so this ends after at most
+            # three. The error names the rejected field in ``param`` when it
+            # can; otherwise look for it in the message, checking temperature
+            # first because its error can mention reasoning too.
+            rejected = (getattr(exc, "param", None) or str(exc)).lower()
+            if use_temperature and "temperature" in rejected:
                 _models_without_temperature.add(model)
                 use_temperature = False
-            elif effort is not None and "reasoning" in message:
-                _models_without_reasoning.add(model)
-                effort = None
-                # Back at its default effort, a reasoning model rejects it.
-                use_temperature = use_temperature and config.supports_temperature(model)
+            elif effort is not None and "reasoning" in rejected:
+                effort = "low" if effort == "none" else None
+                _reasoning_fallbacks[model] = effort
+                # With reasoning on, a reasoning model rejects temperature.
+                use_temperature = (
+                    use_temperature and config.supports_temperature(model, effort)
+                )
             else:
                 raise
         if should_cancel is not None and should_cancel():
@@ -132,7 +140,7 @@ def _stream(
     effort: Optional[str],
     should_cancel: Optional[Callable[[], bool]],
 ) -> Iterator[str]:
-    params: dict = {}
+    params: dict[str, object] = {}
     if use_temperature:
         params["temperature"] = config.DEFAULT_TEMPERATURE
     if effort is not None:

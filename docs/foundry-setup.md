@@ -406,8 +406,9 @@ it fast and cheap:
 - **Avoid reasoning models that can't turn reasoning off** (`gpt-5`,
   `gpt-5-mini`, `gpt-5-nano`, and the `o`-series) for live translation. They
   spend extra time and tokens thinking before they answer. Newer ones, such as
-  `gpt-5.4-mini`, are asked not to think, so they answer quickly; it's the
-  OpenAI default.
+  `gpt-5.4-mini`, are asked not to think, so they answer quickly, but only when
+  the deployment is named after the model (for example `gpt-5.4-mini`): Type
+  Fast picks the reasoning setting from the deployment name.
 - **Use Global Standard** pay-per-token deployments. Provisioned throughput
   (PTU) is billed by the hour, whether you use it or not.
 - **Set a budget.** In the Azure portal, create a budget with alerts under

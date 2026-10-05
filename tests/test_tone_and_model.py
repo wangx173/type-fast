@@ -6,6 +6,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from typing import Optional
 from unittest import mock
 
 from type_fast import config, providers, settings, translator
@@ -245,7 +246,7 @@ class TranslateStreamTests(unittest.TestCase):
         self.assertNotIn("temperature", calls[2].kwargs)  # remembered
 
     @staticmethod
-    def _rejection(message: str, param=None):
+    def _rejection(message: str, param: Optional[str] = None) -> Exception:
         import openai
 
         error = openai.BadRequestError.__new__(openai.BadRequestError)
@@ -261,7 +262,7 @@ class TranslateStreamTests(unittest.TestCase):
         )
         return cm
 
-    def _bad_cm(self, message: str, param=None) -> mock.MagicMock:
+    def _bad_cm(self, message: str, param: Optional[str] = None) -> mock.MagicMock:
         cm = mock.MagicMock()
         cm.__enter__.side_effect = self._rejection(message, param)
         return cm
@@ -277,21 +278,35 @@ class TranslateStreamTests(unittest.TestCase):
             ),
             self._ok_cm(),
         ]
-        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._reasoning_fallbacks.clear)
         self.addCleanup(translator._models_without_temperature.clear)
         with mock.patch.object(providers, "get_client", return_value=client):
             out = list(translator.translate_stream("hello", model="gpt-6-sol-pro"))
         self.assertEqual(out, ["hi"])
-        self.assertNotIn("reasoning", client.responses.stream.call_args_list[1].kwargs)
+        retry = client.responses.stream.call_args_list[1].kwargs
+        self.assertEqual(retry["reasoning"], {"effort": "low"})
+        self.assertNotIn("temperature", retry)
 
-    def test_retries_without_reasoning_when_rejected(self) -> None:
+    def test_param_takes_precedence_over_the_message(self) -> None:
+        import openai
+
+        client = mock.Mock()
+        client.responses.stream.return_value = self._bad_cm(
+            "Input is too long for this temperature setting", param="input"
+        )
+        with mock.patch.object(providers, "get_client", return_value=client):
+            with self.assertRaises(openai.BadRequestError):
+                list(translator.translate_stream("hello", model="gpt-5.4-mini"))
+        self.assertEqual(client.responses.stream.call_count, 1)
+
+    def test_falls_back_to_low_effort_and_remembers_it(self) -> None:
         client = mock.Mock()
         client.responses.stream.side_effect = [
             self._bad_cm("Unsupported value: 'reasoning.effort' does not support 'none'"),
             self._ok_cm(),
             self._ok_cm(),
         ]
-        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._reasoning_fallbacks.clear)
         self.addCleanup(translator._models_without_temperature.clear)
         with mock.patch.object(providers, "get_client", return_value=client):
             first = list(translator.translate_stream("hello", model="gpt-5.4-pro"))
@@ -301,10 +316,65 @@ class TranslateStreamTests(unittest.TestCase):
         calls = client.responses.stream.call_args_list
         self.assertEqual(calls[0].kwargs["reasoning"], {"effort": "none"})
         self.assertIn("temperature", calls[0].kwargs)
-        # Back at its default effort, the model gets no temperature either.
+        # With reasoning on, the model gets no temperature either.
         for call in calls[1:]:
+            self.assertEqual(call.kwargs["reasoning"], {"effort": "low"})
+            self.assertNotIn("temperature", call.kwargs)
+
+    def test_retries_without_reasoning_when_low_is_rejected_too(self) -> None:
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm("Unsupported value: 'none'", param="reasoning.effort"),
+            self._bad_cm("Unsupported value: 'low'", param="reasoning.effort"),
+            self._ok_cm(),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            first = list(translator.translate_stream("hello", model="gpt-5.4-pro"))
+            second = list(translator.translate_stream("hello", model="gpt-5.4-pro"))
+        self.assertEqual(first, ["hi"])
+        self.assertEqual(second, ["hi"])
+        calls = client.responses.stream.call_args_list
+        self.assertEqual(calls[1].kwargs["reasoning"], {"effort": "low"})
+        for call in calls[2:]:  # back at its default effort, and remembered
             self.assertNotIn("reasoning", call.kwargs)
             self.assertNotIn("temperature", call.kwargs)
+
+    def test_retries_are_bounded(self) -> None:
+        import openai
+
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm("Unsupported parameter", param="temperature"),
+            self._bad_cm("Unsupported value", param="reasoning.effort"),
+            self._bad_cm("Unsupported value", param="reasoning.effort"),
+            self._bad_cm("Unsupported parameter", param="reasoning"),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            with self.assertRaises(openai.BadRequestError):
+                list(translator.translate_stream("hello", model="gpt-5.4-pro"))
+        self.assertEqual(client.responses.stream.call_count, 4)
+
+    def test_no_retry_when_cancelled_after_reasoning_rejection(self) -> None:
+        client = mock.Mock()
+        client.responses.stream.return_value = self._bad_cm(
+            "Unsupported value", param="reasoning.effort"
+        )
+        self.addCleanup(translator._reasoning_fallbacks.clear)
+        cancel = iter([False])
+        with mock.patch.object(providers, "get_client", return_value=client):
+            out = list(
+                translator.translate_stream(
+                    "hello", model="gpt-6-astra", should_cancel=lambda: next(cancel, True)
+                )
+            )
+        self.assertEqual(out, [])
+        self.assertEqual(client.responses.stream.call_count, 1)
 
     def test_temperature_error_is_checked_before_reasoning(self) -> None:
         client = mock.Mock()
@@ -312,7 +382,7 @@ class TranslateStreamTests(unittest.TestCase):
             self._bad_cm("'temperature' is not supported with this reasoning setting"),
             self._ok_cm(),
         ]
-        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._reasoning_fallbacks.clear)
         self.addCleanup(translator._models_without_temperature.clear)
         with mock.patch.object(providers, "get_client", return_value=client):
             out = list(translator.translate_stream("hello", model="gpt-6-luna"))

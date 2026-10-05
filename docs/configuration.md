@@ -107,13 +107,17 @@ effort: none for the `gpt-5.1`, `gpt-5.2`, `gpt-5.4`, `gpt-5.5`, `gpt-5.6`, and
 `gpt-6` families (such as `gpt-5.4-mini`, `gpt-5.6-luna`, and `gpt-6-luna`),
 and low for `gpt-6-astra` and `gpt-6.1-sol`, which can't turn reasoning off.
 The list is `REASONING_EFFORTS` in
-[`type_fast/config.py`](../type_fast/config.py).
+[`type_fast/config.py`](../type_fast/config.py). It matches the start of the
+model name, so for Azure AI Foundry, name the deployment after its model (for
+example `gpt-5.4-mini`) to get the same behavior.
 
 A reasoning model accepts a `temperature` setting only with reasoning turned
 off, so it is omitted for the others (such as `gpt-5`, `gpt-5-mini`, and the
 `o1`, `o3`, and `o4` families) automatically. If a model or custom-named
-deployment rejects `temperature` or the reasoning effort, the request is
-retried without it, and that model is remembered for the rest of the session.
+deployment rejects `temperature`, the request is retried without it. If it
+rejects reasoning effort none, the request is retried with low effort, and then
+without the setting. Either way, the model is remembered for the rest of the
+session.
 
 ## Where settings are stored
 
