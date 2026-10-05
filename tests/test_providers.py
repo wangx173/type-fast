@@ -112,7 +112,7 @@ class AzureSettingsTests(_IsolatedProviders):
         self.assertEqual(azure_provider.get_model(), "translate")
         self.assertEqual(azure_provider.endpoint_host(), "example.services.ai.azure.com")
         self.set_up_azure("")
-        self.assertEqual(azure_provider.get_model(), config.DEFAULT_AZURE_MODEL)
+        self.assertEqual(azure_provider.get_model(), config.DEFAULT_OPENAI_MODEL)
 
     def test_deployment_problem(self) -> None:
         self.assertIsNone(azure_provider.deployment_problem("translate"))

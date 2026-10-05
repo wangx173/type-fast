@@ -10,7 +10,7 @@
 
 Type Fast translates with either **OpenAI** or **Azure AI Foundry**. The
 bottom of the window shows which one is in use, followed by the model, for
-example **OpenAI · gpt-5.4-mini** or **Azure · gpt-4.1-mini**. Hover over it
+example **OpenAI · gpt-5.4-mini** or **Azure · gpt-5.4-mini**. Hover over it
 for the full provider name, and for Foundry the endpoint's host name.
 
 To switch, choose **Settings → Provider** and pick one; the checked item is the
@@ -57,8 +57,8 @@ You can also set the Foundry endpoint and API key yourself:
 ```sh
 export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
 export AZURE_AI_API_KEY='<your-foundry-key>'
-# Optional: pick a specific model/deployment (defaults to gpt-4.1-mini)
-export AZURE_AI_MODEL='gpt-4.1-mini'
+# Optional: pick a specific model/deployment (defaults to gpt-5.4-mini)
+export AZURE_AI_MODEL='gpt-5.4-mini'
 ```
 
 Unless you've picked OpenAI in [**Settings → Provider**](#choose-a-provider),
@@ -76,7 +76,7 @@ echo 'https://<resource>.services.ai.azure.com' > ~/.type-fast/azure_ai_endpoint
 echo '<your-foundry-key>' > ~/.type-fast/azure_ai_api_key
 chmod 600 ~/.type-fast/azure_ai_api_key
 # Optional model/deployment override:
-echo 'gpt-4.1-mini' > ~/.type-fast/azure_ai_model
+echo 'gpt-5.4-mini' > ~/.type-fast/azure_ai_model
 ```
 
 ## Model
@@ -91,9 +91,11 @@ Each provider keeps its own model setting, in its own submenu of **Settings**:
   (or along with the endpoint and key in
   **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**).
 
-Leave the model or deployment blank to go back to the default: `gpt-5.4-mini`
-for OpenAI, and a deployment named `gpt-4.1-mini` for Foundry (the one the
-[setup guide](foundry-setup.md) creates). It's saved under `~/.type-fast/`. An
+Leave the model or deployment blank to go back to the default,
+`gpt-5.4-mini` (for Foundry, a deployment with that name, which the
+[setup guide](foundry-setup.md) creates). The default used to be
+`gpt-4.1-mini`: if your Foundry deployment has that name and you never saved
+it, enter it in **Set Deployment…**. It's saved under `~/.type-fast/`. An
 environment variable takes precedence over the file:
 
 | Provider         | Environment variable | Fallback file                 |

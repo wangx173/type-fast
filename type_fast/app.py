@@ -398,7 +398,7 @@ class AzureSetupDialog(QDialog):
         self.key_edit.setEchoMode(QLineEdit.Password)
         self.key_edit.setPlaceholderText("Key 1 or Key 2")
         self.model_edit = QLineEdit(model)
-        self.model_edit.setPlaceholderText(config.DEFAULT_AZURE_MODEL)
+        self.model_edit.setPlaceholderText(config.DEFAULT_OPENAI_MODEL)
 
         form = QFormLayout()
         # macOS keeps fields at their hint width; widen them to show endpoints.
@@ -1469,7 +1469,7 @@ class MainWindow(QMainWindow):
         prompt = (
             "Deployment name, exactly as shown in the Foundry portal\n"
             f"(stored in {azure_provider.MODEL_FILE}; leave blank for "
-            f"{config.DEFAULT_AZURE_MODEL}):"
+            f"{config.DEFAULT_OPENAI_MODEL}):"
         ) + self._not_in_use_note(azure_provider, "deployment")
         model = azure_provider.saved_model()
         while True:

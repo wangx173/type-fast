@@ -12,13 +12,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-# Default OpenAI model. With reasoning turned off it starts streaming sooner
-# than gpt-4.1-mini and translates more accurately.
+# Default model for both providers: the OpenAI model, and the Azure AI Foundry
+# deployment name the setup script and guide create. With reasoning turned off
+# it starts streaming sooner than gpt-4.1-mini and translates more accurately.
 DEFAULT_OPENAI_MODEL = "gpt-5.4-mini"
-
-# Default Azure AI Foundry deployment name: the one the setup script and guide
-# create, so existing Foundry setups keep working.
-DEFAULT_AZURE_MODEL = "gpt-4.1-mini"
 
 # OpenAI models offered in Settings › OpenAI › Set Model…. The dialog is
 # editable, so any other OpenAI model name can be typed in as well. Azure AI

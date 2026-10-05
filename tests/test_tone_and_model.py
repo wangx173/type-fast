@@ -112,12 +112,17 @@ class ModelSelectionTests(unittest.TestCase):
         self.assertEqual(providers.get_model(), "gpt-4o")
         self.assertEqual(providers.model_env_override(), "OPENAI_MODEL")
 
-    def test_defaults_are_per_provider(self) -> None:
+    def test_both_providers_share_the_default(self) -> None:
         self.assertEqual(config.DEFAULT_OPENAI_MODEL, "gpt-5.4-mini")
         self.assertEqual(config.MODEL_CHOICES[0], config.DEFAULT_OPENAI_MODEL)
-        # Foundry keeps the deployment name its setup script and guide create.
-        self.assertEqual(config.DEFAULT_AZURE_MODEL, "gpt-4.1-mini")
-        self.assertEqual(azure_provider.get_model(), config.DEFAULT_AZURE_MODEL)
+        self.assertEqual(openai_provider.get_model(), config.DEFAULT_OPENAI_MODEL)
+        self.assertEqual(azure_provider.get_model(), config.DEFAULT_OPENAI_MODEL)
+
+    def test_setup_script_deploys_the_default_model(self) -> None:
+        script = Path(__file__).resolve().parents[1] / "scripts" / "setup-foundry.sh"
+        self.assertIn(
+            f'DEFAULT_MODEL="{config.DEFAULT_OPENAI_MODEL}"', script.read_text()
+        )
 
     def test_azure_model_saved_when_azure_active(self) -> None:
         os.environ["AZURE_AI_ENDPOINT"] = "https://example.services.ai.azure.com"
