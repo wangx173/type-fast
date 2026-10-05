@@ -1,8 +1,8 @@
 ---
-name: Task
+name: Chore
 about: Docs, maintenance, refactoring, or an investigation
 title: ""
-labels: task
+labels: chore
 ---
 
 <!--

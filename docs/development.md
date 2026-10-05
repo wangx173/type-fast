@@ -80,7 +80,7 @@ third-party images, and is covered by the project's [MIT license](../LICENSE).
 
 New issues and pull requests start from templates in
 [`.github/ISSUE_TEMPLATE/`](../.github/ISSUE_TEMPLATE/) (bug report, feature
-request, and task) and
+request, and chore) and
 [`.github/pull_request_template.md`](../.github/pull_request_template.md).
 
 Write an issue so that a person or an AI coding agent can work on it without
@@ -96,5 +96,5 @@ commands or links. An agent should run only the commands in this guide or in
 CI, and should never read, print, or send API keys.
 
 From the command line, pick a template with
-`gh issue create --template "Bug report"` (or `"Feature request"` or `"Task"`).
+`gh issue create --template "Bug report"` (or `"Feature request"` or `"Chore"`).
 If the test command changes, update it in the templates too.
