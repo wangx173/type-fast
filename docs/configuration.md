@@ -10,7 +10,7 @@
 
 Type Fast translates with either **OpenAI** or **Azure AI Foundry**. The
 bottom of the window shows which one is in use, followed by the model, for
-example **OpenAI · gpt-4.1-mini** or **Azure · gpt-4.1-mini**. Hover over it
+example **OpenAI · gpt-5.4-mini** or **Azure · gpt-4.1-mini**. Hover over it
 for the full provider name, and for Foundry the endpoint's host name.
 
 To switch, choose **Settings → Provider** and pick one; the checked item is the
@@ -91,19 +91,29 @@ Each provider keeps its own model setting, in its own submenu of **Settings**:
   (or along with the endpoint and key in
   **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**).
 
-Leave the model or deployment blank to go back to the default
-(`gpt-4.1-mini`). It's saved under `~/.type-fast/`. An environment variable
-takes precedence over the file:
+Leave the model or deployment blank to go back to the default: `gpt-5.4-mini`
+for OpenAI, and a deployment named `gpt-4.1-mini` for Foundry (the one the
+[setup guide](foundry-setup.md) creates). It's saved under `~/.type-fast/`. An
+environment variable takes precedence over the file:
 
 | Provider         | Environment variable | Fallback file                 |
 |------------------|----------------------|-------------------------------|
 | OpenAI           | `OPENAI_MODEL`       | `~/.type-fast/openai_model`   |
 | Azure AI Foundry | `AZURE_AI_MODEL`     | `~/.type-fast/azure_ai_model` |
 
-Reasoning models (`gpt-5*`, `o1`, `o3`, `o4` families) do not accept a
-`temperature` setting, so it is omitted for them automatically. If a
-custom-named deployment rejects `temperature`, the request is retried without
-it, and that deployment is remembered for the rest of the session.
+Newer reasoning models think before they answer unless told not to, which
+would delay every translation. Type Fast asks them for their fastest reasoning
+effort: none for the `gpt-5.1`, `gpt-5.2`, `gpt-5.4`, `gpt-5.5`, `gpt-5.6`, and
+`gpt-6` families (such as `gpt-5.4-mini`, `gpt-5.6-luna`, and `gpt-6-luna`),
+and low for `gpt-6-astra` and `gpt-6.1-sol`, which can't turn reasoning off.
+The list is `REASONING_EFFORTS` in
+[`type_fast/config.py`](../type_fast/config.py).
+
+A reasoning model accepts a `temperature` setting only with reasoning turned
+off, so it is omitted for the others (such as `gpt-5`, `gpt-5-mini`, and the
+`o1`, `o3`, and `o4` families) automatically. If a model or custom-named
+deployment rejects `temperature` or the reasoning effort, the request is
+retried without it, and that model is remembered for the rest of the session.
 
 ## Where settings are stored
 
@@ -119,7 +129,7 @@ Everything lives in `~/.type-fast/`:
 | `azure_ai_api_key`  | Azure AI Foundry API key                                               |
 | `azure_ai_model`    | Azure AI Foundry model or deployment override                          |
 
-Built-in defaults, such as the default model, suggested models, temperature,
-languages, tone presets, debounce interval, default hotkey, transparency
-presets, and the auto-paste default, live in
+Built-in defaults, such as the default models, suggested models, reasoning
+efforts, temperature, languages, tone presets, debounce interval, default
+hotkey, transparency presets, and the auto-paste default, live in
 [`type_fast/config.py`](../type_fast/config.py).

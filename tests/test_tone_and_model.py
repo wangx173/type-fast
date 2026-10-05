@@ -95,7 +95,7 @@ class ModelSelectionTests(unittest.TestCase):
         self.addCleanup(patcher.stop)
 
     def test_openai_default_model(self) -> None:
-        self.assertEqual(providers.get_model(), config.DEFAULT_MODEL)
+        self.assertEqual(providers.get_model(), config.DEFAULT_OPENAI_MODEL)
         self.assertIsNone(providers.model_env_override())
 
     def test_saved_model_is_used_and_blank_restores_default(self) -> None:
@@ -103,13 +103,20 @@ class ModelSelectionTests(unittest.TestCase):
         self.assertEqual(providers.get_model(), "gpt-4.1")
         providers.save_model("  ")
         self.assertFalse(openai_provider.MODEL_FILE.exists())
-        self.assertEqual(providers.get_model(), config.DEFAULT_MODEL)
+        self.assertEqual(providers.get_model(), config.DEFAULT_OPENAI_MODEL)
 
     def test_env_overrides_saved_model(self) -> None:
         providers.save_model("gpt-4.1")
         os.environ["OPENAI_MODEL"] = "gpt-4o"
         self.assertEqual(providers.get_model(), "gpt-4o")
         self.assertEqual(providers.model_env_override(), "OPENAI_MODEL")
+
+    def test_defaults_are_per_provider(self) -> None:
+        self.assertEqual(config.DEFAULT_OPENAI_MODEL, "gpt-5.4-mini")
+        self.assertEqual(config.MODEL_CHOICES[0], config.DEFAULT_OPENAI_MODEL)
+        # Foundry keeps the deployment name its setup script and guide create.
+        self.assertEqual(config.DEFAULT_AZURE_MODEL, "gpt-4.1-mini")
+        self.assertEqual(azure_provider.get_model(), config.DEFAULT_AZURE_MODEL)
 
     def test_azure_model_saved_when_azure_active(self) -> None:
         os.environ["AZURE_AI_ENDPOINT"] = "https://example.services.ai.azure.com"
@@ -118,6 +125,33 @@ class ModelSelectionTests(unittest.TestCase):
         self.assertEqual(azure_provider.MODEL_FILE.read_text(), "my-deployment")
         self.assertFalse(openai_provider.MODEL_FILE.exists())
         self.assertEqual(providers.get_model(), "my-deployment")
+
+
+class ReasoningEffortTests(unittest.TestCase):
+    def test_fastest_supported_effort(self) -> None:
+        cases = {
+            "gpt-5.4-mini": "none",
+            "GPT-5.4-Nano": "none",
+            "gpt-5.6-luna": "none",
+            "gpt-5.5": "none",
+            "gpt-5.1": "none",
+            "gpt-6-luna": "none",
+            "gpt-6-sol": "none",
+            "gpt-6-astra": "low",  # doesn't support "none"
+            "gpt-6.1-sol": "low",
+        }
+        for model, effort in cases.items():
+            self.assertEqual(config.reasoning_effort(model), effort, model)
+
+    def test_other_models_send_no_effort(self) -> None:
+        for model in ("gpt-4.1-mini", "gpt-4o", "gpt-5", "gpt-5-mini", "o4-mini", "translate"):
+            self.assertIsNone(config.reasoning_effort(model), model)
+
+    def test_temperature_only_without_reasoning(self) -> None:
+        self.assertTrue(config.supports_temperature("gpt-5.4-mini", "none"))
+        self.assertFalse(config.supports_temperature("gpt-6-astra", "low"))
+        self.assertFalse(config.supports_temperature("gpt-6-luna"))
+        self.assertTrue(config.supports_temperature("gpt-4.1-mini"))
 
 
 class TranslateStreamTests(unittest.TestCase):
@@ -144,6 +178,21 @@ class TranslateStreamTests(unittest.TestCase):
     def test_reasoning_models_omit_temperature(self) -> None:
         for model in ("gpt-5-mini", "o4-mini", "GPT-5"):
             self.assertNotIn("temperature", self._run(model))
+
+    def test_non_reasoning_models_send_no_reasoning(self) -> None:
+        for model in ("gpt-4.1", "gpt-5-mini", "my-deploy"):
+            self.assertNotIn("reasoning", self._run(model))
+
+    def test_newer_models_turn_reasoning_off(self) -> None:
+        for model in ("gpt-5.4-mini", "gpt-6-luna"):
+            kwargs = self._run(model)
+            self.assertEqual(kwargs["reasoning"], {"effort": "none"})
+            self.assertEqual(kwargs["temperature"], config.DEFAULT_TEMPERATURE)
+
+    def test_models_without_none_use_low_effort(self) -> None:
+        kwargs = self._run("gpt-6-astra")
+        self.assertEqual(kwargs["reasoning"], {"effort": "low"})
+        self.assertNotIn("temperature", kwargs)
 
     def test_uses_the_client_it_is_given(self) -> None:
         stream_cm = mock.MagicMock()
@@ -194,6 +243,93 @@ class TranslateStreamTests(unittest.TestCase):
         self.assertIn("temperature", calls[0].kwargs)
         self.assertNotIn("temperature", calls[1].kwargs)
         self.assertNotIn("temperature", calls[2].kwargs)  # remembered
+
+    @staticmethod
+    def _rejection(message: str, param=None):
+        import openai
+
+        error = openai.BadRequestError.__new__(openai.BadRequestError)
+        Exception.__init__(error, message)
+        error.param = param
+        return error
+
+    @staticmethod
+    def _ok_cm() -> mock.MagicMock:
+        cm = mock.MagicMock()
+        cm.__enter__.return_value = iter(
+            [mock.Mock(type="response.output_text.delta", delta="hi")]
+        )
+        return cm
+
+    def _bad_cm(self, message: str, param=None) -> mock.MagicMock:
+        cm = mock.MagicMock()
+        cm.__enter__.side_effect = self._rejection(message, param)
+        return cm
+
+    def test_reasoning_rejection_is_recognized_by_its_param(self) -> None:
+        # The API names the field in ``param``; the message may not mention it.
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm(
+                "Unsupported value: 'none' is not supported with the "
+                "'gpt-6-sol-pro' model.",
+                param="reasoning.effort",
+            ),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            out = list(translator.translate_stream("hello", model="gpt-6-sol-pro"))
+        self.assertEqual(out, ["hi"])
+        self.assertNotIn("reasoning", client.responses.stream.call_args_list[1].kwargs)
+
+    def test_retries_without_reasoning_when_rejected(self) -> None:
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm("Unsupported value: 'reasoning.effort' does not support 'none'"),
+            self._ok_cm(),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            first = list(translator.translate_stream("hello", model="gpt-5.4-pro"))
+            second = list(translator.translate_stream("hello", model="gpt-5.4-pro"))
+        self.assertEqual(first, ["hi"])
+        self.assertEqual(second, ["hi"])
+        calls = client.responses.stream.call_args_list
+        self.assertEqual(calls[0].kwargs["reasoning"], {"effort": "none"})
+        self.assertIn("temperature", calls[0].kwargs)
+        # Back at its default effort, the model gets no temperature either.
+        for call in calls[1:]:
+            self.assertNotIn("reasoning", call.kwargs)
+            self.assertNotIn("temperature", call.kwargs)
+
+    def test_temperature_error_is_checked_before_reasoning(self) -> None:
+        client = mock.Mock()
+        client.responses.stream.side_effect = [
+            self._bad_cm("'temperature' is not supported with this reasoning setting"),
+            self._ok_cm(),
+        ]
+        self.addCleanup(translator._models_without_reasoning.clear)
+        self.addCleanup(translator._models_without_temperature.clear)
+        with mock.patch.object(providers, "get_client", return_value=client):
+            out = list(translator.translate_stream("hello", model="gpt-6-luna"))
+        self.assertEqual(out, ["hi"])
+        retry = client.responses.stream.call_args_list[1].kwargs
+        self.assertNotIn("temperature", retry)
+        self.assertEqual(retry["reasoning"], {"effort": "none"})
+
+    def test_unrelated_errors_are_not_retried(self) -> None:
+        import openai
+
+        client = mock.Mock()
+        client.responses.stream.return_value = self._bad_cm("Invalid model")
+        with mock.patch.object(providers, "get_client", return_value=client):
+            with self.assertRaises(openai.BadRequestError):
+                list(translator.translate_stream("hello", model="gpt-5.4-mini"))
+        self.assertEqual(client.responses.stream.call_count, 1)
 
     def test_no_retry_when_cancelled(self) -> None:
         import openai

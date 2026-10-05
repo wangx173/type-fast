@@ -403,8 +403,11 @@ it fast and cheap:
 - **Use a small model.** `gpt-4.1-mini` (the default) is a good balance.
   `gpt-4.1-nano` is cheaper and faster; larger models such as `gpt-4.1` cost
   more and are slower to respond.
-- **Avoid reasoning models** (`gpt-5*`, `o`-series) for live translation. They
-  spend extra time and tokens thinking before they answer.
+- **Avoid reasoning models that can't turn reasoning off** (`gpt-5`,
+  `gpt-5-mini`, `gpt-5-nano`, and the `o`-series) for live translation. They
+  spend extra time and tokens thinking before they answer. Newer ones, such as
+  `gpt-5.4-mini`, are asked not to think, so they answer quickly; it's the
+  OpenAI default.
 - **Use Global Standard** pay-per-token deployments. Provisioned throughput
   (PTU) is billed by the hour, whether you use it or not.
 - **Set a budget.** In the Azure portal, create a budget with alerts under

@@ -4,7 +4,7 @@ The API key is read from the ``OPENAI_API_KEY`` environment variable, or, when
 that is not set, from the fallback file ``~/.type-fast/api_key``. The model is
 read from ``OPENAI_MODEL`` or ``~/.type-fast/openai_model`` (settable in the app
 via Settings › OpenAI › Set Model…), defaulting to
-:data:`type_fast.config.DEFAULT_MODEL`.
+:data:`type_fast.config.DEFAULT_OPENAI_MODEL`.
 This is the default provider (see :mod:`type_fast.providers` for how one is chosen).
 """
 
@@ -42,8 +42,8 @@ def is_configured() -> bool:
 
 
 def get_model() -> str:
-    """Return the model name used for OpenAI requests (or the shared default)."""
-    return from_env_or_file(MODEL_ENV, MODEL_FILE) or config.DEFAULT_MODEL
+    """Return the model name used for OpenAI requests (or the OpenAI default)."""
+    return from_env_or_file(MODEL_ENV, MODEL_FILE) or config.DEFAULT_OPENAI_MODEL
 
 
 def save_model(model: str) -> None:

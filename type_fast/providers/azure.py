@@ -67,8 +67,8 @@ def saved_model() -> str:
 
 
 def get_model() -> str:
-    """Return the Foundry model/deployment name (or the shared default)."""
-    return saved_model() or config.DEFAULT_MODEL
+    """Return the Foundry model/deployment name (or the default deployment)."""
+    return saved_model() or config.DEFAULT_AZURE_MODEL
 
 
 def save_model(model: str) -> None:
