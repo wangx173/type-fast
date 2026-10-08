@@ -122,11 +122,12 @@ TONES = {
     "Neutral": "Mirror the register of the original text without making it more or less formal.",
     "Tech": (
         "Write for a technical audience in a clear, neutral, professional register. "
-        "Render technical terms, product names, and jargon the way practitioners "
-        "actually write them in the target language, not as literal dictionary "
-        "translations. For Japanese, that usually means the established katakana "
-        "loanword (embedding → エンベディング, not 埋め込み; token → トークン; "
-        "prompt → プロンプト; fine-tuning → ファインチューニング; deploy → デプロイ); "
+        "Render technical terms and jargon the way practitioners actually write "
+        "them in the target language, not as literal dictionary translations. "
+        "When the target language is Japanese, that usually means the "
+        "established katakana loanword (embedding → エンベディング, not 埋め込み; "
+        "token → トークン; prompt → プロンプト; fine-tuning → ファインチューニング; "
+        "deploy → デプロイ); "
         "this is the expected translation, not transliteration. For other target "
         "languages, don't apply these Japanese rules; use the term practitioners "
         "in that language use. Keep code, identifiers, CLI commands, file paths, "

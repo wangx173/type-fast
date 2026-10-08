@@ -4,13 +4,42 @@ from __future__ import annotations
 
 import os
 import tempfile
+import types
 import unittest
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Callable, Optional
 from unittest import mock
 
 from type_fast import config, providers, settings, translator
 from type_fast.providers import azure as azure_provider, openai as openai_provider
+
+if TYPE_CHECKING:
+    from type_fast.app import MainWindow
+
+_HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
+
+
+def _isolate_provider_state(test: unittest.TestCase, root: Path) -> None:
+    """Point provider files at ``root`` and hide OPENAI_*/AZURE_AI_* env vars."""
+    for target, attr, name in [
+        (openai_provider, "MODEL_FILE", "openai_model"),
+        (openai_provider, "API_KEY_FILE", "api_key"),
+        (azure_provider, "MODEL_FILE", "azure_ai_model"),
+        (azure_provider, "ENDPOINT_FILE", "azure_ai_endpoint"),
+        (azure_provider, "API_KEY_FILE", "azure_ai_api_key"),
+        (providers, "PROVIDER_FILE", "provider"),
+    ]:
+        patcher = mock.patch.object(target, attr, root / name)
+        patcher.start()
+        test.addCleanup(patcher.stop)
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if not k.startswith(("OPENAI_", "AZURE_AI_"))
+    }
+    patcher = mock.patch.dict(os.environ, env, clear=True)
+    patcher.start()
+    test.addCleanup(patcher.stop)
 
 
 class SystemPromptTests(unittest.TestCase):
@@ -34,21 +63,41 @@ class SystemPromptTests(unittest.TestCase):
 
 
 class TechToneTests(unittest.TestCase):
-    def test_tech_is_last_preset_before_custom(self) -> None:
-        self.assertIn("Tech", config.TONES)
-        self.assertEqual(list(config.TONES)[-1], "Tech")
+    def test_tech_preset_follows_existing_presets(self) -> None:
+        names = list(config.TONES)
+        self.assertIn("Tech", names)
+        self.assertNotIn(config.CUSTOM_TONE, names)
+        for name in ("Polite", "Casual", "Formal", "Business", "Friendly", "Neutral"):
+            self.assertLess(names.index(name), names.index("Tech"))
+
+    def test_default_tone_unchanged(self) -> None:
         self.assertEqual(config.DEFAULT_TONE, "Polite")
 
-    def test_tech_instruction_covers_terms_and_code(self) -> None:
+    def test_tech_instruction_prefers_practitioner_terms(self) -> None:
         tech = config.TONES["Tech"]
-        # Practitioner loanwords, with the literal translation called out.
-        for term in ("エンベディング", "埋め込み", "トークン", "プロンプト", "デプロイ"):
-            self.assertIn(term, tech)
-        self.assertIn("not transliteration", tech)
-        # Japanese rules must not be applied to other target languages.
-        self.assertIn("For other target languages", tech)
-        # Code, names, and acronyms stay untranslated.
-        for phrase in ("code", "identifiers", "CLI commands", "file paths", "kubectl", "LLM"):
+        # The direction matters: the loanword wins over the literal translation.
+        for mapping in (
+            "embedding → エンベディング, not 埋め込み",
+            "token → トークン",
+            "prompt → プロンプト",
+            "fine-tuning → ファインチューニング",
+            "deploy → デプロイ",
+        ):
+            self.assertIn(mapping, tech)
+        self.assertIn("other target languages", tech)
+
+    def test_tech_instruction_keeps_code_and_names(self) -> None:
+        tech = config.TONES["Tech"]
+        for phrase in (
+            "identifiers",
+            "CLI commands",
+            "file paths",
+            "Azure OpenAI",
+            "kubectl",
+            "LLM",
+            "API",
+            "GPU",
+        ):
             self.assertIn(phrase, tech)
 
 
@@ -104,26 +153,7 @@ class ModelSelectionTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        root = Path(self.tmp.name)
-        for target, attr, name in [
-            (openai_provider, "MODEL_FILE", "openai_model"),
-            (openai_provider, "API_KEY_FILE", "api_key"),
-            (azure_provider, "MODEL_FILE", "azure_ai_model"),
-            (azure_provider, "ENDPOINT_FILE", "azure_ai_endpoint"),
-            (azure_provider, "API_KEY_FILE", "azure_ai_api_key"),
-            (providers, "PROVIDER_FILE", "provider"),
-        ]:
-            patcher = mock.patch.object(target, attr, root / name)
-            patcher.start()
-            self.addCleanup(patcher.stop)
-        env = {
-            k: v
-            for k, v in os.environ.items()
-            if not k.startswith(("OPENAI_", "AZURE_AI_"))
-        }
-        patcher = mock.patch.dict(os.environ, env, clear=True)
-        patcher.start()
-        self.addCleanup(patcher.stop)
+        _isolate_provider_state(self, Path(self.tmp.name))
 
     def test_openai_default_model(self) -> None:
         self.assertEqual(providers.get_model(), config.DEFAULT_OPENAI_MODEL)
@@ -512,17 +542,19 @@ class TranslateStreamTests(unittest.TestCase):
 class _InlineThread:
     """Stand-in for ``threading.Thread`` that runs its target on ``start()``."""
 
-    def __init__(self, target, args=(), daemon=None) -> None:
+    def __init__(
+        self,
+        target: Callable[..., object],
+        args: tuple[object, ...] = (),
+        daemon: Optional[bool] = None,  # accepted like threading.Thread; unused
+    ) -> None:
         self._target, self._args = target, args
 
     def start(self) -> None:
         self._target(*self._args)
 
 
-@unittest.skipUnless(
-    os.environ.get("QT_QPA_PLATFORM") == "offscreen",
-    "set QT_QPA_PLATFORM=offscreen to run the headless window tests",
-)
+@unittest.skipUnless(_HEADLESS, "set QT_QPA_PLATFORM=offscreen to run the headless window tests")
 class WindowToneTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
@@ -531,14 +563,18 @@ class WindowToneTests(unittest.TestCase):
         cls.app = QApplication.instance() or QApplication([])
 
     def setUp(self) -> None:
-        import types
-
-        from type_fast import app
+        from type_fast import app  # deferred: imports Qt
 
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
+        root = Path(self.tmp.name)
+        patcher = mock.patch.object(settings, "SETTINGS_FILE", root / "settings.json")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Keep real provider files, keys, and the live API out of these tests.
+        _isolate_provider_state(self, root)
         patcher = mock.patch.object(
-            settings, "SETTINGS_FILE", Path(self.tmp.name) / "settings.json"
+            providers, "get_client", return_value=mock.sentinel.client
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -550,8 +586,9 @@ class WindowToneTests(unittest.TestCase):
         self.calls: list[tuple] = []
         self.app_module = app
 
-    def _window(self):
+    def _window(self) -> MainWindow:
         window = self.app_module.MainWindow()
+        self.addCleanup(window.close)
         window._translate_worker = lambda *args: self.calls.append(args)
         return window
 
@@ -564,7 +601,9 @@ class WindowToneTests(unittest.TestCase):
         w = self._window()
         w.input.setPlainText("We store each document as an embedding.")
         w.tone.activated.emit(w.tone.findData("Tech"))
-        self.assertEqual(self.calls[-1][4], config.TONES["Tech"])
+        # _translate_worker(request_id, text, source, target, tone, model, client)
+        tone = self.calls[-1][4]
+        self.assertEqual(tone, config.TONES["Tech"])
         self.assertEqual(settings.load().tone, "Tech")
         # A new window (next launch) restores the Tech tone.
         self.assertEqual(self._window().tone.currentData(), "Tech")
