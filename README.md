@@ -35,8 +35,9 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   pasted into your app. It is on your clipboard too.
 - 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
   Spanish, French, German, and [more](docs/usage.md#languages).
-- 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral, or
-  your own custom instruction.
+- 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral,
+  Tech (keeps technical terms as engineers write them), or your own custom
+  instruction.
 - 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick an OpenAI model or your own Foundry deployment.
 
 ## Screenshots

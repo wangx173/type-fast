@@ -27,6 +27,30 @@ class SystemPromptTests(unittest.TestCase):
         prompt = translator.system_prompt("English", "Japanese", "   ")
         self.assertIn(config.TONES[config.DEFAULT_TONE], prompt)
 
+    def test_tech_tone_is_included(self) -> None:
+        prompt = translator.system_prompt("English", "Japanese", config.TONES["Tech"])
+        self.assertIn(config.TONES["Tech"], prompt)
+        self.assertNotIn(config.TONES[config.DEFAULT_TONE], prompt)
+
+
+class TechToneTests(unittest.TestCase):
+    def test_tech_is_last_preset_before_custom(self) -> None:
+        self.assertIn("Tech", config.TONES)
+        self.assertEqual(list(config.TONES)[-1], "Tech")
+        self.assertEqual(config.DEFAULT_TONE, "Polite")
+
+    def test_tech_instruction_covers_terms_and_code(self) -> None:
+        tech = config.TONES["Tech"]
+        # Practitioner loanwords, with the literal translation called out.
+        for term in ("エンベディング", "埋め込み", "トークン", "プロンプト", "デプロイ"):
+            self.assertIn(term, tech)
+        self.assertIn("not transliteration", tech)
+        # Japanese rules must not be applied to other target languages.
+        self.assertIn("For other target languages", tech)
+        # Code, names, and acronyms stay untranslated.
+        for phrase in ("code", "identifiers", "CLI commands", "file paths", "kubectl", "LLM"):
+            self.assertIn(phrase, tech)
+
 
 class ToneSettingsTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -49,6 +73,12 @@ class ToneSettingsTests(unittest.TestCase):
         self.assertEqual(loaded.tone, "Casual")
         self.assertEqual(loaded.custom_tone, "x")
         self.assertEqual(loaded.instruction(), config.TONES["Casual"])
+
+    def test_tech_round_trip(self) -> None:
+        settings.save(settings.Settings(tone="Tech"))
+        loaded = settings.load()
+        self.assertEqual(loaded.tone, "Tech")
+        self.assertEqual(loaded.instruction(), config.TONES["Tech"])
 
     def test_custom_tone_instruction(self) -> None:
         tone = settings.Settings(tone=config.CUSTOM_TONE, custom_tone=" Be terse. ")
@@ -477,6 +507,67 @@ class TranslateStreamTests(unittest.TestCase):
             )
         self.assertEqual(out, [])
         self.assertEqual(client.responses.stream.call_count, 1)
+
+
+class _InlineThread:
+    """Stand-in for ``threading.Thread`` that runs its target on ``start()``."""
+
+    def __init__(self, target, args=(), daemon=None) -> None:
+        self._target, self._args = target, args
+
+    def start(self) -> None:
+        self._target(*self._args)
+
+
+@unittest.skipUnless(
+    os.environ.get("QT_QPA_PLATFORM") == "offscreen",
+    "set QT_QPA_PLATFORM=offscreen to run the headless window tests",
+)
+class WindowToneTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        from PySide6.QtWidgets import QApplication
+
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        import types
+
+        from type_fast import app
+
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(
+            settings, "SETTINGS_FILE", Path(self.tmp.name) / "settings.json"
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(
+            app, "threading", types.SimpleNamespace(Thread=_InlineThread)
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.calls: list[tuple] = []
+        self.app_module = app
+
+    def _window(self):
+        window = self.app_module.MainWindow()
+        window._translate_worker = lambda *args: self.calls.append(args)
+        return window
+
+    def test_tech_is_listed_before_custom(self) -> None:
+        combo = self._window().tone
+        self.assertEqual(combo.itemData(combo.count() - 2), "Tech")
+        self.assertEqual(combo.itemData(combo.count() - 1), config.CUSTOM_TONE)
+
+    def test_picking_tech_retranslates_and_persists(self) -> None:
+        w = self._window()
+        w.input.setPlainText("We store each document as an embedding.")
+        w.tone.activated.emit(w.tone.findData("Tech"))
+        self.assertEqual(self.calls[-1][4], config.TONES["Tech"])
+        self.assertEqual(settings.load().tone, "Tech")
+        # A new window (next launch) restores the Tech tone.
+        self.assertEqual(self._window().tone.currentData(), "Tech")
 
 
 if __name__ == "__main__":
