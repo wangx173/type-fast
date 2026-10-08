@@ -190,7 +190,7 @@ pickers:
 | **Business**          | Professional, for work emails and meetings     |
 | **Friendly**          | Warm and approachable                          |
 | **Neutral**           | Mirrors the register of the original           |
-| **Tech**              | Technical; terms as engineers write them       |
+| **Tech**              | Technical; terms as practitioners write them   |
 
 **Tech** is for software, AI/ML, cloud, and engineering text. Technical terms
 use the form practitioners actually write rather than a literal translation; in

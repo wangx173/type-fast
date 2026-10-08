@@ -57,9 +57,10 @@ class SystemPromptTests(unittest.TestCase):
         self.assertIn(config.TONES[config.DEFAULT_TONE], prompt)
 
     def test_tech_tone_is_included(self) -> None:
-        prompt = translator.system_prompt("English", "Japanese", config.TONES["Tech"])
-        self.assertIn(config.TONES["Tech"], prompt)
-        self.assertNotIn(config.TONES[config.DEFAULT_TONE], prompt)
+        for source, target in (("English", "Japanese"), ("Japanese", "English")):
+            prompt = translator.system_prompt(source, target, config.TONES["Tech"])
+            self.assertIn(config.TONES["Tech"], prompt)
+            self.assertNotIn(config.TONES[config.DEFAULT_TONE], prompt)
 
 
 class TechToneTests(unittest.TestCase):
@@ -84,7 +85,11 @@ class TechToneTests(unittest.TestCase):
             "deploy → デプロイ",
         ):
             self.assertIn(mapping, tech)
-        self.assertIn("other target languages", tech)
+        # Overrides the system prompt's "no transliteration" rule for loanwords.
+        self.assertIn("expected translation, not transliteration", tech)
+        # The katakana rule is scoped to Japanese targets only.
+        self.assertIn("When the target language is Japanese", tech)
+        self.assertIn("don't apply these Japanese rules", tech)
 
     def test_tech_instruction_keeps_code_and_names(self) -> None:
         tech = config.TONES["Tech"]
