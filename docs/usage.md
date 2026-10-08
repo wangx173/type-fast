@@ -190,6 +190,13 @@ pickers:
 | **Business**          | Professional, for work emails and meetings     |
 | **Friendly**          | Warm and approachable                          |
 | **Neutral**           | Mirrors the register of the original           |
+| **Tech**              | Technical; terms as practitioners write them   |
+
+**Tech** is for software, AI/ML, cloud, and engineering text. Technical terms
+use the form practitioners actually write rather than a literal translation; in
+Japanese that usually means the katakana loanword (embedding → エンベディング,
+not 埋め込み; deploy → デプロイ). Code, identifiers, CLI commands, file paths,
+product names such as `kubectl`, and acronyms such as LLM are left unchanged.
 
 Choose **Custom…**, or **Settings → Set Custom Tone…**, to write your own
 instruction, such as "Humble keigo (謙譲語) for a client" or "Playful, with a
