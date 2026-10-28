@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Callable
 from unittest import mock
 
-import httpx
 import openai
 
 from type_fast import config, providers, settings, translator
@@ -56,8 +55,13 @@ def _pcm(*samples: int) -> bytes:
 
 
 def _api_error(cls: type[openai.APIStatusError], status: int) -> openai.APIStatusError:
-    request = httpx.Request("POST", "https://example.test/audio/transcriptions")
-    return cls("nope", response=httpx.Response(status, request=request), body=None)
+    # Build the error without an HTTP response object so the test does not
+    # depend on the openai SDK's transport library.
+    error = cls.__new__(cls)
+    Exception.__init__(error, "nope")
+    error.message = "nope"
+    error.status_code = status
+    return error
 
 
 class SystemPromptTests(unittest.TestCase):
