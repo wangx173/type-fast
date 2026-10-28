@@ -1265,24 +1265,28 @@ class MainWindow(QMainWindow):
         self.mic_button.setChecked(recording)
         self.record_action.setEnabled(enabled and not self._transcribing)
         self.record_action.setText("Stop Recording" if recording else "Start Recording")
-        keys = _VOICE_SHORTCUT_SYMBOLS
-        if self.voice_hotkey.is_registered:
-            keys += " in any app"
+        if self._voice_hotkey_unavailable():
+            # Pressing it may hide the window or reach another app instead.
+            keys = ""
+        elif self.voice_hotkey.is_registered:
+            keys = f" ({_VOICE_SHORTCUT_SYMBOLS} in any app)"
+        else:
+            keys = f" ({_VOICE_SHORTCUT_SYMBOLS})"
         if recording:
-            tip = f"Stop and transcribe ({keys})"
+            tip = f"Stop and transcribe{keys}"
         elif self._transcribing:
             tip = "Transcribing\u2026"
         else:
-            tip = f"Speak instead of typing ({keys})"
-        if (
-            enabled
-            and not self.voice_hotkey.is_registered
-            and hotkey.GlobalHotkey.is_supported()
-        ):
+            tip = f"Speak instead of typing{keys}"
+        if enabled and self._voice_hotkey_unavailable():
             # Also here: the footer that says so is hidden in compact mode.
             tip += f"\n{self._voice_hotkey_problem()}"
         self.mic_button.setToolTip(tip)
         self.mic_button.setAccessibleDescription(tip)
+
+    def _voice_hotkey_unavailable(self) -> bool:
+        """True when ⇧⌘M could be global here but isn't registered."""
+        return not self.voice_hotkey.is_registered and hotkey.GlobalHotkey.is_supported()
 
     def toggle_voice(self) -> None:
         """Handle the global voice hotkey, from any app.
@@ -1369,7 +1373,8 @@ class MainWindow(QMainWindow):
         except voice.VoiceError as exc:
             self._voice_failed(str(exc))
             return
-        self._set_status(f"Listening\u2026 ({_VOICE_SHORTCUT_SYMBOLS} to stop)", "busy")
+        stop = "click \U0001f399" if self._voice_hotkey_unavailable() else _VOICE_SHORTCUT_SYMBOLS
+        self._set_status(f"Listening\u2026 ({stop} to stop)", "busy")
         self._reflect_voice()
 
     def _stop_recording(self, hide_after: bool = False) -> None:
@@ -1627,6 +1632,10 @@ class MainWindow(QMainWindow):
         if state == Qt.ApplicationHidden:
             # Hiding the app (⌘H) doesn't always send the window a hide event.
             self._cancel_voice()
+        if state != Qt.ApplicationActive:
+            # Another app came forward while ⇧⌘M's transcription ran: don't
+            # hide and paste into it, even if Type Fast is back by then.
+            self._hide_after_voice = None
         if state == Qt.ApplicationActive:
             # Settings may have changed outside the app (e.g. the setup script);
             # if so, apply them to the current text too, not just the footer.
@@ -1672,11 +1681,7 @@ class MainWindow(QMainWindow):
                 f"{parsed.symbols()} could not be registered (it may be used by "
                 f"macOS or another app) \u2014 choose another in {where}"
             )
-        if (
-            self.prefs.voice_input
-            and not self.voice_hotkey.is_registered
-            and hotkey.GlobalHotkey.is_supported()
-        ):
+        if self.prefs.voice_input and self._voice_hotkey_unavailable():
             text += f" \u00b7 {_VOICE_SHORTCUT_SYMBOLS} unavailable"
             tip += f"\n{self._voice_hotkey_problem()}"
         self.hotkey_label.setText(text)

@@ -807,6 +807,23 @@ class WindowVoiceTests(unittest.TestCase):
         self.assertEqual(w.input.toPlainText(), "hi")
         self.assertTrue(w.isVisible())
 
+    def test_other_app_in_front_during_transcription_keeps_window_up(self) -> None:
+        from PySide6.QtCore import Qt
+
+        w = self._voice_window()
+
+        def transcribe(*args, **kwargs) -> str:
+            # Another app came forward; isActiveWindow() says Type Fast is
+            # back in front by the time the transcript arrives.
+            w._on_app_state_changed(Qt.ApplicationInactive)
+            return "hi"
+
+        with mock.patch.object(self.app_module.voice, "transcribe", side_effect=transcribe):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
     def test_voice_hotkey_cancels_pending_mic_permission(self) -> None:
         w = self._voice_window()
         callbacks = []
@@ -960,6 +977,12 @@ class WindowVoiceTests(unittest.TestCase):
             self.assertIn("could not be registered", w.hotkey_label.toolTip())
             # The footer is hidden in compact mode, so the mic button says so too.
             self.assertIn("could not be registered", w.mic_button.toolTip())
+            self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+            with mock.patch.object(self.app_module.voice, "transcribe", return_value=""):
+                w.toggle_recording()
+                self.assertNotIn("\u21e7\u2318M", w.status.text())
+                self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+                w.toggle_recording()
         self.assertIn("could not be registered", self.warnings.call_args.args[2])
         self.assertTrue(settings.load().voice_input)
         self.assertNotIn("in any app", w.mic_button.toolTip())
