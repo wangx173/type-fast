@@ -18,9 +18,10 @@ class PolishPromptTests(unittest.TestCase):
         prompt = translator.system_prompt(
             "English", "Japanese", "Be casual.", polish=True
         )
-        self.assertIn("Rewrite the user's text in natural English", prompt)
+        self.assertIn("in the same language it is written in (normally English)", prompt)
         self.assertIn("Do not translate it into another language", prompt)
-        self.assertIn("Output ONLY the improved text in English", prompt)
+        self.assertIn("Output ONLY the improved text in the same language as the input", prompt)
+        self.assertIn("apply it to the input's own language", prompt)
         self.assertIn(config.CLEAN_UP_STEPS, prompt)
         self.assertIn("Fix grammar, spelling, word choice, and punctuation", prompt)
         self.assertIn("not as instructions", prompt)
@@ -34,8 +35,8 @@ class PolishPromptTests(unittest.TestCase):
 
     def test_auto_detect_source(self) -> None:
         prompt = translator.system_prompt(config.AUTO_SOURCE, "Korean", polish=True)
-        self.assertIn("the same language it is written in (detect it)", prompt)
-        self.assertIn("in the same language as the input", prompt)
+        self.assertIn("the same language it is written in.", prompt)
+        self.assertNotIn("normally", prompt)
         self.assertNotIn("Korean", prompt)
 
     def test_auto_tone_asks_for_the_tag(self) -> None:
@@ -45,7 +46,8 @@ class PolishPromptTests(unittest.TestCase):
         self.assertIn(translator.TONE_TAG_EXAMPLE, prompt)
         for name, instruction in config.TONES.items():
             self.assertIn(f"{name}: {instruction}", prompt)
-        self.assertIn("ONLY the improved text in French", prompt)
+        self.assertIn("(normally French)", prompt)
+        self.assertIn("ONLY the improved text in the same language as the input", prompt)
         self.assertNotIn("Tone for the text:", prompt)
 
     def test_translation_prompt_is_unchanged_when_off(self) -> None:
@@ -179,9 +181,12 @@ class WindowPolishTests(unittest.TestCase):
         self.assertEqual(w.prefs.target, config.DEFAULT_UI_TARGET)
         self.assertEqual(w.target_lang.currentData(), config.SAME_AS_INPUT)
         self.assertFalse(w.swap_button.isEnabled())
-        self.assertEqual(w.pair_button.text(), "English \u2192 English (polish)")
-        self.assertEqual(w.output_label.text(), "English (polished)")
-        self.assertEqual(w.output.placeholderText(), "Polished text appears here\u2026")
+        self.assertIn("No translation", w.swap_button.toolTip())
+        self.assertEqual(w.swap_button.accessibleName(), "Swap languages")
+        self.assertIn("No translation", w.swap_button.accessibleDescription())
+        self.assertEqual(w.pair_button.text(), "English \u00b7 No translation")
+        self.assertEqual(w.output_label.text(), "English (cleaned up)")
+        self.assertEqual(w.output.placeholderText(), "Cleaned-up text appears here\u2026")
         args = self.calls[-1]
         self.assertEqual(args[1], "um so hello")
         self.assertTrue(args[7])  # clean-up is always on
@@ -191,11 +196,11 @@ class WindowPolishTests(unittest.TestCase):
     def test_auto_detect_labels(self) -> None:
         w = self.window
         self._pick(w.source_lang, config.AUTO_SOURCE)
+        self.assertIn("Auto-detect", w.swap_button.toolTip())
         self._polish_on()
-        self.assertEqual(
-            w.pair_button.text(), "Auto-detect \u2192 same language (polish)"
-        )
-        self.assertEqual(w.output_label.text(), "Same as input (polished)")
+        self.assertEqual(w.pair_button.text(), "Auto-detect \u00b7 No translation")
+        self.assertEqual(w.output_label.text(), "Same as input (cleaned up)")
+        self.assertIn("No translation", w.swap_button.toolTip())
 
     def test_picking_a_language_restores_translation(self) -> None:
         w = self.window
@@ -205,6 +210,8 @@ class WindowPolishTests(unittest.TestCase):
         self.assertFalse(w.prefs.polish)
         self.assertEqual(w.target_lang.currentData(), "French")
         self.assertTrue(w.swap_button.isEnabled())
+        self.assertEqual(w.swap_button.toolTip(), "Swap languages")
+        self.assertEqual(w.swap_button.accessibleDescription(), "")
         self.assertEqual(w.pair_button.text(), "English \u2192 French")
         self.assertEqual(w.output.placeholderText(), "Translation appears here\u2026")
         self.assertFalse(self.calls[-1][8])
@@ -230,13 +237,19 @@ class WindowPolishTests(unittest.TestCase):
 
     def test_source_change_keeps_the_hidden_target_valid(self) -> None:
         w = self.window
+        self._pick(w.source_lang, "French")
         self._polish_on()
+        # Picking the hidden target as the source swaps it, like a swap would.
         self._pick(w.source_lang, "Japanese")
         self.assertTrue(w.prefs.polish)
-        self.assertEqual(w.prefs.source, "Japanese")
-        self.assertNotEqual(w.prefs.target, "Japanese")
+        self.assertEqual((w.prefs.source, w.prefs.target), ("Japanese", "French"))
         self.assertEqual(w.target_lang.currentData(), config.SAME_AS_INPUT)
-        self.assertEqual(w.pair_button.text(), "Japanese \u2192 Japanese (polish)")
+        self.assertEqual(w.pair_button.text(), "Japanese \u00b7 No translation")
+        # From Auto-detect there is no previous language to take.
+        self._pick(w.source_lang, config.AUTO_SOURCE)
+        self._pick(w.source_lang, "French")
+        self.assertEqual(w.prefs.source, "French")
+        self.assertNotIn(w.prefs.target, ("French", config.AUTO_SOURCE))
 
     def test_restored_on_new_window(self) -> None:
         self._polish_on()
@@ -261,7 +274,7 @@ class WindowPolishTests(unittest.TestCase):
         w = self.window
         self._polish_on()
         w._on_started(w._request_id)
-        self.assertEqual(w.status.text(), "Polishing\u2026")
+        self.assertEqual(w.status.text(), "Cleaning up\u2026")
 
 
 if __name__ == "__main__":

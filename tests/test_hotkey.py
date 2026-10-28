@@ -309,7 +309,7 @@ class WindowHotkeyTests(unittest.TestCase):
 
     def test_pair_label_follows_languages(self) -> None:
         w = self.window
-        w._apply_languages(config.AUTO_SOURCE, "Korean")
+        w._apply_languages(config.AUTO_SOURCE, "Korean", False)
         self.assertEqual(w.pair_button.text(), "Auto-detect \u2192 Korean")
 
     def test_summon_puts_cursor_at_end(self) -> None:

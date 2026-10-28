@@ -183,15 +183,17 @@ add a language, add an entry to `LANGUAGES` in
 
 Pick **Same as input (no translation)** at the top of the target list to keep
 your text in the language you wrote it in and only clean it up and polish it.
-Filler words, stutters, repetitions, and false starts are dropped, only your
-self-corrections are kept, and grammar, spelling, word choice, and punctuation
-are fixed so it reads like natural writing. The meaning stays the same and
+Filler words, stutters, repetitions, and false starts are dropped; when you
+correct yourself, only the correction is kept; and grammar, spelling, word
+choice, and punctuation are fixed so it reads like natural writing. The meaning stays the same and
 nothing new is added. This is handy for tidying a rough dictation or a hasty
 draft before you send it.
 
-- The language pair at the top reads **English → English (polish)**, or
-  **Auto-detect → same language (polish)** when the source is Auto-detect, and
-  the status shows **Polishing…** while the model works.
+- The output box is captioned **English (cleaned up)**, the language pair at
+  the top of the minimal window reads **English · No translation**, and the
+  status shows **Cleaning up…** while the model works.
+- The text stays in the language you wrote it in, even if that differs from
+  the source picker.
 - The [tone](#tone) still applies, including **Auto**.
 - Clean-up is always on in this mode, whatever the **Clean Up Spoken Input**
   and **Clean Up Typed Input** switches say.
@@ -260,7 +262,7 @@ Wednesday") only the correction is kept. The meaning is never changed. Turn
 this off with **Settings → Voice Input → Clean Up Spoken Input**, or turn on
 **Clean Up Typed Input** to tidy hasty typing the same way. Combine voice
 input with the [Auto tone](#tone) to also have the tone chosen for you, or with
-[No translation](#no-translation) to get polished text in the language you
+[No translation](#no-translation) to get cleaned-up text in the language you
 spoke.
 
 Transcription uses `gpt-4o-transcribe` by default. Choose another model, such

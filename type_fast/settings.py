@@ -1,12 +1,11 @@
 """Persistent user preferences: languages, No translation mode, tone, hotkey,
 transparency, auto-paste, and voice input.
 
-Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, whether
-No translation (polish) mode is on, tone,
-any custom tone instruction, the global show/hide hotkey, the window
-transparency, whether hiding with the hotkey pastes the translation, and the
-voice input and input clean-up switches survive restarts. A
-missing, unreadable, or invalid file (or field) falls back to the defaults in
+Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages,
+whether No translation mode is on, the tone, any custom tone instruction, the
+global show/hide hotkey, the window transparency, whether hiding with the hotkey
+pastes the translation, and the voice input and input clean-up switches survive
+restarts. A missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
 ``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
 """
@@ -24,7 +23,8 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 @dataclass
 class Settings:
-    """The language pair, tone, custom tone, hotkey, transparency, and auto-paste."""
+    """The language pair, No translation mode, tone, custom tone, hotkey,
+    transparency, auto-paste, and voice input switches."""
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
