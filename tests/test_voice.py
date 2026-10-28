@@ -721,6 +721,300 @@ class WindowVoiceTests(unittest.TestCase):
         w.toggle_recording()
         self.assertFalse(w.recorder.recording)
 
+    # --- Global voice hotkey (⇧⌘M) -----------------------------------------
+
+    def _voice_window(self) -> MainWindow:
+        w = self._window()
+        patcher = mock.patch.object(w, "_needs_paste_permission", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        # Offscreen windows are never active; the summoned one is in front.
+        active = mock.patch.object(w, "isActiveWindow", return_value=True)
+        active.start()
+        self.addCleanup(active.stop)
+        return w
+
+    def test_voice_hotkey_records_then_hides_and_pastes(self) -> None:
+        w = self._voice_window()
+        self.assertFalse(w.isVisible())
+        with mock.patch.object(
+            self.app_module.voice, "transcribe", return_value="how are you?"
+        ):
+            w.toggle_voice()
+            self.assertTrue(w.isVisible())
+            self.assertTrue(w.compact)
+            self.assertTrue(w.recorder.recording)
+            w.toggle_voice()
+        self.assertFalse(w.recorder.recording)
+        self.assertEqual(self.calls[-1][1], "how are you?")
+        self.assertFalse(w.isVisible())
+        # The translation is still running, so the paste waits for it.
+        self.assertIsNotNone(w._deferred_paste)
+        self.assertIsNone(w._hide_after_voice)
+        self.warnings.assert_not_called()
+
+        request_id = self.calls[-1][0]
+        with mock.patch.object(w, "_paste_deferred") as paste:
+            w._on_started(request_id)
+            w._on_delta(request_id, "お元気ですか？")
+            w._on_finished(request_id, "お元気ですか？")
+        paste.assert_called_once()
+
+    def test_voice_hotkey_during_transcription_hides_when_done(self) -> None:
+        w = self._voice_window()
+        pending: list[_InlineThread] = []
+
+        class _HeldThread(_InlineThread):
+            def start(self) -> None:
+                pending.append(self)
+
+        with mock.patch.object(
+            self.app_module, "threading", types.SimpleNamespace(Thread=_HeldThread)
+        ), mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w.toggle_recording()  # stopped with the mic button: window stays
+            self.assertTrue(w._transcribing)
+            self.assertIsNone(w._hide_after_voice)
+            w.toggle_voice()  # pressed again while transcribing
+            self.assertTrue(w.isVisible())
+            self.assertFalse(w.recorder.recording)
+            pending[0]._target(*pending[0]._args)
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertFalse(w.isVisible())
+
+    def test_input_during_transcription_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        counts = iter([5, 7])  # a click or key press while transcribing
+        with mock.patch.object(
+            self.app_module.autopaste, "input_event_count",
+            side_effect=lambda: next(counts, 7),
+        ), mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_other_app_in_front_after_transcription_keeps_window_up(self) -> None:
+        w = self._voice_window()
+
+        def transcribe(*args, **kwargs) -> str:
+            w.isActiveWindow.return_value = False  # another app came forward
+            return "hi"
+
+        with mock.patch.object(self.app_module.voice, "transcribe", side_effect=transcribe):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_other_app_in_front_during_transcription_keeps_window_up(self) -> None:
+        from PySide6.QtCore import Qt
+
+        w = self._voice_window()
+
+        def transcribe(*args, **kwargs) -> str:
+            # Another app came forward; isActiveWindow() says Type Fast is
+            # back in front by the time the transcript arrives.
+            w._on_app_state_changed(Qt.ApplicationInactive)
+            return "hi"
+
+        with mock.patch.object(self.app_module.voice, "transcribe", side_effect=transcribe):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_voice_hotkey_cancels_pending_mic_permission(self) -> None:
+        w = self._voice_window()
+        callbacks = []
+        with mock.patch.object(
+            self.app_module.voice, "request_permission",
+            side_effect=lambda ctx, cb: callbacks.append(cb),
+        ):
+            w.toggle_voice()  # macOS asks for the microphone
+            w.toggle_voice()  # pressed again before you answer
+        self.assertEqual(len(callbacks), 1)
+        callbacks[0](True)
+        self.assertFalse(w.recorder.recording)
+        self.assertIsNone(w._mic_request)
+
+    def test_voice_hotkey_from_another_app_brings_transcript_back(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            # You switched apps while recording, then pressed ⇧⌘M there.
+            with mock.patch.object(w, "isActiveWindow", return_value=False), \
+                    mock.patch.object(w, "summon", wraps=w.summon) as summon:
+                w.toggle_voice()
+        summon.assert_called_once_with(compact=True)
+        self.assertFalse(w.recorder.recording)
+        self.assertIsNone(w._hide_after_voice)
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_mic_button_stop_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w.toggle_recording()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_voice_hotkey_empty_transcript_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value=" "):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertTrue(w.isVisible())
+        self.assertEqual(w.status.text(), "No speech was recognized")
+        self.assertIsNone(w._hide_after_voice)
+
+    def test_voice_hotkey_error_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(
+            self.app_module.voice, "transcribe",
+            side_effect=self.app_module.voice.VoiceError("no deployment"),
+        ):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertTrue(w.isVisible())
+        self.assertIn("no deployment", self.warnings.call_args.args)
+        self.assertIsNone(w._hide_after_voice)
+
+    def test_voice_hotkey_keeps_full_layout_of_shown_window(self) -> None:
+        w = self._voice_window()
+        w.summon()
+        w.input.setPlainText("Hello there")
+        cursor = w.input.textCursor()
+        cursor.setPosition(len("Hello"))
+        w.input.setTextCursor(cursor)
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="you"):
+            w.toggle_voice()
+            self.assertFalse(w.compact)
+            self.assertTrue(w.recorder.recording)
+            w.toggle_recording()
+        # Dictated at the cursor, not at the end.
+        self.assertEqual(w.input.toPlainText(), "Hello you there")
+
+    def test_voice_hotkey_hide_waits_for_open_dialog(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            with mock.patch.object(
+                self.app_module.QApplication, "activeModalWidget",
+                side_effect=[None, mock.MagicMock()],  # opened while transcribing
+            ):
+                w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_time_limit_stop_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w._stop_recording()  # what recorder.limit_reached triggers
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_voice_hotkey_ignored_when_voice_input_off(self) -> None:
+        w = self._voice_window()
+        w.voice_input_action.trigger()
+        w.toggle_voice()
+        self.assertFalse(w.isVisible())
+        self.assertFalse(w.recorder.recording)
+
+    def test_voice_hotkey_defers_to_open_dialog(self) -> None:
+        w = self._voice_window()
+        dialog = mock.MagicMock()
+        with mock.patch.object(
+            self.app_module.QApplication, "activeModalWidget", return_value=dialog
+        ):
+            w.toggle_voice()
+        dialog.raise_.assert_called_once()
+        self.assertFalse(w.isVisible())
+        self.assertFalse(w.recorder.recording)
+
+    def test_show_hide_hotkey_never_records(self) -> None:
+        w = self._voice_window()
+        w.toggle_visibility()
+        self.assertTrue(w.isVisible())
+        self.assertFalse(w.recorder.recording)
+
+    def test_dismiss_drops_pending_voice_hide(self) -> None:
+        w = self._voice_window()
+        w.summon()
+        w._transcribing = True
+        w.toggle_voice()
+        self.assertEqual(w._hide_after_voice, w._voice_id)
+        w.dismiss()
+        self.assertIsNone(w._hide_after_voice)
+        self.assertFalse(w._transcribing)
+
+    def test_voice_hotkey_follows_voice_input_setting(self) -> None:
+        w = self._voice_window()
+        hk = self.app_module.hotkey
+        with mock.patch.object(
+            hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+        ), mock.patch.object(
+            w.voice_hotkey, "register", return_value=True
+        ) as register, mock.patch.object(w.voice_hotkey, "unregister") as unregister:
+            w.voice_input_action.trigger()  # off
+            unregister.assert_called()
+            register.assert_not_called()
+            w.voice_input_action.trigger()  # on
+        self.assertEqual(str(register.call_args.args[0]), config.VOICE_HOTKEY)
+        self.warnings.assert_not_called()
+
+    def test_voice_hotkey_failure_is_reported(self) -> None:
+        w = self._voice_window()
+        hk = self.app_module.hotkey
+        w.voice_input_action.trigger()  # off
+        with mock.patch.object(
+            hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+        ), mock.patch.object(w.voice_hotkey, "register", return_value=False):
+            w.voice_input_action.trigger()  # on
+            self.assertIn("\u21e7\u2318M unavailable", w.hotkey_label.text())
+            self.assertIn("could not be registered", w.hotkey_label.toolTip())
+            # The footer is hidden in compact mode, so the mic button says so too.
+            self.assertIn("could not be registered", w.mic_button.toolTip())
+            self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+            with mock.patch.object(self.app_module.voice, "transcribe", return_value=""):
+                w.toggle_recording()
+                self.assertNotIn("\u21e7\u2318M", w.status.text())
+                self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+                w.toggle_recording()
+        self.assertIn("could not be registered", self.warnings.call_args.args[2])
+        self.assertTrue(settings.load().voice_input)
+        self.assertNotIn("in any app", w.mic_button.toolTip())
+
+    def test_registered_voice_hotkey_is_in_tooltip(self) -> None:
+        w = self._voice_window()
+        hk = self.app_module.hotkey
+        with mock.patch.object(
+            hk.GlobalHotkey, "is_registered", new_callable=mock.PropertyMock,
+            return_value=True,
+        ):
+            w._reflect_voice()
+            w._reflect_hotkey()
+        self.assertIn("\u21e7\u2318M in any app", w.mic_button.toolTip())
+        self.assertNotIn("unavailable", w.hotkey_label.text())
+
+    def test_show_hide_hotkey_cannot_take_voice_keys(self) -> None:
+        w = self._voice_window()
+        self.assertFalse(w._apply_hotkey("Shift+Cmd+M"))
+        self.assertIn("voice input hotkey", self.warnings.call_args.args[2])
+        self.assertEqual(w.prefs.hotkey, config.DEFAULT_HOTKEY)
+        # Allowed with voice input off; turning it back on reports the clash.
+        w.voice_input_action.trigger()
+        self.assertTrue(w._apply_hotkey("Shift+Cmd+M"))
+        hk = self.app_module.hotkey
+        with mock.patch.object(
+            hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+        ), mock.patch.object(w.voice_hotkey, "register") as register:
+            w.voice_input_action.trigger()
+        register.assert_not_called()
+        self.assertIn("is your show/hide hotkey", self.warnings.call_args.args[2])
+
     def test_set_openai_transcribe_model(self) -> None:
         w = self._window()
         with mock.patch.object(

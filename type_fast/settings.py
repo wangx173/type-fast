@@ -39,7 +39,7 @@ class Settings:
     transparency: str = config.DEFAULT_TRANSPARENCY
     # Paste the translation into your app when the hotkey hides the window.
     auto_paste: bool = config.DEFAULT_AUTO_PASTE
-    # Show the mic button and allow ⇧⌘M voice recording.
+    # Show the mic button and register the global ⇧⌘M voice hotkey.
     voice_input: bool = config.DEFAULT_VOICE_INPUT
     # Clean up filler words and false starts in spoken / typed input.
     optimize_voice: bool = config.DEFAULT_OPTIMIZE_VOICE

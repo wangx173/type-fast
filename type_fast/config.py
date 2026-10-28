@@ -218,6 +218,11 @@ DEBOUNCE_MS = 500
 # ChatGPT. Users can pick any combination in Settings › Set Show/Hide Hotkey….
 DEFAULT_HOTKEY = "Shift+Cmd+Space"
 
+# Global voice hotkey, registered while voice input is on: it shows the window
+# and starts recording, and pressed again it stops, hides the window, and
+# pastes the result, like the show/hide hotkey.
+VOICE_HOTKEY = "Shift+Cmd+M"
+
 # Window transparency presets: name -> (opacity while you are using Type Fast,
 # opacity while it sits in the background). The window stays on top of other
 # apps, so it fades further once you click elsewhere and comes back to the first

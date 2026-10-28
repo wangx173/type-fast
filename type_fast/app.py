@@ -41,9 +41,13 @@ in when summoned, and fades further while you work in another app (hovering or
 returning to it brings it back). The strength is chosen in Settings › Window
 Transparency and remembered too.
 
-Voice input: the mic button in the footer (or ⇧⌘M) records from the default
+Voice input: the mic button in the footer records from the default
 microphone until pressed again, then transcribes the speech with the active
 provider and inserts it into the input box, which translates it as usual.
+⇧⌘M is a second global hotkey, registered while voice input is on: from any
+app it shows the compact window and starts recording, and pressed again it
+stops, waits for the transcript, then hides the window and pastes the result
+like the show/hide hotkey. The show/hide hotkey never records.
 Spoken input is cleaned of filler words and false starts by default (Settings ›
 Voice Input), and typed input can be too.
 """
@@ -103,9 +107,14 @@ from . import autopaste, config, hotkey, providers, settings, voice
 from .providers import azure as azure_provider, openai as openai_provider
 from .translator import translate_stream
 
-# Starts and stops voice recording (⇧⌘M on macOS).
-_VOICE_SHORTCUT = "Ctrl+Shift+M"
-_VOICE_SHORTCUT_SYMBOLS = "\u21e7\u2318M"
+# The voice hotkey (⇧⌘M on macOS): global while voice input is on (see
+# MainWindow.toggle_voice) and the Start Recording menu shortcut. While the
+# global one is registered macOS hands the keys to it, so the menu shortcut
+# only acts when registration failed and no other app took the keys.
+_VOICE_HOTKEY: hotkey.Hotkey = hotkey.parse(config.VOICE_HOTKEY)
+assert _VOICE_HOTKEY is not None, config.VOICE_HOTKEY
+_VOICE_SHORTCUT = hotkey.to_qt(_VOICE_HOTKEY)
+_VOICE_SHORTCUT_SYMBOLS = _VOICE_HOTKEY.symbols()
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
@@ -701,6 +710,10 @@ class MainWindow(QMainWindow):
         self._paste_target: _PasteTarget | None = None
         self.global_hotkey = hotkey.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
+        # Global voice hotkey (⇧⌘M), registered once the recorder exists (see
+        # _register_voice_hotkey).
+        self.voice_hotkey = hotkey.GlobalHotkey(self)
+        self.voice_hotkey.activated.connect(self.toggle_voice)
         self._register_hotkey()
         app = QGuiApplication.instance()
         if app is not None:
@@ -749,13 +762,22 @@ class MainWindow(QMainWindow):
         # dropped. ``_voice_input`` records that the current input came from
         # speech, which picks the Clean Up Spoken Input setting; it lasts while
         # the last transcript (``_voice_text``) is still in the input.
+        # ``_hide_after_voice`` is the _voice_id of a transcription that, once
+        # inserted, hides the window and pastes (the voice hotkey), provided
+        # you haven't clicked or typed since pressing it (``_voice_hide_input``
+        # is autopaste.input_event_count() then). The time limit stops a
+        # recording without hiding: nobody asked to paste. ``_mic_request`` is
+        # the _voice_id of a recording waiting for macOS's microphone prompt.
         self.recorder = voice.Recorder(self)
         self.recorder.limit_reached.connect(self._stop_recording)
         self._voice_id = 0
         self._transcribing = False
         self._voice_input = False
         self._voice_text = ""
-        self._reflect_voice()
+        self._hide_after_voice: int | None = None
+        self._voice_hide_input: int | None = None
+        self._mic_request: int | None = None
+        self._register_voice_hotkey()
 
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -846,7 +868,7 @@ class MainWindow(QMainWindow):
         self.voice_menu.addAction(self.voice_input_action)
 
         self.record_action = QAction("Start Recording", self)
-        self.record_action.setShortcut(QKeySequence(_VOICE_SHORTCUT))
+        self.record_action.setShortcut(_VOICE_SHORTCUT)
         self.record_action.triggered.connect(lambda: self.toggle_recording())
         self.voice_menu.addAction(self.record_action)
 
@@ -995,19 +1017,28 @@ class MainWindow(QMainWindow):
     def toggle_visibility(self) -> None:
         """Hide the window if it is shown and focused, otherwise summon it.
 
-        A window summoned this way (by the global hotkey) is compact.
+        A window summoned this way (by the show/hide hotkey) is compact.
         """
-        modal = QApplication.activeModalWidget()
-        if modal is not None:
-            # Don't hide the window out from under an open dialog.
-            hotkey.activate_app()
-            modal.raise_()
-            modal.activateWindow()
+        if self._raise_open_dialog():
             return
         if self.isVisible() and self.isActiveWindow() and not self.isMinimized():
             self.dismiss(paste=True)
         else:
             self.summon(compact=True)
+
+    @staticmethod
+    def _raise_open_dialog() -> bool:
+        """Bring an open dialog to the front and return True, if there is one.
+
+        The hotkeys don't hide or record under an open dialog.
+        """
+        modal = QApplication.activeModalWidget()
+        if modal is None:
+            return False
+        hotkey.activate_app()
+        modal.raise_()
+        modal.activateWindow()
+        return True
 
     def summon(self, compact: bool = False) -> None:
         """Show, raise, and focus the window, Spotlight-style.
@@ -1064,7 +1095,7 @@ class MainWindow(QMainWindow):
     def dismiss(self, paste: bool = False) -> None:
         """Hide the window and return focus to the previously active app.
 
-        With ``paste`` (the show/hide hotkey) and Auto-Paste on, a finished
+        With ``paste`` (the show/hide or voice hotkey) and Auto-Paste on, a finished
         translation that hasn't been pasted yet is pasted into that app. If
         the translation is still running, the window hides right away and the
         paste waits for it to finish (see :meth:`_on_finished`).
@@ -1245,14 +1276,77 @@ class MainWindow(QMainWindow):
         self.mic_button.setChecked(recording)
         self.record_action.setEnabled(enabled and not self._transcribing)
         self.record_action.setText("Stop Recording" if recording else "Start Recording")
+        if self._voice_hotkey_unavailable():
+            # Pressing it may hide the window or reach another app instead.
+            keys = ""
+        elif self.voice_hotkey.is_registered:
+            keys = f" ({_VOICE_SHORTCUT_SYMBOLS} in any app)"
+        else:
+            keys = f" ({_VOICE_SHORTCUT_SYMBOLS})"
         if recording:
-            tip = f"Stop and transcribe ({_VOICE_SHORTCUT_SYMBOLS})"
+            tip = f"Stop and transcribe{keys}"
         elif self._transcribing:
             tip = "Transcribing\u2026"
         else:
-            tip = f"Speak instead of typing ({_VOICE_SHORTCUT_SYMBOLS})"
+            tip = f"Speak instead of typing{keys}"
+        if enabled and self._voice_hotkey_unavailable():
+            # Also here: the footer that says so is hidden in compact mode.
+            tip += f"\n{self._voice_hotkey_problem()}"
         self.mic_button.setToolTip(tip)
         self.mic_button.setAccessibleDescription(tip)
+
+    def _voice_hotkey_unavailable(self) -> bool:
+        """True when ⇧⌘M could be global here but isn't registered."""
+        return not self.voice_hotkey.is_registered and hotkey.GlobalHotkey.is_supported()
+
+    def toggle_voice(self) -> None:
+        """Handle the global voice hotkey, from any app.
+
+        Shows the window (compact, if it was hidden) and starts recording;
+        pressed again, stops recording and, once the transcript is inserted,
+        hides the window and pastes like the show/hide hotkey.
+        """
+        if self._raise_open_dialog():
+            return
+        if self._mic_request is not None and self._mic_request == self._voice_id:
+            # Pressed again while macOS asks for the microphone: don't start.
+            self._mic_request = None
+            self._voice_id += 1
+            self._reflect_voice()
+            return
+        if (self.recorder.recording or self._transcribing) and not (
+            self.isActiveWindow() and not self.isMinimized()
+        ):
+            # Pressed in an app you switched to: bring the transcript back
+            # here rather than paste into an app you may not mean.
+            if self.recorder.recording:
+                self._stop_recording()
+            self._summon_keeping_cursor()
+            return
+        if self.recorder.recording or self._transcribing:
+            # Noted before the transcription can finish on its thread.
+            self._voice_hide_input = autopaste.input_event_count()
+        if self.recorder.recording:
+            self._stop_recording(hide_after=True)
+            return
+        if self._transcribing:
+            # Pressed again while transcribing: hide once it is inserted.
+            self._hide_after_voice = self._voice_id
+            return
+        if not self.prefs.voice_input:
+            return
+        if self.isVisible():
+            # Already up: dictate at the cursor, as the mic button does.
+            self._summon_keeping_cursor()
+        else:
+            self.summon(compact=True)
+        self._start_recording()
+
+    def _summon_keeping_cursor(self) -> None:
+        """Bring the shown window to the front without moving the text cursor."""
+        cursor = self.input.textCursor()
+        self.summon(compact=self.compact)
+        self.input.setTextCursor(cursor)
 
     def toggle_recording(self) -> None:
         """Start recording, or stop and transcribe the recording in progress."""
@@ -1272,13 +1366,16 @@ class MainWindow(QMainWindow):
         self._voice_id += 1
         voice_id = self._voice_id
         self._reflect_voice()
+        self._mic_request = voice_id
         voice.request_permission(
             self, lambda granted: self._on_mic_permission(voice_id, granted)
         )
 
     def _on_mic_permission(self, voice_id: int, granted: bool) -> None:
+        if voice_id == self._mic_request:
+            self._mic_request = None
         if voice_id != self._voice_id:
-            return  # dismissed while macOS was asking
+            return  # dismissed or cancelled while macOS was asking
         if not granted:
             self._voice_failed(voice.PERMISSION_DENIED)
             return
@@ -1287,11 +1384,16 @@ class MainWindow(QMainWindow):
         except voice.VoiceError as exc:
             self._voice_failed(str(exc))
             return
-        self._set_status(f"Listening\u2026 ({_VOICE_SHORTCUT_SYMBOLS} to stop)", "busy")
+        stop = "click \U0001f399" if self._voice_hotkey_unavailable() else _VOICE_SHORTCUT_SYMBOLS
+        self._set_status(f"Listening\u2026 ({stop} to stop)", "busy")
         self._reflect_voice()
 
-    def _stop_recording(self) -> None:
-        """Stop recording and transcribe it on a worker thread."""
+    def _stop_recording(self, hide_after: bool = False) -> None:
+        """Stop recording and transcribe it on a worker thread.
+
+        With ``hide_after`` (the voice hotkey), the window hides and pastes
+        once the transcript is inserted.
+        """
         if not self.recorder.recording:
             return
         recording = self.recorder.stop()
@@ -1310,6 +1412,8 @@ class MainWindow(QMainWindow):
         # which may be unknown. The translation prompt does the clean-up.
         self._voice_id += 1
         self._transcribing = True
+        if hide_after:
+            self._hide_after_voice = self._voice_id
         self._set_status("Transcribing\u2026", "busy")
         self._reflect_voice()
         thread = threading.Thread(
@@ -1347,14 +1451,28 @@ class MainWindow(QMainWindow):
     def _on_transcribed(self, voice_id: int, text: str) -> None:
         if voice_id != self._voice_id:
             return
+        hide = self._hide_after_voice == voice_id
+        self._hide_after_voice = None
+        if hide and (
+            autopaste.input_event_count() != self._voice_hide_input
+            or QApplication.activeModalWidget() is not None
+            or not self.isActiveWindow()
+        ):
+            # You clicked or typed while it transcribed, maybe in another
+            # app, another app came to the front, or a dialog is open: stay
+            # up rather than paste somewhere unexpected.
+            hide = False
         self._transcribing = False
         self._reflect_voice()
         text = text.strip()
         if not text:
+            # Stay up so the message is seen.
             self._set_status("No speech was recognized")
             return
         self._set_status("")
         self._insert_transcript(text)
+        if hide:
+            self.dismiss(paste=True)
 
     def _insert_transcript(self, text: str) -> None:
         """Insert ``text`` at the cursor and translate it right away."""
@@ -1378,6 +1496,7 @@ class MainWindow(QMainWindow):
     def _on_voice_error(self, voice_id: int, message: str) -> None:
         if voice_id == self._voice_id:
             self._transcribing = False
+            self._hide_after_voice = None
             self._voice_failed(message)
 
     def _voice_failed(self, message: str) -> None:
@@ -1388,6 +1507,7 @@ class MainWindow(QMainWindow):
     def _cancel_voice(self) -> None:
         """Stop listening and drop a transcription or permission prompt pending."""
         self._voice_id += 1
+        self._hide_after_voice = None
         if not (self.recorder.recording or self._transcribing):
             return
         self.recorder.cancel()
@@ -1399,8 +1519,45 @@ class MainWindow(QMainWindow):
         self.prefs.voice_input = enabled
         if not enabled:
             self._cancel_voice()
-        self._reflect_voice()
+        if not self._register_voice_hotkey() and hotkey.GlobalHotkey.is_supported():
+            QMessageBox.warning(self, "Voice Input", self._voice_hotkey_problem())
         self._save_prefs("Voice Input", "voice input setting")
+
+    def _register_voice_hotkey(self) -> bool:
+        """(Re-)register the global voice hotkey and reflect the outcome.
+
+        It is registered while voice input is on, unless the show/hide hotkey
+        uses the same keys. Returns False if voice input is on but the hotkey
+        isn't registered (refused, or that clash). Updates the mic button and
+        the footer hint either way.
+        """
+        if self.prefs.voice_input and not self._voice_hotkey_clashes():
+            ok = self.voice_hotkey.register(_VOICE_HOTKEY)
+        else:
+            self.voice_hotkey.unregister()
+            ok = not self.prefs.voice_input
+        self._reflect_voice()
+        self._reflect_hotkey()
+        return ok
+
+    def _voice_hotkey_clashes(self, text: str | None = None) -> bool:
+        """True if show/hide hotkey ``text`` (default: the saved one) is ⇧⌘M."""
+        text = self.prefs.hotkey if text is None else text
+        return bool(text) and hotkey.parse(text) == _VOICE_HOTKEY
+
+    def _voice_hotkey_problem(self) -> str:
+        """Why the voice hotkey is not registered, for a tooltip or message."""
+        if self._voice_hotkey_clashes():
+            return (
+                f"{_VOICE_SHORTCUT_SYMBOLS} is your show/hide hotkey, so it can't also "
+                "start voice input from other apps \u2014 choose another show/hide hotkey "
+                "in Settings \u203a Set Show/Hide Hotkey\u2026"
+            )
+        return (
+            f"{_VOICE_SHORTCUT_SYMBOLS} could not be registered for voice input (it may "
+            "be used by macOS or another app) \u2014 use the \U0001f399 button or "
+            "Settings \u203a Voice Input \u203a Start Recording instead"
+        )
 
     def _set_optimize(self, spoken: bool, enabled: bool) -> None:
         if spoken:
@@ -1486,6 +1643,10 @@ class MainWindow(QMainWindow):
         if state == Qt.ApplicationHidden:
             # Hiding the app (⌘H) doesn't always send the window a hide event.
             self._cancel_voice()
+        if state != Qt.ApplicationActive:
+            # Another app came forward while ⇧⌘M's transcription ran: don't
+            # hide and paste into it, even if Type Fast is back by then.
+            self._hide_after_voice = None
         if state == Qt.ApplicationActive:
             # Settings may have changed outside the app (e.g. the setup script);
             # if so, apply them to the current text too, not just the footer.
@@ -1531,19 +1692,24 @@ class MainWindow(QMainWindow):
                 f"{parsed.symbols()} could not be registered (it may be used by "
                 f"macOS or another app) \u2014 choose another in {where}"
             )
+        if self.prefs.voice_input and self._voice_hotkey_unavailable():
+            text += f" \u00b7 {_VOICE_SHORTCUT_SYMBOLS} unavailable"
+            tip += f"\n{self._voice_hotkey_problem()}"
         self.hotkey_label.setText(text)
         self.hotkey_label.setToolTip(tip)
         self.set_hotkey_action.setToolTip(tip)
 
     def _set_hotkey(self) -> None:
-        # Release the current hotkey while recording, or pressing it would
-        # toggle the window instead of being captured by the dialog.
+        # Release the hotkeys while recording, or pressing one would act on
+        # the window instead of being captured by the dialog.
         self.global_hotkey.unregister()
+        self.voice_hotkey.unregister()
         dialog = HotkeyDialog(self.prefs.hotkey, self)
         if dialog.exec() == QDialog.Accepted:
             self._apply_hotkey(dialog.chosen)
         else:
             self._register_hotkey()  # cancelled: restore the previous hotkey
+        self._register_voice_hotkey()
 
     def _apply_hotkey(self, text: str) -> bool:
         """Switch to hotkey ``text`` ("" disables it) and save it.
@@ -1556,6 +1722,15 @@ class MainWindow(QMainWindow):
         parsed = hotkey.parse(text) if text else None
         if text and parsed is None:
             QMessageBox.warning(self, title, f"\u201c{text}\u201d is not a valid hotkey.")
+            self._register_hotkey()
+            return False
+        if self.prefs.voice_input and self._voice_hotkey_clashes(text):
+            QMessageBox.warning(
+                self,
+                title,
+                f"{_VOICE_SHORTCUT_SYMBOLS} is the voice input hotkey. Choose another, or "
+                "turn off Settings \u203a Voice Input \u203a Enable Voice Input first.",
+            )
             self._register_hotkey()
             return False
         if parsed is None:

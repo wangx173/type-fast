@@ -1,4 +1,4 @@
-"""Global show/hide hotkey for type-fast (macOS).
+"""Global hotkeys for type-fast (macOS): show/hide and voice input.
 
 Hotkeys are written in a canonical, human-readable form using macOS modifier
 names in Apple's order (Ctrl, Option, Shift, Cmd), e.g. ``"Option+Space"``,

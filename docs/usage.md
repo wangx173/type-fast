@@ -65,6 +65,8 @@ Choose **Settings → Set Show/Hide Hotkey…** and press the new combination.
 - If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type Fast tells you
   and keeps the previous one. Another app's global shortcut can't always be
   detected, so if the new hotkey does nothing, pick a different one.
+- While voice input is on, ⇧⌘M can't be the show/hide hotkey: it is the
+  [voice input](#voice-input) hotkey.
 
 <details>
 <summary>Why ⇧⌘Space?</summary>
@@ -242,13 +244,35 @@ instruction, is saved to `~/.type-fast/settings.json` and restored on launch.
 
 ## Voice input
 
-Click the 🎙 button at the bottom of the window, or press **⇧⌘M** (**Settings
-→ Voice Input → Start Recording**), and speak. The button turns red while it
-listens. Click it or press **⇧⌘M** again to stop: the recording is transcribed
-by your provider, inserted at the cursor in the input box, and translated right
-away with the current languages and tone. Recordings stop by themselves after
-5 minutes. Hiding the window, or pressing **Esc**, discards a recording in
-progress.
+Press **⇧⌘M** in any app to show the minimal window and start recording right
+away. Speak, then press **⇧⌘M** again: the recording is transcribed by your
+provider, inserted at the cursor in the input box, and translated with the
+current languages and tone; the window then hides and the translation is pasted
+into your app, just like pressing **⇧⌘Space** (see [Auto-paste](#auto-paste)).
+If nothing was recognized, or the transcription fails, the window stays up so
+you can see why. It also stays up, with the translation copied, if you click or
+type, or another app comes to the front, while it is transcribing, so nothing
+is pasted into an app you switched to.
+If you switched to another app while recording, pressing **⇧⌘M** there stops
+the recording and brings Type Fast back with the transcript instead of pasting.
+
+You can also dictate inside the window: click the 🎙 button at the bottom, or
+choose **Settings → Voice Input → Start Recording**, and click it again to
+stop. The text is inserted and translated, and the window stays up so you can
+edit before pasting with **⇧⌘Space**. The button turns red while it listens.
+Recordings stop by themselves after 5 minutes; the window then stays up
+without pasting, even if you started with **⇧⌘M**. Hiding the window, with
+**⇧⌘Space** or **Esc**, discards a recording in progress; **⇧⌘Space** never
+starts one.
+
+**⇧⌘M** is registered as a global hotkey only while voice input is on, and
+can't be changed yet. Because it is global, apps that use ⇧⌘M themselves (such
+as the mute shortcut in Microsoft Teams) no longer receive it; turn voice input
+off if you need it there. If another app already registered it globally, the
+bottom of the window and the 🎙 button's tooltip show **⇧⌘M unavailable**; that
+app may keep the keys even while Type Fast is in front, so use the 🎙 button or
+**Settings → Voice Input → Start Recording** instead. ⇧⌘M also can't be your
+show/hide hotkey at the same time.
 
 The first time, macOS asks you to let Type Fast use the microphone. If you
 said no, or the recording comes out silent, allow it in **System Settings →
@@ -274,4 +298,4 @@ The source language, unless it is auto-detect, is passed to the transcription
 model as a hint.
 
 Don't need it? Turn off **Settings → Voice Input → Enable Voice Input** to hide
-the button and the shortcut.
+the button and release **⇧⌘M**.
