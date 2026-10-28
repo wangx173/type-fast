@@ -728,6 +728,10 @@ class WindowVoiceTests(unittest.TestCase):
         patcher = mock.patch.object(w, "_needs_paste_permission", return_value=False)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # Offscreen windows are never active; the summoned one is in front.
+        active = mock.patch.object(w, "isActiveWindow", return_value=True)
+        active.start()
+        self.addCleanup(active.stop)
         return w
 
     def test_voice_hotkey_records_then_hides_and_pastes(self) -> None:
@@ -787,6 +791,20 @@ class WindowVoiceTests(unittest.TestCase):
         ), mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
             w.toggle_voice()
             w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_voice_hotkey_from_another_app_brings_transcript_back(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            # You switched apps while recording, then pressed ⇧⌘M there.
+            with mock.patch.object(w, "isActiveWindow", return_value=False), \
+                    mock.patch.object(w, "summon", wraps=w.summon) as summon:
+                w.toggle_voice()
+        summon.assert_called_once_with(compact=True)
+        self.assertFalse(w.recorder.recording)
+        self.assertIsNone(w._hide_after_voice)
         self.assertEqual(w.input.toPlainText(), "hi")
         self.assertTrue(w.isVisible())
 
@@ -913,6 +931,8 @@ class WindowVoiceTests(unittest.TestCase):
             w.voice_input_action.trigger()  # on
             self.assertIn("\u21e7\u2318M unavailable", w.hotkey_label.text())
             self.assertIn("could not be registered", w.hotkey_label.toolTip())
+            # The footer is hidden in compact mode, so the mic button says so too.
+            self.assertIn("could not be registered", w.mic_button.toolTip())
         self.assertIn("could not be registered", self.warnings.call_args.args[2])
         self.assertTrue(settings.load().voice_input)
         self.assertNotIn("in any app", w.mic_button.toolTip())

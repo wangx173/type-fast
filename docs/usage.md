@@ -227,6 +227,8 @@ into your app, just like pressing **⇧⌘Space** (see [Auto-paste](#auto-paste)
 If nothing was recognized, or the transcription fails, the window stays up so
 you can see why. It also stays up, with the translation copied, if you click or
 type while it is transcribing, so nothing is pasted into an app you switched to.
+If you switched to another app while recording, pressing **⇧⌘M** there stops
+the recording and brings Type Fast back with the transcript instead of pasting.
 
 You can also dictate inside the window: click the 🎙 button at the bottom, or
 choose **Settings → Voice Input → Start Recording**, and click it again to
@@ -241,9 +243,10 @@ starts one.
 can't be changed yet. Because it is global, apps that use ⇧⌘M themselves (such
 as the mute shortcut in Microsoft Teams) no longer receive it; turn voice input
 off if you need it there. If another app already registered it globally, the
-bottom of the window shows **⇧⌘M unavailable** and the shortcut only works
-while Type Fast is in front. It also can't be your show/hide hotkey at the same
-time.
+bottom of the window and the 🎙 button's tooltip show **⇧⌘M unavailable**; that
+app may keep the keys even while Type Fast is in front, so use the 🎙 button or
+**Settings → Voice Input → Start Recording** instead. ⇧⌘M also can't be your
+show/hide hotkey at the same time.
 
 The first time, macOS asks you to let Type Fast use the microphone. If you
 said no, or the recording comes out silent, allow it in **System Settings →

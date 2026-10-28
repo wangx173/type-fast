@@ -108,7 +108,7 @@ from .translator import translate_stream
 # The voice hotkey (⇧⌘M on macOS): global while voice input is on (see
 # MainWindow.toggle_voice) and the Start Recording menu shortcut. While the
 # global one is registered macOS hands the keys to it, so the menu shortcut
-# only acts when registration failed.
+# only acts when registration failed and no other app took the keys.
 _VOICE_HOTKEY: hotkey.Hotkey = hotkey.parse(config.VOICE_HOTKEY)
 assert _VOICE_HOTKEY is not None, config.VOICE_HOTKEY
 _VOICE_SHORTCUT = hotkey.to_qt(_VOICE_HOTKEY)
@@ -1272,6 +1272,13 @@ class MainWindow(QMainWindow):
             tip = "Transcribing\u2026"
         else:
             tip = f"Speak instead of typing ({keys})"
+        if (
+            enabled
+            and not self.voice_hotkey.is_registered
+            and hotkey.GlobalHotkey.is_supported()
+        ):
+            # Also here: the footer that says so is hidden in compact mode.
+            tip += f"\n{self._voice_hotkey_problem()}"
         self.mic_button.setToolTip(tip)
         self.mic_button.setAccessibleDescription(tip)
 
@@ -1283,6 +1290,15 @@ class MainWindow(QMainWindow):
         hides the window and pastes like the show/hide hotkey.
         """
         if self._raise_open_dialog():
+            return
+        if (self.recorder.recording or self._transcribing) and not (
+            self.isActiveWindow() and not self.isMinimized()
+        ):
+            # Pressed in an app you switched to: bring the transcript back
+            # here rather than paste into an app you may not mean.
+            if self.recorder.recording:
+                self._stop_recording()
+            self._summon_keeping_cursor()
             return
         if self.recorder.recording or self._transcribing:
             # Noted before the transcription can finish on its thread.
@@ -1298,12 +1314,16 @@ class MainWindow(QMainWindow):
             return
         if self.isVisible():
             # Already up: dictate at the cursor, as the mic button does.
-            cursor = self.input.textCursor()
-            self.summon(compact=self.compact)
-            self.input.setTextCursor(cursor)
+            self._summon_keeping_cursor()
         else:
             self.summon(compact=True)
         self._start_recording()
+
+    def _summon_keeping_cursor(self) -> None:
+        """Bring the shown window to the front without moving the text cursor."""
+        cursor = self.input.textCursor()
+        self.summon(compact=self.compact)
+        self.input.setTextCursor(cursor)
 
     def toggle_recording(self) -> None:
         """Start recording, or stop and transcribe the recording in progress."""
@@ -1507,7 +1527,8 @@ class MainWindow(QMainWindow):
             )
         return (
             f"{_VOICE_SHORTCUT_SYMBOLS} could not be registered for voice input (it may "
-            "be used by macOS or another app); it still works while Type Fast is in front"
+            "be used by macOS or another app) \u2014 use the \U0001f399 button or "
+            "Settings \u203a Voice Input \u203a Start Recording instead"
         )
 
     def _set_optimize(self, spoken: bool, enabled: bool) -> None:
