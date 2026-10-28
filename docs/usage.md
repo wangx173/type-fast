@@ -226,7 +226,8 @@ current languages and tone; the window then hides and the translation is pasted
 into your app, just like pressing **⇧⌘Space** (see [Auto-paste](#auto-paste)).
 If nothing was recognized, or the transcription fails, the window stays up so
 you can see why. It also stays up, with the translation copied, if you click or
-type while it is transcribing, so nothing is pasted into an app you switched to.
+type, or another app comes to the front, while it is transcribing, so nothing
+is pasted into an app you switched to.
 If you switched to another app while recording, pressing **⇧⌘M** there stops
 the recording and brings Type Fast back with the transcript instead of pasting.
 

@@ -755,7 +755,8 @@ class MainWindow(QMainWindow):
         # inserted, hides the window and pastes (the voice hotkey), provided
         # you haven't clicked or typed since pressing it (``_voice_hide_input``
         # is autopaste.input_event_count() then). The time limit stops a
-        # recording without hiding: nobody asked to paste.
+        # recording without hiding: nobody asked to paste. ``_mic_request`` is
+        # the _voice_id of a recording waiting for macOS's microphone prompt.
         self.recorder = voice.Recorder(self)
         self.recorder.limit_reached.connect(self._stop_recording)
         self._voice_id = 0
@@ -764,6 +765,7 @@ class MainWindow(QMainWindow):
         self._voice_text = ""
         self._hide_after_voice: int | None = None
         self._voice_hide_input: int | None = None
+        self._mic_request: int | None = None
         self._register_voice_hotkey()
 
         self.timer = QTimer(self)
@@ -1291,6 +1293,12 @@ class MainWindow(QMainWindow):
         """
         if self._raise_open_dialog():
             return
+        if self._mic_request is not None and self._mic_request == self._voice_id:
+            # Pressed again while macOS asks for the microphone: don't start.
+            self._mic_request = None
+            self._voice_id += 1
+            self._reflect_voice()
+            return
         if (self.recorder.recording or self._transcribing) and not (
             self.isActiveWindow() and not self.isMinimized()
         ):
@@ -1343,13 +1351,16 @@ class MainWindow(QMainWindow):
         self._voice_id += 1
         voice_id = self._voice_id
         self._reflect_voice()
+        self._mic_request = voice_id
         voice.request_permission(
             self, lambda granted: self._on_mic_permission(voice_id, granted)
         )
 
     def _on_mic_permission(self, voice_id: int, granted: bool) -> None:
+        if voice_id == self._mic_request:
+            self._mic_request = None
         if voice_id != self._voice_id:
-            return  # dismissed while macOS was asking
+            return  # dismissed or cancelled while macOS was asking
         if not granted:
             self._voice_failed(voice.PERMISSION_DENIED)
             return
@@ -1429,10 +1440,11 @@ class MainWindow(QMainWindow):
         if hide and (
             autopaste.input_event_count() != self._voice_hide_input
             or QApplication.activeModalWidget() is not None
+            or not self.isActiveWindow()
         ):
             # You clicked or typed while it transcribed, maybe in another
-            # app, or a dialog is open: stay up rather than paste somewhere
-            # unexpected.
+            # app, another app came to the front, or a dialog is open: stay
+            # up rather than paste somewhere unexpected.
             hide = False
         self._transcribing = False
         self._reflect_voice()

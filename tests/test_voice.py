@@ -794,6 +794,33 @@ class WindowVoiceTests(unittest.TestCase):
         self.assertEqual(w.input.toPlainText(), "hi")
         self.assertTrue(w.isVisible())
 
+    def test_other_app_in_front_after_transcription_keeps_window_up(self) -> None:
+        w = self._voice_window()
+
+        def transcribe(*args, **kwargs) -> str:
+            w.isActiveWindow.return_value = False  # another app came forward
+            return "hi"
+
+        with mock.patch.object(self.app_module.voice, "transcribe", side_effect=transcribe):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_voice_hotkey_cancels_pending_mic_permission(self) -> None:
+        w = self._voice_window()
+        callbacks = []
+        with mock.patch.object(
+            self.app_module.voice, "request_permission",
+            side_effect=lambda ctx, cb: callbacks.append(cb),
+        ):
+            w.toggle_voice()  # macOS asks for the microphone
+            w.toggle_voice()  # pressed again before you answer
+        self.assertEqual(len(callbacks), 1)
+        callbacks[0](True)
+        self.assertFalse(w.recorder.recording)
+        self.assertIsNone(w._mic_request)
+
     def test_voice_hotkey_from_another_app_brings_transcript_back(self) -> None:
         w = self._voice_window()
         with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
