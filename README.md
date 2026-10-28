@@ -36,8 +36,11 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 - 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
   Spanish, French, German, and [more](docs/usage.md#languages).
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral,
-  Tech (keeps technical terms as practitioners write them), or your own custom
-  instruction.
+  Tech (keeps technical terms as practitioners write them), your own custom
+  instruction, or **Auto**, which picks the tone that fits what you wrote.
+- 🎙️ **Voice input** — click the mic (or press **⇧⌘M**), speak, and click it
+  again; your speech is transcribed, cleaned of "um"s and false starts, and
+  translated.
 - 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick an OpenAI model or your own Foundry deployment.
 
 ## Screenshots
@@ -92,18 +95,19 @@ so it can paste; see [Auto-paste](docs/usage.md#auto-paste).
 | **⇧⌘Space**                | Show Type Fast, or hide it and paste      |
 | **Esc**                    | Hide the window without pasting           |
 | **⌘L**                     | Show the language and tone pickers        |
+| **⇧⌘M**                    | Start or stop voice input                 |
 | **⌘,**                     | Set your OpenAI API key                   |
 
 The **Settings** menu also lets you change the model (OpenAI) or deployment
 (Azure AI Foundry), the hotkey, the window
-transparency, and the custom tone, and turn auto-paste off. See the [usage guide](docs/usage.md) for
+transparency, the custom tone, and voice input, and turn auto-paste off. See the [usage guide](docs/usage.md) for
 details.
 
 ## Documentation
 
 | Guide                                    | What's inside                                            |
 |------------------------------------------|----------------------------------------------------------|
-| [Usage](docs/usage.md)                   | Window layouts, hotkey, auto-paste, languages, and tone  |
+| [Usage](docs/usage.md)                   | Window layouts, hotkey, auto-paste, languages, tone, and voice input |
 | [Configuration](docs/configuration.md)   | API keys, Azure AI Foundry, models, and saved settings   |
 | [Foundry setup](docs/foundry-setup.md)   | Create a Foundry resource, deploy a model, and connect   |
 | [Development](docs/development.md)       | Run from source, test, build the `.app`, file issues/PRs |

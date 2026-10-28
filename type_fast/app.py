@@ -23,8 +23,9 @@ the same for every supported language. Editing inside a frozen
 prefix transparently re-translates from that point.
 
 A tone selector next to the language pickers controls the register of the
-translation (polite, casual, business, ... or a custom instruction). The
-provider (OpenAI or Azure AI Foundry) is picked in Settings › Provider and
+translation (polite, casual, business, ... or a custom instruction). Its Auto
+option lets the model pick the preset that fits the input and shows its pick
+("Auto · Business"). The provider (OpenAI or Azure AI Foundry) is picked in Settings › Provider and
 shown with the model at the bottom of the window. Each provider has its own
 submenu under Settings: OpenAI's holds the API key and the model (picked from
 OpenAI's models), and Azure AI Foundry's holds the endpoint, key, and the name
@@ -37,6 +38,12 @@ Because the window floats above other apps, it is slightly see-through, fades
 in when summoned, and fades further while you work in another app (hovering or
 returning to it brings it back). The strength is chosen in Settings › Window
 Transparency and remembered too.
+
+Voice input: the mic button in the footer (or ⇧⌘M) records from the default
+microphone until pressed again, then transcribes the speech with the active
+provider and inserts it into the input box, which translates it as usual.
+Spoken input is cleaned of filler words and false starts by default (Settings ›
+Voice Input), and typed input can be too.
 """
 
 from __future__ import annotations
@@ -90,9 +97,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import autopaste, config, hotkey, providers, settings
+from . import autopaste, config, hotkey, providers, settings, voice
 from .providers import azure as azure_provider, openai as openai_provider
 from .translator import translate_stream
+
+# Starts and stops voice recording (⇧⌘M on macOS).
+_VOICE_SHORTCUT = "Ctrl+Shift+M"
+_VOICE_SHORTCUT_SYMBOLS = "\u21e7\u2318M"
 
 # Characters that, when at the end of the input, trigger an immediate
 # translation instead of waiting for the idle debounce.
@@ -216,6 +227,25 @@ QToolButton#swapButton:pressed {
     background: rgba(128, 128, 128, 0.3);
 }
 QToolButton#swapButton:disabled {
+    color: rgba(128, 128, 128, 0.4);
+}
+QToolButton#micButton {
+    border: 1px solid transparent;
+    border-radius: 11px;
+    min-width: 22px;
+    min-height: 22px;
+    font-size: 13px;
+}
+QToolButton#micButton:hover {
+    background: rgba(128, 128, 128, 0.18);
+}
+QToolButton#micButton:focus {
+    border: 1px solid palette(highlight);
+}
+QToolButton#micButton:checked {
+    background: rgba(255, 59, 48, 0.3);
+}
+QToolButton#micButton:disabled {
     color: rgba(128, 128, 128, 0.4);
 }
 """
@@ -480,6 +510,11 @@ class Bridge(QObject):
     delta = Signal(int, str)
     finished = Signal(int, str)
     error = Signal(int, str)
+    # Auto tone: (request id, the preset the model chose).
+    tone_detected = Signal(int, str)
+    # Voice input: (voice id, transcript or error message).
+    transcribed = Signal(int, str)
+    voice_error = Signal(int, str)
 
 
 class MainWindow(QMainWindow):
@@ -489,6 +524,8 @@ class MainWindow(QMainWindow):
         self.setWindowFlag(Qt.WindowStaysOnTopHint, True)
 
         self.prefs = settings.load()
+        # The preset the model picked for the current input in Auto tone mode.
+        self._detected_tone = ""
 
         self.source_lang = QComboBox()
         self.source_lang.setToolTip("Language you type in")
@@ -507,6 +544,7 @@ class MainWindow(QMainWindow):
 
         self.tone = QComboBox()
         self.tone.setToolTip("Tone of the translation")
+        self.tone.addItem(config.AUTO_TONE, config.AUTO_TONE)
         for name in config.TONES:
             self.tone.addItem(name, name)
         self.tone.addItem(f"{config.CUSTOM_TONE}\u2026", config.CUSTOM_TONE)
@@ -538,6 +576,17 @@ class MainWindow(QMainWindow):
 
         self.hotkey_label = QLabel()
         self.hotkey_label.setObjectName("footnote")
+
+        # Voice input: click (or ⇧⌘M) to record, again to transcribe.
+        self.mic_button = QToolButton()
+        self.mic_button.setObjectName("micButton")
+        self.mic_button.setText("\U0001f399")
+        self.mic_button.setCheckable(True)
+        self.mic_button.setCursor(Qt.PointingHandCursor)
+        # Reachable with Tab, but clicking it doesn't pull focus from the input.
+        self.mic_button.setFocusPolicy(Qt.TabFocus)
+        self.mic_button.setAccessibleName("Voice input")
+        self.mic_button.clicked.connect(lambda: self.toggle_recording())
 
         central = QWidget()
         layout = QVBoxLayout(central)
@@ -576,6 +625,7 @@ class MainWindow(QMainWindow):
         footer.addWidget(self.model_label)
         footer.addWidget(self.hotkey_label)
         footer.addWidget(self.status, 1)
+        footer.addWidget(self.mic_button)
         layout.addLayout(footer)
         self.setCentralWidget(central)
         self._apply_style()
@@ -678,6 +728,20 @@ class MainWindow(QMainWindow):
         self.bridge.delta.connect(self._on_delta)
         self.bridge.finished.connect(self._on_finished)
         self.bridge.error.connect(self._on_error)
+        self.bridge.tone_detected.connect(self._on_tone_detected)
+        self.bridge.transcribed.connect(self._on_transcribed)
+        self.bridge.voice_error.connect(self._on_voice_error)
+
+        # Voice input. ``_voice_id`` identifies the latest recording so that a
+        # transcription finishing after a dismiss or a newer recording is
+        # dropped. ``_voice_input`` records that the current input came from
+        # speech, which picks the Clean Up Spoken Input setting.
+        self.recorder = voice.Recorder(self)
+        self.recorder.limit_reached.connect(self._stop_recording)
+        self._voice_id = 0
+        self._transcribing = False
+        self._voice_input = False
+        self._reflect_voice()
 
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
@@ -759,6 +823,37 @@ class MainWindow(QMainWindow):
         )
         self.auto_paste_action.triggered.connect(self._set_auto_paste)
         menu.addAction(self.auto_paste_action)
+
+        # Voice input: record, transcribe, and translate what you say.
+        self.voice_menu = menu.addMenu("Voice Input")
+        self.voice_input_action = QAction("Enable Voice Input", self, checkable=True)
+        self.voice_input_action.setChecked(self.prefs.voice_input)
+        self.voice_input_action.triggered.connect(self._set_voice_input)
+        self.voice_menu.addAction(self.voice_input_action)
+
+        self.record_action = QAction("Start Recording", self)
+        self.record_action.setShortcut(QKeySequence(_VOICE_SHORTCUT))
+        self.record_action.triggered.connect(lambda: self.toggle_recording())
+        self.voice_menu.addAction(self.record_action)
+
+        self.set_transcribe_model_action = QAction("Set Transcription Model\u2026", self)
+        self.set_transcribe_model_action.triggered.connect(self._set_transcribe_model)
+        self.voice_menu.addAction(self.set_transcribe_model_action)
+        self.voice_menu.addSeparator()
+
+        # Clean up filler words and false starts before translating.
+        self.optimize_voice_action = QAction("Clean Up Spoken Input", self, checkable=True)
+        self.optimize_voice_action.setChecked(self.prefs.optimize_voice)
+        self.optimize_voice_action.triggered.connect(
+            lambda checked: self._set_optimize(spoken=True, enabled=checked)
+        )
+        self.voice_menu.addAction(self.optimize_voice_action)
+        self.optimize_typed_action = QAction("Clean Up Typed Input", self, checkable=True)
+        self.optimize_typed_action.setChecked(self.prefs.optimize_typed)
+        self.optimize_typed_action.triggered.connect(
+            lambda checked: self._set_optimize(spoken=False, enabled=checked)
+        )
+        self.voice_menu.addAction(self.optimize_typed_action)
 
         transparency_menu = menu.addMenu("Window Transparency")
         self.transparency_group = QActionGroup(self)
@@ -970,6 +1065,8 @@ class MainWindow(QMainWindow):
                 text = self._take_paste_text()
         defer = paste and not text and self._translating
         self._dismissed = True
+        # Hiding stops listening; a transcription still running is dropped.
+        self._cancel_voice()
         self.hide()
         hotkey.hide_app()
         shown = self._shown_count
@@ -1117,6 +1214,234 @@ class MainWindow(QMainWindow):
         self._save_prefs("Auto-Paste Translation", "auto-paste setting")
         if enabled and not self._asked_paste_permission and self._needs_paste_permission():
             self._ask_paste_permission()
+
+    # --- Voice input ------------------------------------------------------
+
+    def _reflect_voice(self) -> None:
+        """Sync the mic button and Record item with the voice input state."""
+        enabled = self.prefs.voice_input
+        recording = self.recorder.recording
+        self.mic_button.setVisible(enabled)
+        self.mic_button.setEnabled(enabled and not self._transcribing)
+        self.mic_button.setChecked(recording)
+        self.record_action.setEnabled(enabled and not self._transcribing)
+        self.record_action.setText("Stop Recording" if recording else "Start Recording")
+        if recording:
+            tip = f"Stop and transcribe ({_VOICE_SHORTCUT_SYMBOLS})"
+        elif self._transcribing:
+            tip = "Transcribing\u2026"
+        else:
+            tip = f"Speak instead of typing ({_VOICE_SHORTCUT_SYMBOLS})"
+        self.mic_button.setToolTip(tip)
+        self.mic_button.setAccessibleDescription(tip)
+
+    def toggle_recording(self) -> None:
+        """Start recording, or stop and transcribe the recording in progress."""
+        if self.recorder.recording:
+            self._stop_recording()
+        elif self.prefs.voice_input and not self._transcribing:
+            self._start_recording()
+        else:
+            self._reflect_voice()  # undo the button's own check toggle
+
+    def _start_recording(self) -> None:
+        provider = providers.active_provider()
+        if not provider.is_configured():
+            self._set_status(self._missing_setup_message(provider))
+            self._reflect_voice()
+            return
+        self._voice_id += 1
+        voice_id = self._voice_id
+        self._reflect_voice()
+        voice.request_permission(
+            self, lambda granted: self._on_mic_permission(voice_id, granted)
+        )
+
+    def _on_mic_permission(self, voice_id: int, granted: bool) -> None:
+        if voice_id != self._voice_id:
+            return  # dismissed while macOS was asking
+        if not granted:
+            self._voice_failed(voice.PERMISSION_DENIED)
+            return
+        try:
+            self.recorder.start()
+        except voice.VoiceError as exc:
+            self._voice_failed(str(exc))
+            return
+        self._set_status(f"Listening\u2026 ({_VOICE_SHORTCUT_SYMBOLS} to stop)", "busy")
+        self._reflect_voice()
+
+    def _stop_recording(self) -> None:
+        """Stop recording and transcribe it on a worker thread."""
+        if not self.recorder.recording:
+            return
+        recording = self.recorder.stop()
+        self._set_status("")
+        self._reflect_voice()
+        if voice.is_silent(recording.pcm):
+            self._voice_failed(voice.PERMISSION_HINT)
+            return
+        provider = providers.active_provider()
+        try:
+            client = providers.get_client(provider)
+        except Exception as exc:
+            self._voice_failed(str(exc))
+            return
+        prompt = voice.CLEAN_TRANSCRIPT_PROMPT if self.prefs.optimize_voice else None
+        self._voice_id += 1
+        self._transcribing = True
+        self._set_status("Transcribing\u2026", "busy")
+        self._reflect_voice()
+        thread = threading.Thread(
+            target=self._transcribe_worker,
+            args=(
+                self._voice_id,
+                client,
+                provider.get_transcribe_model(),
+                recording.wav(),
+                config.LANGUAGE_CODES.get(self.prefs.source),
+                prompt,
+                provider,
+            ),
+            daemon=True,
+        )
+        thread.start()
+
+    def _transcribe_worker(
+        self,
+        voice_id: int,
+        client: OpenAI,
+        model: str,
+        wav: bytes,
+        language: str | None,
+        prompt: str | None,
+        provider: ModuleType,
+    ) -> None:
+        try:
+            text = voice.transcribe(
+                client, model, wav, language=language, prompt=prompt, provider=provider
+            )
+        except Exception as exc:  # surface API/network errors in the UI
+            self.bridge.voice_error.emit(voice_id, str(exc))
+            return
+        self.bridge.transcribed.emit(voice_id, text)
+
+    def _on_transcribed(self, voice_id: int, text: str) -> None:
+        if voice_id != self._voice_id:
+            return
+        self._transcribing = False
+        self._reflect_voice()
+        text = text.strip()
+        if not text:
+            self._set_status("No speech was recognized")
+            return
+        self._set_status("")
+        self._insert_transcript(text)
+
+    def _insert_transcript(self, text: str) -> None:
+        """Insert ``text`` at the cursor and translate it right away."""
+        cursor = self.input.textCursor()
+        before = self.input.toPlainText()[: cursor.position()]
+        if before and not before[-1].isspace():
+            text = " " + text
+        self._voice_input = True
+        cursor.insertText(text)
+        self.input.setTextCursor(cursor)
+        self.input.setFocus()
+        self.timer.stop()
+        self.run_translation()
+
+    def _on_voice_error(self, voice_id: int, message: str) -> None:
+        if voice_id == self._voice_id:
+            self._transcribing = False
+            self._voice_failed(message)
+
+    def _voice_failed(self, message: str) -> None:
+        self._set_status("")
+        self._reflect_voice()
+        QMessageBox.warning(self, "Voice Input", message)
+
+    def _cancel_voice(self) -> None:
+        """Stop listening and drop a transcription or permission prompt pending."""
+        self._voice_id += 1
+        if not (self.recorder.recording or self._transcribing):
+            return
+        self.recorder.cancel()
+        self._transcribing = False
+        self._set_status("")
+        self._reflect_voice()
+
+    def _set_voice_input(self, enabled: bool) -> None:
+        self.prefs.voice_input = enabled
+        if not enabled:
+            self._cancel_voice()
+        self._reflect_voice()
+        self._save_prefs("Voice Input", "voice input setting")
+
+    def _set_optimize(self, spoken: bool, enabled: bool) -> None:
+        if spoken:
+            self.prefs.optimize_voice = enabled
+        else:
+            self.prefs.optimize_typed = enabled
+        self._save_prefs("Clean Up Input", "clean-up setting")
+        self._retranslate()
+
+    def _set_transcribe_model(self) -> None:
+        """Choose the active provider's speech-to-text model or deployment."""
+        provider = providers.active_provider()
+        is_azure = provider is azure_provider
+        what = "transcription deployment" if is_azure else "transcription model"
+        title = f"Set {provider.DISPLAY_NAME} Transcription Model"
+        env = provider.TRANSCRIBE_MODEL_ENV
+        current = provider.get_transcribe_model()
+        if os.environ.get(env, "").strip():
+            QMessageBox.information(
+                self,
+                title,
+                f"The {what} is pinned by the {env} environment variable "
+                f"({current}). Unset it to choose one here.",
+            )
+            return
+        default = config.DEFAULT_TRANSCRIBE_MODEL
+        if is_azure:
+            prompt = (
+                "Name of a speech-to-text deployment (such as gpt-4o-transcribe "
+                "or whisper), exactly as shown in the Foundry portal\n"
+                f"(stored in {provider.TRANSCRIBE_MODEL_FILE}; leave blank for {default}):"
+            )
+            model = current
+            while True:
+                model, ok = QInputDialog.getText(
+                    self, title, prompt, QLineEdit.Normal, model
+                )
+                if not ok:
+                    return
+                model = model.strip()
+                problem = azure_provider.deployment_problem(model)
+                if not problem:
+                    break
+                QMessageBox.warning(self, title, problem)
+        else:
+            choices = list(config.TRANSCRIBE_MODEL_CHOICES)
+            if current not in choices:
+                choices.insert(0, current)
+            prompt = (
+                f"{provider.DISPLAY_NAME} speech-to-text model (stored in "
+                f"{provider.TRANSCRIBE_MODEL_FILE}; leave blank for {default}):"
+            )
+            model, ok = QInputDialog.getItem(
+                self, title, prompt, choices, choices.index(current), True
+            )
+            if not ok:
+                return
+        try:
+            provider.save_transcribe_model(model)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                title,
+                f"Could not save the {what} to {provider.TRANSCRIBE_MODEL_FILE}:\n{exc}",
+            )
 
     def _center_on_cursor_screen(self) -> None:
         """Center horizontally on the cursor's screen, in its upper part."""
@@ -1486,9 +1811,29 @@ class MainWindow(QMainWindow):
         self._save_model(azure_provider, model, title, "deployment name")
 
     def _update_tone_tooltip(self) -> None:
-        self.tone.setToolTip(
-            f"Tone of the translation: {self.prefs.instruction()}"
-        )
+        tip = f"Tone of the translation: {self.prefs.instruction()}"
+        if self.prefs.tone == config.AUTO_TONE and self._detected_tone:
+            tip += f" Detected: {self._detected_tone}."
+        self.tone.setToolTip(tip)
+
+    def _auto_tone_label(self) -> str:
+        """``"Auto"``, or ``"Auto · Business"`` once a tone was detected."""
+        if self._detected_tone:
+            return f"{config.AUTO_TONE} \u00b7 {self._detected_tone}"
+        return config.AUTO_TONE
+
+    def _show_detected_tone(self, name: str) -> None:
+        """Show ``name`` ("" for none) as the tone Auto picked."""
+        if name == self._detected_tone:
+            return
+        self._detected_tone = name
+        self.tone.setItemText(self.tone.findData(config.AUTO_TONE), self._auto_tone_label())
+        self._update_tone_tooltip()
+        self._update_labels()
+
+    def _on_tone_detected(self, request_id: int, name: str) -> None:
+        if request_id == self._request_id and self.prefs.tone == config.AUTO_TONE:
+            self._show_detected_tone(name)
 
     def _on_tone_activated(self, index: int) -> None:
         tone = self.tone.itemData(index)
@@ -1517,7 +1862,9 @@ class MainWindow(QMainWindow):
     def _apply_tone(self, tone: str) -> None:
         self.prefs.tone = tone
         self.tone.setCurrentIndex(self.tone.findData(tone))
+        self._show_detected_tone("")
         self._update_tone_tooltip()
+        self._update_labels()
         self._save_prefs("Tone", "tone")
         self._retranslate()
 
@@ -1631,9 +1978,11 @@ class MainWindow(QMainWindow):
             _AUTO_LABEL if source == config.AUTO_SOURCE else _language_label(source)
         )
         self.output_label.setText(_language_label(target))
-        self.pair_button.setText(
-            f"{_AUTO_LABEL if source == config.AUTO_SOURCE else source} \u2192 {target}"
-        )
+        pair = f"{_AUTO_LABEL if source == config.AUTO_SOURCE else source} \u2192 {target}"
+        if self.prefs.tone == config.AUTO_TONE:
+            # Compact mode hides the tone picker, so show what Auto chose here.
+            pair += f" \u00b7 {self._auto_tone_label()}"
+        self.pair_button.setText(pair)
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
@@ -1649,13 +1998,17 @@ class MainWindow(QMainWindow):
         full = self.input.toPlainText()
         source, target = self.prefs.source, self.prefs.target
         tone = self.prefs.instruction()
+        auto_tone = self.prefs.tone == config.AUTO_TONE
+        optimize = (
+            self.prefs.optimize_voice if self._voice_input else self.prefs.optimize_typed
+        )
         provider = providers.active_provider()
         model = provider.get_model()
         provider_state = self._provider_state(provider)
 
-        # A language, tone, provider, endpoint, key, or model change makes the
-        # frozen translation stale.
-        context = (source, target, tone, *provider_state)
+        # A language, tone, clean-up, provider, endpoint, key, or model change
+        # makes the frozen translation stale.
+        context = (source, target, tone, "clean" if optimize else "", *provider_state)
         if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""
@@ -1673,6 +2026,9 @@ class MainWindow(QMainWindow):
             self._last_sent_key = None
             self._paste_text = ""
             self.output.clear()
+            # A new input starts typed, with no tone detected yet.
+            self._voice_input = False
+            self._show_detected_tone("")
             return
 
         rest = full[len(self._frozen_src):]
@@ -1704,7 +2060,8 @@ class MainWindow(QMainWindow):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target, tone, *provider_state, should_freeze)
+        key = (self._frozen_src, active, source, target, tone, optimize,
+               *provider_state, should_freeze)
         if key == self._last_sent_key:
             return
         self._last_sent_key = key
@@ -1728,7 +2085,8 @@ class MainWindow(QMainWindow):
 
         thread = threading.Thread(
             target=self._translate_worker,
-            args=(request_id, active, source, target, tone, model, client),
+            args=(request_id, active, source, target, tone, model,
+                  auto_tone, optimize, client),
             daemon=True,
         )
         thread.start()
@@ -1749,10 +2107,15 @@ class MainWindow(QMainWindow):
         target: str,
         tone: str,
         model: str,
+        auto_tone: bool,
+        optimize: bool,
         client: OpenAI | Exception,
     ) -> None:
         def superseded() -> bool:
             return request_id != self._request_id
+
+        def detected(name: str) -> None:
+            self.bridge.tone_detected.emit(request_id, name)
 
         chunks: list[str] = []
         try:
@@ -1766,6 +2129,9 @@ class MainWindow(QMainWindow):
                 model=model,
                 client=client,
                 should_cancel=superseded,
+                auto_tone=auto_tone,
+                optimize=optimize,
+                on_tone=detected,
             ):
                 if superseded():
                     return

@@ -6,6 +6,7 @@
 - [Transparency](#transparency)
 - [Languages](#languages)
 - [Tone](#tone)
+- [Voice input](#voice-input)
 
 ## The window
 
@@ -15,7 +16,8 @@ The full window has:
 - a tone selector,
 - an input box and an output box that streams the translation, and
 - the provider and model in use (for example **Azure · gpt-5.4-mini**; switch
-  in **Settings → Provider**) and the show/hide hotkey, shown at the bottom.
+  in **Settings → Provider**), the show/hide hotkey, and the 🎙 voice input
+  button, shown at the bottom.
 
 Translation fires shortly after you stop typing, or immediately when your text
 ends in sentence-ending punctuation (`.`, `!`, `?`, `。`, `！`, `？`, `؟`, `।`)
@@ -202,5 +204,47 @@ Choose **Custom…**, or **Settings → Set Custom Tone…**, to write your own
 instruction, such as "Humble keigo (謙譲語) for a client" or "Playful, with a
 light touch of humor". The instruction is added to the translation prompt.
 
+Choose **Auto** (at the top of the list) to let the model pick the preset that
+fits the input's content and audience: a request to a client comes out
+**Business**, a message to a friend **Casual**, a bug report **Tech**. The tone
+it picked is shown next to Auto, as in **Auto · Business**, both in the selector
+and in the language pair at the top of the minimal window. With several lines,
+each finished line keeps the tone it was translated with, and the label shows
+the latest pick.
+
 Changing the tone re-translates the current text. Your choice, and any custom
 instruction, is saved to `~/.type-fast/settings.json` and restored on launch.
+
+## Voice input
+
+Click the 🎙 button at the bottom of the window, or press **⇧⌘M** (**Settings
+→ Voice Input → Start Recording**), and speak. The button turns red while it
+listens. Click it or press **⇧⌘M** again to stop: the recording is transcribed
+by your provider, inserted at the cursor in the input box, and translated right
+away with the current languages and tone. Recordings stop by themselves after
+5 minutes. Hiding the window, or pressing **Esc**, discards a recording in
+progress.
+
+The first time, macOS asks you to let Type Fast use the microphone. If you
+said no, or the recording comes out silent, allow it in **System Settings →
+Privacy & Security → Microphone** (when running from source, allow your
+terminal app) and check the input device in **System Settings → Sound**.
+
+Speech is rarely as tidy as typing, so spoken input is cleaned up before it is
+translated: filler words (um, uh, えーと, 那个, …), stutters, repetitions, and
+false starts are dropped, and when you correct yourself ("on Tuesday, no,
+Wednesday") only the correction is kept. The meaning is never changed. Turn
+this off with **Settings → Voice Input → Clean Up Spoken Input**, or turn on
+**Clean Up Typed Input** to tidy hasty typing the same way. Combine voice
+input with the [Auto tone](#tone) to also have the tone chosen for you.
+
+Transcription uses `gpt-4o-transcribe` by default. Choose another model, such
+as `gpt-4o-mini-transcribe` or `whisper-1`, in **Settings → Voice Input → Set
+Transcription Model…**. Azure AI Foundry needs a speech-to-text deployment:
+deploy `gpt-4o-transcribe` (or `whisper`) in your Foundry resource and enter its
+deployment name there; see [Configuration](configuration.md#voice-input).
+The source language, unless it is auto-detect, is passed to the transcription
+model as a hint.
+
+Don't need it? Turn off **Settings → Voice Input → Enable Voice Input** to hide
+the button and the shortcut.

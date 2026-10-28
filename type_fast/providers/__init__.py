@@ -90,6 +90,11 @@ def save_model(model: str) -> None:
     active_provider().save_model(model)
 
 
+def get_transcribe_model() -> str:
+    """Return the speech-to-text model/deployment for the active provider."""
+    return active_provider().get_transcribe_model()
+
+
 def get_client(provider: Optional[ModuleType] = None) -> OpenAI:
     """Return the cached client for ``provider`` (default: the active one).
 

@@ -26,6 +26,11 @@ API_KEY_FILE = CONFIG_DIR / "api_key"
 MODEL_ENV = "OPENAI_MODEL"
 MODEL_FILE = CONFIG_DIR / "openai_model"
 
+# Speech-to-text model for voice input: environment variable, then file, then
+# :data:`type_fast.config.DEFAULT_TRANSCRIBE_MODEL`.
+TRANSCRIBE_MODEL_ENV = "OPENAI_TRANSCRIBE_MODEL"
+TRANSCRIBE_MODEL_FILE = CONFIG_DIR / "openai_transcribe_model"
+
 
 class MissingAPIKeyError(RuntimeError):
     """Raised when the OpenAI API key is not configured."""
@@ -49,6 +54,19 @@ def get_model() -> str:
 def save_model(model: str) -> None:
     """Persist ``model`` to the model file; a blank value restores the default."""
     write_or_clear(MODEL_FILE, model)
+
+
+def get_transcribe_model() -> str:
+    """Return the speech-to-text model used for voice input."""
+    return (
+        from_env_or_file(TRANSCRIBE_MODEL_ENV, TRANSCRIBE_MODEL_FILE)
+        or config.DEFAULT_TRANSCRIBE_MODEL
+    )
+
+
+def save_transcribe_model(model: str) -> None:
+    """Persist the speech-to-text model; a blank value restores the default."""
+    write_or_clear(TRANSCRIBE_MODEL_FILE, model)
 
 
 def get_api_key() -> str:

@@ -38,7 +38,9 @@ MODEL_FILE = CONFIG_DIR / "azure_ai_model"
 ENDPOINT_ENV = "AZURE_AI_ENDPOINT"
 API_KEY_ENV = "AZURE_AI_API_KEY"
 MODEL_ENV = "AZURE_AI_MODEL"
-
+# Speech-to-text deployment used for voice input.
+TRANSCRIBE_MODEL_FILE = CONFIG_DIR / "azure_ai_transcribe_model"
+TRANSCRIBE_MODEL_ENV = "AZURE_AI_TRANSCRIBE_MODEL"
 # The Foundry portal shows a project endpoint (``…/api/projects/<name>``); the
 # OpenAI-compatible API lives at the resource root instead.
 _PROJECT_PATH = re.compile(r"/api/projects(/.*)?$", re.IGNORECASE)
@@ -74,6 +76,19 @@ def get_model() -> str:
 def save_model(model: str) -> None:
     """Persist ``model`` to the model file; a blank value restores the default."""
     write_or_clear(MODEL_FILE, model)
+
+
+def get_transcribe_model() -> str:
+    """Return the speech-to-text deployment name (or the default deployment)."""
+    return (
+        from_env_or_file(TRANSCRIBE_MODEL_ENV, TRANSCRIBE_MODEL_FILE)
+        or config.DEFAULT_TRANSCRIBE_MODEL
+    )
+
+
+def save_transcribe_model(model: str) -> None:
+    """Persist the speech-to-text deployment; a blank value restores the default."""
+    write_or_clear(TRANSCRIBE_MODEL_FILE, model)
 
 
 def deployment_problem(model: str) -> str | None:

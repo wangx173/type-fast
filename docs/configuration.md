@@ -121,21 +121,49 @@ rejects reasoning effort none, the request is retried with low effort, and then
 without the setting. Either way, the model is remembered for the rest of the
 session.
 
+## Voice input
+
+[Voice input](usage.md#voice-input) sends the recording to the active
+provider's speech-to-text endpoint (`/audio/transcriptions`), using its own
+model setting, separate from the translation model. The default is
+`gpt-4o-transcribe`. Choose another in **Settings → Voice Input → Set
+Transcription Model…**, for the provider in use:
+
+- **OpenAI:** pick `gpt-4o-transcribe`, `gpt-4o-mini-transcribe`, or
+  `whisper-1`, or type another transcription model.
+- **Azure AI Foundry:** deploy a speech-to-text model (`gpt-4o-transcribe`,
+  `gpt-4o-mini-transcribe`, or `whisper`) in the same Foundry resource and enter
+  its deployment name. If no deployment has that name, voice input says so.
+
+Leave it blank to go back to the default. An environment variable takes
+precedence over the file:
+
+| Provider         | Environment variable        | Fallback file                            |
+|------------------|-----------------------------|------------------------------------------|
+| OpenAI           | `OPENAI_TRANSCRIBE_MODEL`   | `~/.type-fast/openai_transcribe_model`   |
+| Azure AI Foundry | `AZURE_AI_TRANSCRIBE_MODEL` | `~/.type-fast/azure_ai_transcribe_model` |
+
+Audio is recorded only while the 🎙 button is on, kept in memory, sent to your
+provider once, and never saved to disk.
+
 ## Where settings are stored
 
 Everything lives in `~/.type-fast/`:
 
-| File                | Contents                                                               |
-|---------------------|------------------------------------------------------------------------|
-| `settings.json`     | Language pair, tone, custom tone, hotkey, transparency, and auto-paste |
-| `provider`          | Provider picked in Settings → Provider (`openai` or `azure`)           |
-| `api_key`           | OpenAI API key                                                         |
-| `openai_model`      | OpenAI model override                                                  |
-| `azure_ai_endpoint` | Azure AI Foundry endpoint                                              |
-| `azure_ai_api_key`  | Azure AI Foundry API key                                               |
-| `azure_ai_model`    | Azure AI Foundry model or deployment override                          |
+| File                        | Contents                                                                                            |
+|-----------------------------|-----------------------------------------------------------------------------------------------------|
+| `settings.json`             | Language pair, tone, custom tone, hotkey, transparency, auto-paste, voice input, and clean-up switches |
+| `provider`                  | Provider picked in Settings → Provider (`openai` or `azure`)                                        |
+| `api_key`                   | OpenAI API key                                                                                      |
+| `openai_model`              | OpenAI model override                                                                               |
+| `openai_transcribe_model`   | OpenAI transcription model override                                                                 |
+| `azure_ai_endpoint`         | Azure AI Foundry endpoint                                                                           |
+| `azure_ai_api_key`          | Azure AI Foundry API key                                                                            |
+| `azure_ai_model`            | Azure AI Foundry model or deployment override                                                       |
+| `azure_ai_transcribe_model` | Azure AI Foundry transcription deployment override                                                  |
 
 Built-in defaults, such as the default models, suggested models, reasoning
 efforts, temperature, languages, tone presets, debounce interval, default
-hotkey, transparency presets, and the auto-paste default, live in
+hotkey, transparency presets, the auto-paste default, and the voice input and
+clean-up defaults, live in
 [`type_fast/config.py`](../type_fast/config.py).

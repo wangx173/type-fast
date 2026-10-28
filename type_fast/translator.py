@@ -11,8 +11,9 @@ The underlying client (OpenAI or Microsoft Azure AI Foundry) is built by
 
 from __future__ import annotations
 
+import re
 import threading
-from typing import Callable, Iterator, Optional
+from typing import Callable, Iterable, Iterator, Optional
 
 import openai
 
@@ -36,7 +37,14 @@ _reasoning_fallbacks: dict[tuple[str, str], Optional[str]] = {}
 _reasoning_fallbacks_lock = threading.Lock()
 
 
-def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
+def system_prompt(
+    source: str,
+    target: str,
+    tone: Optional[str] = None,
+    *,
+    auto_tone: bool = False,
+    optimize: bool = False,
+) -> str:
     """Build a strict translation system prompt for the given language pair.
 
     Args:
@@ -44,20 +52,101 @@ def system_prompt(source: str, target: str, tone: Optional[str] = None) -> str:
         target: Target language name.
         tone: Instruction describing the desired tone/register of the
             translation. Defaults to the :data:`config.DEFAULT_TONE` preset.
+            Ignored when ``auto_tone`` is set.
+        auto_tone: Let the model pick one of the :data:`config.TONES` presets
+            and report it as a leading ``[Tone: Name]`` tag (see
+            :func:`translate_stream`).
+        optimize: Also clean up filler words, stutters, and false starts (see
+            :data:`config.OPTIMIZE_INSTRUCTION`).
     """
     src = (
         "the source language (auto-detect it)"
         if source == config.AUTO_SOURCE
         else source
     )
+    clean = f"{config.OPTIMIZE_INSTRUCTION} " if optimize else ""
+    if auto_tone:
+        presets = " ".join(
+            f"{name}: {instruction}" for name, instruction in config.TONES.items()
+        )
+        return (
+            f"You are a translation engine. Translate the user's text from {src} "
+            f"into natural {target}. {clean}"
+            "Choose the tone for the translation yourself: pick the one preset "
+            "below that best fits the input's content, audience, and context. "
+            f"Presets — {presets} "
+            f"Begin your output with the tag {TONE_TAG_EXAMPLE} naming the chosen "
+            f"preset exactly, then a newline, then ONLY the {target} translation "
+            "written in that tone. "
+            "Do not add romanization, transliteration, explanations, notes, or quotes. "
+            "Preserve the original meaning."
+        )
     tone = (tone or "").strip() or config.TONES[config.DEFAULT_TONE]
     return (
         f"You are a translation engine. Translate the user's text from {src} "
-        f"into natural {target}. Output ONLY the {target} translation. "
+        f"into natural {target}. {clean}Output ONLY the {target} translation. "
         "Do not add romanization, transliteration, explanations, notes, or quotes. "
         "Preserve the original meaning. "
         f"Tone for the translation: {tone}"
     )
+
+
+# Leading tag the model writes in Auto tone mode, e.g. "[Tone: Business]".
+TONE_TAG_EXAMPLE = "[Tone: <preset name>]"
+_TONE_TAG = re.compile(r"\[\s*tone\s*:\s*([^\]\n]{1,40}?)\s*\]", re.IGNORECASE)
+# Text that could still grow into a tone tag as more chunks arrive.
+_TONE_TAG_PREFIX = re.compile(r"\[\s*(t(o(n(e\s*(:[^\]\n]{0,40})?)?)?)?)?",
+                              re.IGNORECASE)
+
+
+def _tone_name(raw: str) -> str:
+    """Map the model's tone name to a :data:`config.TONES` preset name."""
+    name = raw.strip()
+    for preset in config.TONES:
+        if preset.lower() == name.lower():
+            return preset
+    return name[:1].upper() + name[1:]
+
+
+def _strip_tone_tag(
+    chunks: Iterable[str], on_tone: Optional[Callable[[str], None]]
+) -> Iterator[str]:
+    """Remove a leading ``[Tone: Name]`` tag from ``chunks`` and report it.
+
+    Text is held back only while it could still be the start of a tag; anything
+    else passes through unchanged, so a model that skips the tag loses nothing.
+    """
+    buffer = ""
+    passing = False
+    skip_space = False
+    for chunk in chunks:
+        if passing:
+            if skip_space:
+                chunk = chunk.lstrip()
+                if not chunk:
+                    continue
+                skip_space = False
+            yield chunk
+            continue
+        buffer += chunk
+        head = buffer.lstrip()
+        match = _TONE_TAG.match(head)
+        if match:
+            if on_tone is not None:
+                on_tone(_tone_name(match.group(1)))
+            passing = True
+            rest = head[match.end():].lstrip()
+            if rest:
+                yield rest
+            else:
+                skip_space = True
+            continue
+        if not head or _TONE_TAG_PREFIX.fullmatch(head):
+            continue
+        passing = True
+        yield buffer
+    if not passing and buffer:
+        yield buffer
 
 
 def translate_stream(
@@ -69,6 +158,9 @@ def translate_stream(
     model: Optional[str] = None,
     client: Optional[openai.OpenAI] = None,
     should_cancel: Optional[Callable[[], bool]] = None,
+    auto_tone: bool = False,
+    optimize: bool = False,
+    on_tone: Optional[Callable[[str], None]] = None,
 ) -> Iterator[str]:
     """Yield translated text chunks for ``text`` as they stream from the model.
 
@@ -86,6 +178,10 @@ def translate_stream(
         should_cancel: Optional callback polled between chunks; when it returns
             ``True`` the stream is abandoned. Useful when a newer translation
             supersedes this one on a worker thread.
+        auto_tone: Let the model choose the tone. Its ``[Tone: Name]`` tag is
+            stripped from the output and passed to ``on_tone``.
+        optimize: Clean up filler words and false starts before translating.
+        on_tone: Called with the preset name the model chose in Auto tone mode.
 
     Newer reasoning models are asked for their fastest reasoning effort (see
     :func:`config.reasoning_effort`). If the request is rejected because of
@@ -112,8 +208,12 @@ def translate_stream(
     )
     while True:
         try:
-            yield from _stream(client, model, text, source, target, tone,
-                               use_temperature, effort, should_cancel)
+            chunks = _stream(client, model, text, source, target, tone,
+                             use_temperature, effort, should_cancel,
+                             auto_tone, optimize)
+            if auto_tone:
+                chunks = _strip_tone_tag(chunks, on_tone)
+            yield from chunks
             return
         except openai.BadRequestError as exc:
             # The request is rejected before any output streams, so retrying is
@@ -159,16 +259,20 @@ def _stream(
     use_temperature: bool,
     effort: Optional[str],
     should_cancel: Optional[Callable[[], bool]],
+    auto_tone: bool = False,
+    optimize: bool = False,
 ) -> Iterator[str]:
     params: dict[str, object] = {}
     if use_temperature:
         params["temperature"] = config.DEFAULT_TEMPERATURE
     if effort is not None:
         params["reasoning"] = {"effort": effort}
+    prompt = system_prompt(source, target, tone,
+                           auto_tone=auto_tone, optimize=optimize)
     with client.responses.stream(
         model=model,
         input=[
-            {"role": "system", "content": system_prompt(source, target, tone)},
+            {"role": "system", "content": prompt},
             {"role": "user", "content": text},
         ],
         **params,
