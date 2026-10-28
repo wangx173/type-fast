@@ -778,6 +778,18 @@ class WindowVoiceTests(unittest.TestCase):
         self.assertEqual(w.input.toPlainText(), "hi")
         self.assertFalse(w.isVisible())
 
+    def test_input_during_transcription_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        counts = iter([5, 7])  # a click or key press while transcribing
+        with mock.patch.object(
+            self.app_module.autopaste, "input_event_count",
+            side_effect=lambda: next(counts, 7),
+        ), mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
     def test_mic_button_stop_keeps_window_up(self) -> None:
         w = self._voice_window()
         with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
@@ -810,11 +822,37 @@ class WindowVoiceTests(unittest.TestCase):
     def test_voice_hotkey_keeps_full_layout_of_shown_window(self) -> None:
         w = self._voice_window()
         w.summon()
-        w.input.setPlainText("Hello")
-        w.toggle_voice()
-        self.assertFalse(w.compact)
-        self.assertEqual(w.input.toPlainText(), "Hello")
-        self.assertTrue(w.recorder.recording)
+        w.input.setPlainText("Hello there")
+        cursor = w.input.textCursor()
+        cursor.setPosition(len("Hello"))
+        w.input.setTextCursor(cursor)
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="you"):
+            w.toggle_voice()
+            self.assertFalse(w.compact)
+            self.assertTrue(w.recorder.recording)
+            w.toggle_recording()
+        # Dictated at the cursor, not at the end.
+        self.assertEqual(w.input.toPlainText(), "Hello you there")
+
+    def test_voice_hotkey_hide_waits_for_open_dialog(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            with mock.patch.object(
+                self.app_module.QApplication, "activeModalWidget",
+                side_effect=[None, mock.MagicMock()],  # opened while transcribing
+            ):
+                w.toggle_voice()
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
+
+    def test_time_limit_stop_keeps_window_up(self) -> None:
+        w = self._voice_window()
+        with mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
+            w.toggle_voice()
+            w._stop_recording()  # what recorder.limit_reached triggers
+        self.assertEqual(w.input.toPlainText(), "hi")
+        self.assertTrue(w.isVisible())
 
     def test_voice_hotkey_ignored_when_voice_input_off(self) -> None:
         w = self._voice_window()
