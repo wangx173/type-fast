@@ -52,12 +52,6 @@ PERMISSION_DENIED = (
     "Type Fast doesn't have access to the microphone. Allow it in System "
     "Settings \u203a Privacy & Security \u203a Microphone, then try again."
 )
-# Transcription prompt that asks for a clean transcript (gpt-4o-transcribe and
-# whisper use the prompt as a style guide).
-CLEAN_TRANSCRIPT_PROMPT = (
-    "Transcribe the speech as clean, well-punctuated text without filler "
-    "words such as um or uh."
-)
 
 
 class VoiceError(RuntimeError):

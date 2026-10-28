@@ -517,7 +517,7 @@ class WindowVoiceTests(unittest.TestCase):
         self.assertEqual(args[1], config.DEFAULT_TRANSCRIBE_MODEL)
         self.assertTrue(args[2].startswith(b"RIFF"))
         self.assertEqual(kwargs["language"], "en")
-        self.assertEqual(kwargs["prompt"], self.app_module.voice.CLEAN_TRANSCRIPT_PROMPT)
+        self.assertNotIn("prompt", kwargs)
         self.assertEqual(w.input.toPlainText(), "Hello how are you?")
         self.assertFalse(w.mic_button.isChecked())
         self.assertTrue(w.mic_button.isEnabled())

@@ -583,7 +583,8 @@ class MainWindow(QMainWindow):
         self.mic_button.setText("\U0001f399")
         self.mic_button.setCheckable(True)
         self.mic_button.setCursor(Qt.PointingHandCursor)
-        # Reachable with Tab, but clicking it doesn't pull focus from the input.
+        # Tab reaches it with Full Keyboard Access on (⇧⌘M works regardless);
+        # clicking it doesn't pull focus from the input.
         self.mic_button.setFocusPolicy(Qt.TabFocus)
         self.mic_button.setAccessibleName("Voice input")
         self.mic_button.clicked.connect(lambda: self.toggle_recording())
@@ -1287,7 +1288,8 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             self._voice_failed(str(exc))
             return
-        prompt = voice.CLEAN_TRANSCRIPT_PROMPT if self.prefs.optimize_voice else None
+        # No transcription prompt: it would have to be in the spoken language,
+        # which may be unknown. The translation prompt does the clean-up.
         self._voice_id += 1
         self._transcribing = True
         self._set_status("Transcribing\u2026", "busy")
@@ -1300,7 +1302,6 @@ class MainWindow(QMainWindow):
                 provider.get_transcribe_model(),
                 recording.wav(),
                 config.LANGUAGE_CODES.get(self.prefs.source),
-                prompt,
                 provider,
             ),
             daemon=True,
@@ -1314,12 +1315,11 @@ class MainWindow(QMainWindow):
         model: str,
         wav: bytes,
         language: str | None,
-        prompt: str | None,
         provider: ModuleType,
     ) -> None:
         try:
             text = voice.transcribe(
-                client, model, wav, language=language, prompt=prompt, provider=provider
+                client, model, wav, language=language, provider=provider
             )
         except Exception as exc:  # surface API/network errors in the UI
             self.bridge.voice_error.emit(voice_id, str(exc))
