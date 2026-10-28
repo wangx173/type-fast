@@ -293,6 +293,41 @@ class AudioHelperTests(unittest.TestCase):
         with self.assertRaises(voice.VoiceError):
             voice.to_int16(b"", fmt.Unknown)
 
+    def test_downsample(self) -> None:
+        from PySide6.QtMultimedia import QAudioFormat
+
+        from type_fast import voice
+
+        fmt = QAudioFormat.SampleFormat
+        # 48 kHz stereo: keep the left channel of every third frame.
+        frames = [(i, -i) for i in range(9)]
+        stereo = _pcm(*(s for frame in frames for s in frame))
+        self.assertEqual(
+            voice.downsample(stereo, fmt.Int16, 48000, 2), (_pcm(0, 3, 6), 16000, 1)
+        )
+        # 44.1 kHz float mono: every second sample, at 22.05 kHz.
+        floats = array.array("f", [0.0, 0.5, 1.0, -1.0]).tobytes()
+        data, rate, channels = voice.downsample(floats, fmt.Float, 44100, 1)
+        self.assertEqual((rate, channels), (22050, 1))
+        self.assertEqual(voice.to_int16(data, fmt.Float), _pcm(0, 32767))
+        # 16 kHz mono and unknown formats are left alone.
+        pcm = _pcm(1, 2, 3)
+        self.assertEqual(voice.downsample(pcm, fmt.Int16, 16000, 1), (pcm, 16000, 1))
+        self.assertEqual(voice.downsample(b"xy", fmt.Unknown, 48000, 2), (b"xy", 48000, 2))
+
+    def test_downsampled_long_recording_fits_upload_limit(self) -> None:
+        from PySide6.QtMultimedia import QAudioFormat
+
+        from type_fast import voice
+
+        seconds = config.MAX_RECORDING_SECONDS
+        raw = bytes(48000 * 2 * 4 * seconds)  # 48 kHz stereo float
+        data, rate, channels = voice.downsample(
+            raw, QAudioFormat.SampleFormat.Float, 48000, 2
+        )
+        self.assertEqual((rate, channels), (16000, 1))
+        self.assertEqual(len(data), 16000 * 4 * seconds)
+
 
 class TranscribeTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -588,6 +623,73 @@ class WindowVoiceTests(unittest.TestCase):
         self.assertTrue(w.recorder.cancelled)
         self.assertFalse(w.mic_button.isChecked())
         self.assertEqual(w.status.text(), "")
+
+    def test_hiding_or_minimizing_cancels_recording(self) -> None:
+        from PySide6.QtCore import Qt
+
+        w = self._window()
+        w.show()
+        w.toggle_recording()
+        w.hide()  # e.g. ⌘W or another path that skips dismiss()
+        self.assertTrue(w.recorder.cancelled)
+        self.assertFalse(w.mic_button.isChecked())
+
+        w.recorder = _FakeRecorder(_pcm(0, 3000))
+        w.toggle_recording()
+        w._on_app_state_changed(Qt.ApplicationHidden)  # ⌘H
+        self.assertTrue(w.recorder.cancelled)
+
+        w.recorder = _FakeRecorder(_pcm(0, 3000))
+        w.show()
+        w.toggle_recording()
+        w.showMinimized()
+        self.assertTrue(w.recorder.cancelled)
+
+    def test_transcript_gets_spaces_around_it(self) -> None:
+        w = self._window()
+        w.input.setPlainText("Hello there")
+        cursor = w.input.textCursor()
+        cursor.setPosition(5)
+        w.input.setTextCursor(cursor)
+        w._insert_transcript("my friend")
+        self.assertEqual(w.input.toPlainText(), "Hello my friend there")
+        # Replacing a selected word keeps the neighbouring spaces single.
+        w.input.setPlainText("Hello X there")
+        cursor = w.input.textCursor()
+        cursor.setPosition(6)
+        cursor.setPosition(7, cursor.MoveMode.KeepAnchor)
+        w.input.setTextCursor(cursor)
+        w._insert_transcript("big")
+        self.assertEqual(w.input.toPlainText(), "Hello big there")
+        w.input.setPlainText("Hello,")
+        w.input.moveCursor(w.input.textCursor().MoveOperation.Start)
+        w._insert_transcript("Oh")
+        self.assertEqual(w.input.toPlainText(), "Oh Hello,")
+
+    def test_replacing_dictated_text_makes_input_typed(self) -> None:
+        w = self._window()
+        w._insert_transcript("um so hello")
+        self.assertTrue(self.calls[-1][7])
+        w.input.selectAll()
+        w.input.insertPlainText("typed instead")  # before the debounce fires
+        w.run_translation()
+        self.assertFalse(self.calls[-1][7])
+
+    def test_clearing_dictated_text_makes_input_typed(self) -> None:
+        w = self._window()
+        w._insert_transcript("um so hello")
+        w.input.clear()
+        w.input.insertPlainText("typed")  # before the debounce fires
+        w.run_translation()
+        self.assertFalse(self.calls[-1][7])
+
+    def test_editing_around_dictated_text_keeps_it_spoken(self) -> None:
+        w = self._window()
+        w._insert_transcript("um so hello")
+        w.input.moveCursor(w.input.textCursor().MoveOperation.End)
+        w.input.insertPlainText(" there")
+        w.run_translation()
+        self.assertTrue(self.calls[-1][7])
 
     def test_permission_denied(self) -> None:
         w = self._window()

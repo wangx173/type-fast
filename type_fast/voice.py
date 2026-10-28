@@ -1,7 +1,8 @@
 """Voice input: record from the default microphone and transcribe the speech.
 
 :class:`Recorder` captures 16 kHz mono 16-bit audio with Qt Multimedia (falling
-back to the microphone's preferred format, converted to 16-bit), and
+back to the microphone's preferred format, reduced to one channel near 16 kHz
+and converted to 16-bit, so long recordings stay small enough to upload), and
 :func:`transcribe` sends it as a WAV file to the active provider's
 speech-to-text model (``client.audio.transcriptions``), which works for both
 OpenAI and Microsoft Azure AI Foundry deployments.
@@ -119,6 +120,34 @@ def to_int16(data: bytes, sample_format: QAudioFormat.SampleFormat) -> bytes:
     return out.tobytes()
 
 
+_TYPECODES = {
+    QAudioFormat.SampleFormat.UInt8: "B",
+    QAudioFormat.SampleFormat.Int16: "h",
+    QAudioFormat.SampleFormat.Int32: "i",
+    QAudioFormat.SampleFormat.Float: "f",
+}
+
+
+def downsample(
+    data: bytes, sample_format: QAudioFormat.SampleFormat, rate: int, channels: int
+) -> tuple[bytes, int, int]:
+    """Reduce raw samples to one channel near :data:`SAMPLE_RATE`.
+
+    Keeps the first channel and every n-th frame, where n is the whole number
+    of times ``rate`` exceeds 16 kHz (48 kHz becomes 16 kHz, 44.1 kHz becomes
+    22.05 kHz). That's plenty for speech and keeps a long recording well under
+    the transcription upload limit. Returns ``(data, rate, channels)``.
+    """
+    channels = max(1, channels)
+    factor = max(1, rate // SAMPLE_RATE)
+    code = _TYPECODES.get(sample_format)
+    if code is None or (channels == 1 and factor == 1):
+        return data, rate, channels
+    samples = array.array(code)
+    samples.frombytes(data[: len(data) // samples.itemsize * samples.itemsize])
+    return samples[:: channels * factor].tobytes(), rate // factor, 1
+
+
 def request_permission(context: QObject, callback: Callable[[bool], None]) -> None:
     """Ask macOS for microphone access, then call ``callback(granted)``.
 
@@ -204,11 +233,13 @@ class Recorder(QObject):
         data = bytes(self._buffer.data())
         fmt = self._format
         self._release()
-        return Recording(
-            to_int16(data, fmt.sampleFormat()),
+        data, rate, channels = downsample(
+            data,
+            fmt.sampleFormat(),
             fmt.sampleRate() or SAMPLE_RATE,
             fmt.channelCount() or 1,
         )
+        return Recording(to_int16(data, fmt.sampleFormat()), rate, channels)
 
     def cancel(self) -> None:
         """Stop recording and discard the audio."""

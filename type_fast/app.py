@@ -736,12 +736,14 @@ class MainWindow(QMainWindow):
         # Voice input. ``_voice_id`` identifies the latest recording so that a
         # transcription finishing after a dismiss or a newer recording is
         # dropped. ``_voice_input`` records that the current input came from
-        # speech, which picks the Clean Up Spoken Input setting.
+        # speech, which picks the Clean Up Spoken Input setting; it lasts while
+        # the last transcript (``_voice_text``) is still in the input.
         self.recorder = voice.Recorder(self)
         self.recorder.limit_reached.connect(self._stop_recording)
         self._voice_id = 0
         self._transcribing = False
         self._voice_input = False
+        self._voice_text = ""
         self._reflect_voice()
 
         self.timer = QTimer(self)
@@ -965,11 +967,16 @@ class MainWindow(QMainWindow):
         if event.type() == QEvent.ActivationChange:
             self._sync_hover_tracking()
             self._update_opacity()
+        elif event.type() == QEvent.WindowStateChange and self.isMinimized():
+            # Never keep the microphone open behind a minimized window.
+            self._cancel_voice()
         super().changeEvent(event)
 
     def hideEvent(self, event: QEvent) -> None:
         self._hover_timer.stop()
         self._hovered = False
+        # However the window goes away, stop listening.
+        self._cancel_voice()
         super().hideEvent(event)
 
     # --- Show/hide --------------------------------------------------------
@@ -1341,9 +1348,15 @@ class MainWindow(QMainWindow):
     def _insert_transcript(self, text: str) -> None:
         """Insert ``text`` at the cursor and translate it right away."""
         cursor = self.input.textCursor()
-        before = self.input.toPlainText()[: cursor.position()]
+        full = self.input.toPlainText()
+        # Replacing a selection: look at the text around it, not inside it.
+        before = full[: cursor.selectionStart()]
+        after = full[cursor.selectionEnd():]
+        self._voice_text = text
         if before and not before[-1].isspace():
             text = " " + text
+        if after and not after[0].isspace():
+            text += " "
         self._voice_input = True
         cursor.insertText(text)
         self.input.setTextCursor(cursor)
@@ -1459,6 +1472,9 @@ class MainWindow(QMainWindow):
         self.move(x, y)
 
     def _on_app_state_changed(self, state: Qt.ApplicationState) -> None:
+        if state == Qt.ApplicationHidden:
+            # Hiding the app (⌘H) doesn't always send the window a hide event.
+            self._cancel_voice()
         if state == Qt.ApplicationActive:
             # Settings may have changed outside the app (e.g. the setup script);
             # if so, apply them to the current text too, not just the footer.
@@ -1986,6 +2002,12 @@ class MainWindow(QMainWindow):
 
     def _on_text_changed(self) -> None:
         text = self.input.toPlainText()
+        # Once the dictated text is cleared or replaced, the input is typed.
+        if self._voice_input and (
+            not text.strip() or self._voice_text not in text
+        ):
+            self._voice_input = False
+            self._voice_text = ""
         # Pressing Enter (line ends) or finishing a sentence translates now;
         # otherwise wait for the idle debounce.
         if text.endswith("\n") or text.rstrip().endswith(_SENTENCE_ENDINGS):
@@ -2028,6 +2050,7 @@ class MainWindow(QMainWindow):
             self.output.clear()
             # A new input starts typed, with no tone detected yet.
             self._voice_input = False
+            self._voice_text = ""
             self._show_detected_tone("")
             return
 
