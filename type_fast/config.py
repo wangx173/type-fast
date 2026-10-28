@@ -140,6 +140,63 @@ DEFAULT_TONE = "Polite"
 # Pseudo-tone whose instruction is free text written by the user.
 CUSTOM_TONE = "Custom"
 
+# Pseudo-tone that lets the model pick one of the TONES presets from the input
+# itself. The model reports its pick as a leading ``[Tone: Name]`` tag, which
+# is stripped from the translation and shown in the window as "Auto · Name".
+AUTO_TONE = "Auto"
+AUTO_TONE_INSTRUCTION = (
+    "Detect the most suitable register from the input's content and context."
+)
+
+# Extra instruction that cleans up rough input before it is translated: a
+# speech transcript or a hasty draft.
+OPTIMIZE_INSTRUCTION = (
+    "The input may be a rough speech transcript or a hasty draft. Before "
+    "translating, clean it up: remove filler words (such as um, uh, er, like, "
+    "you know, and their equivalents in any language), stutters, accidental "
+    "repetitions, and false starts; when the speaker corrects themselves, keep "
+    "only the corrected version. Fix punctuation. Never add, drop, or change "
+    "meaning."
+)
+
+# Voice input (Settings › Voice Input). The transcription model is chosen per
+# provider in Settings › Voice Input › Set Transcription Model…; for Azure AI
+# Foundry it is the name of a transcription deployment.
+DEFAULT_VOICE_INPUT = True
+DEFAULT_TRANSCRIBE_MODEL = "gpt-4o-transcribe"
+TRANSCRIBE_MODEL_CHOICES = (
+    "gpt-4o-transcribe",
+    "gpt-4o-mini-transcribe",
+    "whisper-1",
+)
+# Clean up spoken input by default; typed input only when turned on.
+DEFAULT_OPTIMIZE_VOICE = True
+DEFAULT_OPTIMIZE_TYPED = False
+# Longest recording kept, in seconds; recording stops by itself after this.
+# 16 kHz mono 16-bit audio stays well under the transcription API's 25 MB cap.
+MAX_RECORDING_SECONDS = 300
+
+# ISO-639-1 codes passed to transcription as a hint when the source language
+# is set explicitly (auto-detect sends none).
+LANGUAGE_CODES = {
+    "English": "en",
+    "Japanese": "ja",
+    "Chinese (Simplified)": "zh",
+    "Chinese (Traditional)": "zh",
+    "Korean": "ko",
+    "Spanish": "es",
+    "French": "fr",
+    "German": "de",
+    "Italian": "it",
+    "Portuguese": "pt",
+    "Russian": "ru",
+    "Vietnamese": "vi",
+    "Thai": "th",
+    "Indonesian": "id",
+    "Hindi": "hi",
+    "Arabic": "ar",
+}
+
 # Milliseconds of idle time after typing stops before a translation fires.
 DEBOUNCE_MS = 500
 

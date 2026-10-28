@@ -67,5 +67,10 @@ app = BUNDLE(
         "LSMinimumSystemVersion": "12.0",
         "LSApplicationCategoryType": "public.app-category.productivity",
         "NSHighResolutionCapable": True,
+        # Shown when macOS asks for microphone access for voice input.
+        "NSMicrophoneUsageDescription": (
+            "Type Fast records your voice when you start voice input, to "
+            "transcribe it for translation."
+        ),
     },
 )

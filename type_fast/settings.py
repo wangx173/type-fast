@@ -1,9 +1,10 @@
-"""Persistent user preferences: languages, tone, hotkey, transparency, auto-paste.
+"""Persistent user preferences: languages, tone, hotkey, transparency, auto-paste,
+and voice input.
 
 Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
 any custom tone instruction, the global show/hide hotkey, the window
-transparency, and whether hiding with the hotkey pastes the translation survive
-restarts. A
+transparency, whether hiding with the hotkey pastes the translation, and the
+voice input and input clean-up switches survive restarts. A
 missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
 ``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
@@ -34,9 +35,16 @@ class Settings:
     transparency: str = config.DEFAULT_TRANSPARENCY
     # Paste the translation into your app when the hotkey hides the window.
     auto_paste: bool = config.DEFAULT_AUTO_PASTE
+    # Show the mic button and allow ⇧⌘M voice recording.
+    voice_input: bool = config.DEFAULT_VOICE_INPUT
+    # Clean up filler words and false starts in spoken / typed input.
+    optimize_voice: bool = config.DEFAULT_OPTIMIZE_VOICE
+    optimize_typed: bool = config.DEFAULT_OPTIMIZE_TYPED
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
+        if self.tone == config.AUTO_TONE:
+            return config.AUTO_TONE_INSTRUCTION
         if self.tone == config.CUSTOM_TONE:
             custom = self.custom_tone.strip()
             return custom or config.TONES[config.DEFAULT_TONE]
@@ -56,6 +64,10 @@ def _pick_hotkey(value: object) -> str:
         if parsed is not None:
             return str(parsed)
     return config.DEFAULT_HOTKEY
+
+
+def _pick_bool(value: object, default: bool) -> bool:
+    return value if isinstance(value, bool) else default
 
 
 def load() -> Settings:
@@ -79,13 +91,12 @@ def load() -> Settings:
     ):
         source, target = config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET
     custom = data.get("custom_tone")
-    auto_paste = data.get("auto_paste")
     return Settings(
         source=source,
         target=target,
         tone=_pick(
             data.get("tone"),
-            set(config.TONES) | {config.CUSTOM_TONE},
+            set(config.TONES) | {config.CUSTOM_TONE, config.AUTO_TONE},
             config.DEFAULT_TONE,
         ),
         custom_tone=custom if isinstance(custom, str) else "",
@@ -95,8 +106,13 @@ def load() -> Settings:
             set(config.TRANSPARENCY),
             config.DEFAULT_TRANSPARENCY,
         ),
-        auto_paste=(
-            auto_paste if isinstance(auto_paste, bool) else config.DEFAULT_AUTO_PASTE
+        auto_paste=_pick_bool(data.get("auto_paste"), config.DEFAULT_AUTO_PASTE),
+        voice_input=_pick_bool(data.get("voice_input"), config.DEFAULT_VOICE_INPUT),
+        optimize_voice=_pick_bool(
+            data.get("optimize_voice"), config.DEFAULT_OPTIMIZE_VOICE
+        ),
+        optimize_typed=_pick_bool(
+            data.get("optimize_typed"), config.DEFAULT_OPTIMIZE_TYPED
         ),
     )
 
