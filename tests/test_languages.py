@@ -139,7 +139,8 @@ class WindowLanguageTests(unittest.TestCase):
     def test_pickers_list_all_languages(self) -> None:
         w = self.window
         self.assertEqual(w.source_lang.count(), len(config.LANGUAGES) + 1)
-        self.assertEqual(w.target_lang.count(), len(config.LANGUAGES))
+        # Every language plus "Same as input (no translation)".
+        self.assertEqual(w.target_lang.count(), len(config.LANGUAGES) + 1)
         self.assertEqual(self._pair(), (config.DEFAULT_UI_SOURCE, config.DEFAULT_UI_TARGET))
 
     def test_change_target_retranslates_and_persists(self) -> None:

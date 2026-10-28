@@ -152,7 +152,7 @@ Everything lives in `~/.type-fast/`:
 
 | File                        | Contents                                                                                            |
 |-----------------------------|-----------------------------------------------------------------------------------------------------|
-| `settings.json`             | Language pair, tone, custom tone, hotkey, transparency, auto-paste, voice input, and clean-up switches |
+| `settings.json`             | Language pair, No translation mode, tone, custom tone, hotkey, transparency, auto-paste, voice input, and clean-up switches |
 | `provider`                  | Provider picked in Settings → Provider (`openai` or `azure`)                                        |
 | `api_key`                   | OpenAI API key                                                                                      |
 | `openai_model`              | OpenAI model override                                                                               |

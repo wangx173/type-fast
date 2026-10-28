@@ -148,16 +148,27 @@ AUTO_TONE_INSTRUCTION = (
     "Detect the most suitable register from the input's content and context."
 )
 
-# Extra instruction that cleans up rough input before it is translated: a
-# speech transcript or a hasty draft.
-OPTIMIZE_INSTRUCTION = (
-    "The input may be a rough speech transcript or a hasty draft. Before "
-    "translating, clean it up: remove filler words (such as um, uh, er, like, "
+# How rough input (a speech transcript or a hasty draft) is cleaned up; shared
+# by OPTIMIZE_INSTRUCTION and the No translation (polish) prompt.
+CLEAN_UP_STEPS = (
+    "remove filler words (such as um, uh, er, like, "
     "you know, and their equivalents in any language), stutters, accidental "
     "repetitions, and false starts; when the speaker corrects themselves, keep "
     "only the corrected version. Fix punctuation. Never add, drop, or change "
     "meaning."
 )
+
+# Extra instruction that cleans up rough input before it is translated: a
+# speech transcript or a hasty draft.
+OPTIMIZE_INSTRUCTION = (
+    "The input may be a rough speech transcript or a hasty draft. Before "
+    f"translating, clean it up: {CLEAN_UP_STEPS}"
+)
+
+# Target picker value for No translation mode: the output stays in the input
+# language and is only cleaned up and polished (stored as Settings.polish).
+SAME_AS_INPUT = "same"
+DEFAULT_POLISH = False
 
 # Voice input (Settings › Voice Input). The transcription model is chosen per
 # provider in Settings › Voice Input › Set Transcription Model…; for Azure AI

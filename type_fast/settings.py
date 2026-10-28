@@ -1,11 +1,11 @@
-"""Persistent user preferences: languages, tone, hotkey, transparency, auto-paste,
-and voice input.
+"""Persistent user preferences: languages, No translation mode, tone, hotkey,
+transparency, auto-paste, and voice input.
 
-Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
-any custom tone instruction, the global show/hide hotkey, the window
-transparency, whether hiding with the hotkey pastes the translation, and the
-voice input and input clean-up switches survive restarts. A
-missing, unreadable, or invalid file (or field) falls back to the defaults in
+Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages,
+whether No translation mode is on, the tone, any custom tone instruction, the
+global show/hide hotkey, the window transparency, whether hiding with the hotkey
+pastes the translation, and the voice input and input clean-up switches survive
+restarts. A missing, unreadable, or invalid file (or field) falls back to the defaults in
 :mod:`type_fast.config`. The hotkey is stored in canonical form (e.g.
 ``"Shift+Cmd+Space"``, see :mod:`type_fast.hotkey`); an empty string disables it.
 """
@@ -23,10 +23,14 @@ SETTINGS_FILE = CONFIG_DIR / "settings.json"
 
 @dataclass
 class Settings:
-    """The language pair, tone, custom tone, hotkey, transparency, and auto-paste."""
+    """The language pair, No translation mode, tone, custom tone, hotkey,
+    transparency, auto-paste, and voice input switches."""
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
+    # No translation mode: polish the input in its own language. ``target``
+    # keeps the last translation target so turning it off restores the pair.
+    polish: bool = config.DEFAULT_POLISH
     tone: str = config.DEFAULT_TONE
     custom_tone: str = ""
     # Canonical hotkey text; "" means the global hotkey is disabled.
@@ -94,6 +98,7 @@ def load() -> Settings:
     return Settings(
         source=source,
         target=target,
+        polish=_pick_bool(data.get("polish"), config.DEFAULT_POLISH),
         tone=_pick(
             data.get("tone"),
             set(config.TONES) | {config.CUSTOM_TONE, config.AUTO_TONE},

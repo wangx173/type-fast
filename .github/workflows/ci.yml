@@ -44,7 +44,8 @@ jobs:
           w = MainWindow()
           assert w.windowTitle() == "Type Fast"
           assert w.source_lang.count() == len(config.LANGUAGES) + 1
-          assert w.target_lang.count() == len(config.LANGUAGES)
+          assert w.target_lang.count() == len(config.LANGUAGES) + 1  # + Same as input
+          assert w.target_lang.itemData(0) == config.SAME_AS_INPUT
           assert w.tone.count() == len(config.TONES) + 2  # + Auto and Custom
           assert w.tone.itemData(0) == config.AUTO_TONE
           assert isinstance(w.global_hotkey, hotkey.GlobalHotkey)
