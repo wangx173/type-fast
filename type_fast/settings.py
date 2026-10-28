@@ -1,7 +1,8 @@
-"""Persistent user preferences: languages, tone, hotkey, transparency, auto-paste,
-and voice input.
+"""Persistent user preferences: languages, No translation mode, tone, hotkey,
+transparency, auto-paste, and voice input.
 
-Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, tone,
+Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages, whether
+No translation (polish) mode is on, tone,
 any custom tone instruction, the global show/hide hotkey, the window
 transparency, whether hiding with the hotkey pastes the translation, and the
 voice input and input clean-up switches survive restarts. A
@@ -27,6 +28,9 @@ class Settings:
 
     source: str = config.DEFAULT_UI_SOURCE
     target: str = config.DEFAULT_UI_TARGET
+    # No translation mode: polish the input in its own language. ``target``
+    # keeps the last translation target so turning it off restores the pair.
+    polish: bool = config.DEFAULT_POLISH
     tone: str = config.DEFAULT_TONE
     custom_tone: str = ""
     # Canonical hotkey text; "" means the global hotkey is disabled.
@@ -94,6 +98,7 @@ def load() -> Settings:
     return Settings(
         source=source,
         target=target,
+        polish=_pick_bool(data.get("polish"), config.DEFAULT_POLISH),
         tone=_pick(
             data.get("tone"),
             set(config.TONES) | {config.CUSTOM_TONE, config.AUTO_TONE},

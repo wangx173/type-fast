@@ -179,6 +179,29 @@ The pair is saved to `~/.type-fast/settings.json` and restored on launch. To
 add a language, add an entry to `LANGUAGES` in
 [`type_fast/config.py`](../type_fast/config.py).
 
+### No translation
+
+Pick **Same as input (no translation)** at the top of the target list to keep
+your text in the language you wrote it in and only clean it up and polish it.
+Filler words, stutters, repetitions, and false starts are dropped, only your
+self-corrections are kept, and grammar, spelling, word choice, and punctuation
+are fixed so it reads like natural writing. The meaning stays the same and
+nothing new is added. This is handy for tidying a rough dictation or a hasty
+draft before you send it.
+
+- The language pair at the top reads **English → English (polish)**, or
+  **Auto-detect → same language (polish)** when the source is Auto-detect, and
+  the status shows **Polishing…** while the model works.
+- The [tone](#tone) still applies, including **Auto**.
+- Clean-up is always on in this mode, whatever the **Clean Up Spoken Input**
+  and **Clean Up Typed Input** switches say.
+- **⇄** is disabled, since there is no target language to swap with.
+- To translate again, pick a language in the target list. Picking the source
+  language itself swaps the pair, as usual.
+
+The mode is saved to `~/.type-fast/settings.json` as `"polish"`, together with
+the last translation target, and restored on launch.
+
 ## Tone
 
 Pick the tone of the translation from the selector next to the language
@@ -236,7 +259,9 @@ false starts are dropped, and when you correct yourself ("on Tuesday, no,
 Wednesday") only the correction is kept. The meaning is never changed. Turn
 this off with **Settings → Voice Input → Clean Up Spoken Input**, or turn on
 **Clean Up Typed Input** to tidy hasty typing the same way. Combine voice
-input with the [Auto tone](#tone) to also have the tone chosen for you.
+input with the [Auto tone](#tone) to also have the tone chosen for you, or with
+[No translation](#no-translation) to get polished text in the language you
+spoke.
 
 Transcription uses `gpt-4o-transcribe` by default. Choose another model, such
 as `gpt-4o-mini-transcribe` or `whisper-1`, in **Settings → Voice Input → Set

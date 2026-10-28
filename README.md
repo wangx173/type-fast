@@ -35,6 +35,8 @@ OpenAI or Azure AI Foundry, and copies the result for you.
   pasted into your app. It is on your clipboard too.
 - 🌍 **16 languages + auto-detect** — English, Japanese, Chinese, Korean,
   Spanish, French, German, and [more](docs/usage.md#languages).
+- ✨ **No translation mode** — pick **Same as input** to keep your text in its
+  own language and just [clean it up and polish it](docs/usage.md#no-translation).
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral,
   Tech (keeps technical terms as practitioners write them), your own custom
   instruction, or **Auto**, which picks the tone that fits what you wrote.

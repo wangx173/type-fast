@@ -10,7 +10,9 @@ While shown it stays on top of other windows. Summoned by the hotkey it is
 compact: only the boxes and a one-line "English → Japanese" direction, which
 expands to the full pickers when clicked. It has an input box, a streamed
 output box, and source/target language pickers (any pair from :data:`config.LANGUAGES`, with
-optional auto-detection of the source) plus a swap button. Typing triggers a translation after a
+optional auto-detection of the source) plus a swap button. The target picker's
+"Same as input (no translation)" entry switches to No translation mode, which
+only cleans up and polishes the input in its own language. Typing triggers a translation after a
 short idle debounce, or immediately when a line ends (Enter) or the input ends
 in sentence-ending punctuation. Translation runs on a worker thread and streams
 results back to the UI via Qt signals so the interface never freezes.
@@ -113,6 +115,8 @@ _SENTENCE_ENDINGS = (
 )
 
 _AUTO_LABEL = "Auto-detect"
+# Target picker entry for No translation mode (see config.SAME_AS_INPUT).
+_SAME_LABEL = "Same as input (no translation)"
 
 # Menu items for OpenAI's own settings, in Settings › OpenAI (Azure AI Foundry's
 # are defined in providers/azure.py).
@@ -531,7 +535,11 @@ class MainWindow(QMainWindow):
         self.source_lang.setToolTip("Language you type in")
         self.source_lang.addItem(_AUTO_LABEL, config.AUTO_SOURCE)
         self.target_lang = QComboBox()
-        self.target_lang.setToolTip("Language to translate into")
+        self.target_lang.setToolTip(
+            "Language to translate into, or Same as input to only clean up "
+            "and polish the text"
+        )
+        self.target_lang.addItem(_SAME_LABEL, config.SAME_AS_INPUT)
         for name in config.LANGUAGES:
             self.source_lang.addItem(_language_label(name), name)
             self.target_lang.addItem(_language_label(name), name)
@@ -540,7 +548,7 @@ class MainWindow(QMainWindow):
         self.swap_button.setText("\u21c4")
         self.swap_button.setToolTip("Swap languages")
         self.swap_button.setCursor(Qt.PointingHandCursor)
-        self._select_languages(self.prefs.source, self.prefs.target)
+        self._select_languages(self.prefs.source, self.prefs.target, self.prefs.polish)
 
         self.tone = QComboBox()
         self.tone.setToolTip("Tone of the translation")
@@ -562,7 +570,6 @@ class MainWindow(QMainWindow):
         self.output = QTextEdit()
         self.output.setObjectName("outputBox")
         self.output.setReadOnly(True)
-        self.output.setPlaceholderText("Translation appears here\u2026")
         for box in (self.input, self.output):
             # The rounded border highlights focus; skip the square macOS ring.
             box.setAttribute(Qt.WA_MacShowFocusRect, False)
@@ -1896,18 +1903,32 @@ class MainWindow(QMainWindow):
                 f"{settings.SETTINGS_FILE}, so it will be lost on restart:\n{exc}",
             )
 
-    def _select_languages(self, source: str, target: str) -> None:
-        """Show ``source``/``target`` in the pickers and record them in prefs."""
+    def _select_languages(self, source: str, target: str, polish: bool) -> None:
+        """Show ``source``/``target`` (or No translation) and record them in prefs.
+
+        In No translation mode ``target`` is kept, hidden, as the language to
+        translate into once the mode is turned off.
+        """
         self.prefs.source = source
         self.prefs.target = target
+        self.prefs.polish = polish
         self.source_lang.setCurrentIndex(self.source_lang.findData(source))
-        self.target_lang.setCurrentIndex(self.target_lang.findData(target))
-        # Auto-detect can't become a target, so there is nothing to swap.
-        self.swap_button.setEnabled(source != config.AUTO_SOURCE)
+        self.target_lang.setCurrentIndex(
+            self.target_lang.findData(config.SAME_AS_INPUT if polish else target)
+        )
+        # Auto-detect can't become a target, and No translation has no target,
+        # so there is nothing to swap.
+        self.swap_button.setEnabled(source != config.AUTO_SOURCE and not polish)
 
     def _on_source_activated(self, index: int) -> None:
         source = self.source_lang.itemData(index)
         target = self.prefs.target
+        if self.prefs.polish:
+            # Only the hidden translation target has to stay valid.
+            if source == target:
+                target = self._other_language(source)
+            self._apply_languages(source, target, True)
+            return
         if source == target:
             # Picking the target language as the source swaps the pair.
             previous = self.prefs.source
@@ -1915,19 +1936,22 @@ class MainWindow(QMainWindow):
                 target = self._other_language(source)
             else:
                 target = previous
-        self._apply_languages(source, target)
+        self._apply_languages(source, target, False)
 
     def _on_target_activated(self, index: int) -> None:
         target = self.target_lang.itemData(index)
+        if target == config.SAME_AS_INPUT:
+            self._apply_languages(self.prefs.source, self.prefs.target, True)
+            return
         source = self.prefs.source
         if source == target:
             # Picking the source language as the target swaps the pair.
             source = self.prefs.target
-        self._apply_languages(source, target)
+        self._apply_languages(source, target, False)
 
     def _swap_languages(self) -> None:
-        if self.prefs.source != config.AUTO_SOURCE:
-            self._apply_languages(self.prefs.target, self.prefs.source)
+        if self.prefs.source != config.AUTO_SOURCE and not self.prefs.polish:
+            self._apply_languages(self.prefs.target, self.prefs.source, False)
 
     @staticmethod
     def _other_language(language: str) -> str:
@@ -1937,10 +1961,12 @@ class MainWindow(QMainWindow):
                 return candidate
         return next(name for name in config.LANGUAGES if name != language)
 
-    def _apply_languages(self, source: str, target: str) -> None:
-        if (source, target) == (self.prefs.source, self.prefs.target):
+    def _apply_languages(self, source: str, target: str, polish: bool = False) -> None:
+        if (source, target, polish) == (
+            self.prefs.source, self.prefs.target, self.prefs.polish
+        ):
             return
-        self._select_languages(source, target)
+        self._select_languages(source, target, polish)
         self._update_labels()
         self._save_prefs("Languages", "language pair")
         self._retranslate()
@@ -1990,11 +2016,23 @@ class MainWindow(QMainWindow):
 
     def _update_labels(self) -> None:
         source, target = self.prefs.source, self.prefs.target
-        self.input_label.setText(
-            _AUTO_LABEL if source == config.AUTO_SOURCE else _language_label(source)
-        )
-        self.output_label.setText(_language_label(target))
-        pair = f"{_AUTO_LABEL if source == config.AUTO_SOURCE else source} \u2192 {target}"
+        auto = source == config.AUTO_SOURCE
+        self.input_label.setText(_AUTO_LABEL if auto else _language_label(source))
+        if self.prefs.polish:
+            # No translation: the output stays in the input language.
+            self.output_label.setText(
+                "Same as input (polished)" if auto
+                else f"{_language_label(source)} (polished)"
+            )
+            self.output.setPlaceholderText("Polished text appears here\u2026")
+            pair = (
+                f"{_AUTO_LABEL} \u2192 same language (polish)" if auto
+                else f"{source} \u2192 {source} (polish)"
+            )
+        else:
+            self.output_label.setText(_language_label(target))
+            self.output.setPlaceholderText("Translation appears here\u2026")
+            pair = f"{_AUTO_LABEL if auto else source} \u2192 {target}"
         if self.prefs.tone == config.AUTO_TONE:
             # Compact mode hides the tone picker, so show what Auto chose here.
             pair += f" \u00b7 {self._auto_tone_label()}"
@@ -2021,16 +2059,19 @@ class MainWindow(QMainWindow):
         source, target = self.prefs.source, self.prefs.target
         tone = self.prefs.instruction()
         auto_tone = self.prefs.tone == config.AUTO_TONE
-        optimize = (
+        polish = self.prefs.polish
+        # Cleaning up the text is the point of No translation mode.
+        optimize = polish or (
             self.prefs.optimize_voice if self._voice_input else self.prefs.optimize_typed
         )
         provider = providers.active_provider()
         model = provider.get_model()
         provider_state = self._provider_state(provider)
 
-        # A language, tone, clean-up, provider, endpoint, key, or model change
-        # makes the frozen translation stale.
-        context = (source, target, tone, "clean" if optimize else "", *provider_state)
+        # A language, mode, tone, clean-up, provider, endpoint, key, or model
+        # change makes the frozen translation stale.
+        context = (source, target, "polish" if polish else "", tone,
+                   "clean" if optimize else "", *provider_state)
         if context != self._frozen_context:
             self._frozen_src = ""
             self._frozen_out = ""
@@ -2083,7 +2124,7 @@ class MainWindow(QMainWindow):
                 self.output.setPlainText(self._frozen_out)
             return
 
-        key = (self._frozen_src, active, source, target, tone, optimize,
+        key = (self._frozen_src, active, source, target, polish, tone, optimize,
                *provider_state, should_freeze)
         if key == self._last_sent_key:
             return
@@ -2109,7 +2150,7 @@ class MainWindow(QMainWindow):
         thread = threading.Thread(
             target=self._translate_worker,
             args=(request_id, active, source, target, tone, model,
-                  auto_tone, optimize, client),
+                  auto_tone, optimize, polish, client),
             daemon=True,
         )
         thread.start()
@@ -2132,6 +2173,7 @@ class MainWindow(QMainWindow):
         model: str,
         auto_tone: bool,
         optimize: bool,
+        polish: bool,
         client: OpenAI | Exception,
     ) -> None:
         def superseded() -> bool:
@@ -2155,6 +2197,7 @@ class MainWindow(QMainWindow):
                 auto_tone=auto_tone,
                 optimize=optimize,
                 on_tone=detected,
+                polish=polish,
             ):
                 if superseded():
                     return
@@ -2168,7 +2211,9 @@ class MainWindow(QMainWindow):
     def _on_started(self, request_id: int) -> None:
         if request_id == self._request_id:
             self._paste_text = ""
-            self._set_status("Translating\u2026", "busy")
+            self._set_status(
+                "Polishing\u2026" if self.prefs.polish else "Translating\u2026", "busy"
+            )
             self.output.setPlainText(self._active_prefix)
             self.output.moveCursor(QTextCursor.End)
 

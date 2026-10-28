@@ -606,7 +606,8 @@ class WindowToneTests(unittest.TestCase):
         w = self._window()
         w.input.setPlainText("We store each document as an embedding.")
         w.tone.activated.emit(w.tone.findData("Tech"))
-        # _translate_worker(request_id, text, source, target, tone, model, client)
+        # _translate_worker(request_id, text, source, target, tone, model,
+        #                   auto_tone, optimize, polish, client)
         tone = self.calls[-1][4]
         self.assertEqual(tone, config.TONES["Tech"])
         self.assertEqual(settings.load().tone, "Tech")

@@ -466,7 +466,7 @@ class WindowVoiceTests(unittest.TestCase):
         return window
 
     # _translate_worker(request_id, text, source, target, tone, model,
-    #                   auto_tone, optimize, client)
+    #                   auto_tone, optimize, polish, client)
 
     def test_auto_is_the_first_tone(self) -> None:
         combo = self._window().tone
@@ -521,7 +521,7 @@ class WindowVoiceTests(unittest.TestCase):
         w._request_id = 7
         with mock.patch.object(self.app_module, "translate_stream", fake_stream):
             w._translate_worker(7, "hi", "English", "Japanese", "x", "m",
-                                True, True, mock.sentinel.client)
+                                True, True, False, mock.sentinel.client)
         self.assertEqual(seen, [(7, "Tech")])
 
     def test_typed_input_is_not_cleaned_up_by_default(self) -> None:
