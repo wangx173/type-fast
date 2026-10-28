@@ -451,6 +451,27 @@ class WindowHotkeyTests(unittest.TestCase):
         self.assertEqual(calls, ["restore"])
         self.assertEqual(w.prefs.hotkey, config.DEFAULT_HOTKEY)
 
+    def test_dialog_releases_and_restores_voice_hotkey(self) -> None:
+        w = self.window
+        calls: list[str] = []
+        with mock.patch.object(
+            self.app_module.HotkeyDialog, "exec",
+            side_effect=lambda: calls.append("dialog") or 0,
+        ), mock.patch.object(
+            w.voice_hotkey, "unregister", lambda: calls.append("release")
+        ), mock.patch.object(
+            w, "_register_voice_hotkey", lambda: calls.append("restore")
+        ):
+            w._set_hotkey()
+        self.assertEqual(calls, ["release", "dialog", "restore"])
+
+    def test_owns_voice_hotkey(self) -> None:
+        w = self.window
+        self.assertIsInstance(w.voice_hotkey, hotkey.GlobalHotkey)
+        self.assertIsNot(w.voice_hotkey, w.global_hotkey)
+        self.assertFalse(w.voice_hotkey.is_registered)  # never grabbed headless
+        self.assertNotIn("unavailable", w.hotkey_label.text())
+
 
 if __name__ == "__main__":
     unittest.main()

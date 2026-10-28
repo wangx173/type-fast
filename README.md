@@ -38,9 +38,9 @@ OpenAI or Azure AI Foundry, and copies the result for you.
 - 🎩 **Tone control** — Polite, Casual, Formal, Business, Friendly, Neutral,
   Tech (keeps technical terms as practitioners write them), your own custom
   instruction, or **Auto**, which picks the tone that fits what you wrote.
-- 🎙️ **Voice input** — click the mic (or press **⇧⌘M**), speak, and click it
-  again; your speech is transcribed, cleaned of "um"s and false starts, and
-  translated.
+- 🎙️ **Voice input** — press **⇧⌘M** in any app, speak, and press it again:
+  your speech is transcribed, cleaned of "um"s and false starts, translated,
+  and pasted into your app. Or click the mic in the window to dictate there.
 - 🔌 **OpenAI or Azure AI Foundry** — bring your own key, switch providers in Settings, and pick an OpenAI model or your own Foundry deployment.
 
 ## Screenshots
@@ -95,7 +95,7 @@ so it can paste; see [Auto-paste](docs/usage.md#auto-paste).
 | **⇧⌘Space**                | Show Type Fast, or hide it and paste      |
 | **Esc**                    | Hide the window without pasting           |
 | **⌘L**                     | Show the language and tone pickers        |
-| **⇧⌘M**                    | Start or stop voice input                 |
+| **⇧⌘M**                    | Show Type Fast and start voice input; press again to stop, hide, and paste |
 | **⌘,**                     | Set your OpenAI API key                   |
 
 The **Settings** menu also lets you change the model (OpenAI) or deployment
