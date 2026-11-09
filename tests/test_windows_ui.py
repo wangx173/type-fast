@@ -211,6 +211,44 @@ class WindowsWindowTests(unittest.TestCase):
         self.assertFalse(w.tray_icon.isVisible())
         self.quit.assert_called_once()
 
+    def test_tray_recording_shows_ui_before_capture_and_preserves_transcript(self) -> None:
+        w = self._window()
+        w.prefs.voice_input = True
+        w._reflect_voice()
+        w.dismiss()
+        recorder = mock.Mock(recording=False)
+        w.recorder = recorder
+
+        def start() -> None:
+            self.assertTrue(w.isVisible())
+            self.assertFalse(w.isMinimized())
+            recorder.recording = True
+
+        def stop() -> voice.Recording:
+            recorder.recording = False
+            return voice.Recording(b"\x00\x10\x00\x20", 16000, 1)
+
+        recorder.start.side_effect = start
+        recorder.stop.side_effect = stop
+        provider = self.module.providers.active_provider()
+        with (
+            mock.patch.object(provider, "is_configured", return_value=True),
+            mock.patch.object(self.module.providers, "get_client", return_value=mock.sentinel.client),
+            mock.patch.object(voice, "request_permission", side_effect=lambda ctx, cb: cb(True)),
+        ):
+            w.record_action.trigger()
+            recorder.start.assert_called_once_with()
+            w.record_action.trigger()
+            recorder.stop.assert_called_once_with()
+            w._on_transcribed(w._voice_id, "Dictation from the tray")
+        w.show_action.trigger()
+        self.assertEqual(w.input.toPlainText(), "Dictation from the tray")
+        w.showMinimized()
+        with mock.patch.object(w, "_start_recording") as start_recording:
+            w.record_action.trigger()
+            start_recording.assert_called_once_with()
+            self.assertFalse(w.isMinimized())
+
     def test_activation_does_not_resurrect_dismissed_windows_window(self) -> None:
         w = self._window()
         w.summon()
