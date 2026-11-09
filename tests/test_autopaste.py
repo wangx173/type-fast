@@ -244,6 +244,7 @@ class WindowAutoPasteTests(unittest.TestCase):
             w.toggle_visibility()
 
     def _windows(self, wait=None, restored=True) -> ExitStack:
+        self.change_count = max(self.change_count, 1)
         stack = ExitStack()
         stack.enter_context(mock.patch.object(platform, "is_windows", return_value=True))
         stack.enter_context(mock.patch.object(platform, "activate_app"))
@@ -269,6 +270,46 @@ class WindowAutoPasteTests(unittest.TestCase):
             self._hotkey()
             self._finish()
             self.assertEqual(self.send_paste.call_count, 2)
+
+    def test_windows_destination_capture_precedes_minimized_restore(self) -> None:
+        events = []
+        with self._windows(), \
+                mock.patch.object(self.window, "isMinimized", return_value=True), \
+                mock.patch.object(self.window, "setWindowState",
+                                  side_effect=lambda state: events.append("restore")):
+            platform.activate_app.side_effect = lambda *args: events.append(
+                "capture" if args else "activate"
+            )
+            self.window.summon()
+        self.assertEqual(events, ["capture", "restore", "activate"])
+
+    def test_windows_unknown_clipboard_sequence_never_allows_paste(self) -> None:
+        for sequence in (None, 0):
+            for finished in (False, True):
+                with self.subTest(sequence=sequence, finished=finished), self._windows():
+                    self.window.summon()
+                    with mock.patch.object(platform, "clipboard_change_count",
+                                           return_value=sequence):
+                        self._type("Hello.")
+                        if finished:
+                            self._finish()
+                            self.assertFalse(self.window._is_pasteable("Bonjour."))
+                        self._hotkey()
+                        if not finished:
+                            self._finish()
+                    self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+                    self.send_paste.assert_not_called()
+
+    def test_windows_unavailable_clipboard_after_release_skips_paste(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            callbacks.pop(0)(True)
+            with mock.patch.object(platform, "clipboard_change_count", return_value=None):
+                callbacks.pop(0)(True)
+            self.send_paste.assert_not_called()
 
     def test_windows_key_release_precedes_baseline_even_if_translation_finishes(self) -> None:
         callbacks = []

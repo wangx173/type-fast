@@ -1170,13 +1170,13 @@ class MainWindow(QMainWindow):
             self._shown_count += 1
             self._clear_input()
             self._center_on_cursor_screen()
+        if platform.is_windows():
+            # Restoring a minimized Qt window can also change foreground.
+            platform.activate_app(self)
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         if appearing:
             self.setWindowOpacity(0.0)
-        if platform.is_windows():
-            # Capture the other app before Qt show/activation changes foreground.
-            platform.activate_app(self)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1309,6 +1309,7 @@ class MainWindow(QMainWindow):
         # same text. The window may also show blank lines typed after it.
         return (
             bool(text)
+            and (not platform.is_windows() or self._copy_change_count not in (None, 0))
             and self.output.toPlainText().rstrip() == text.rstrip()
             and QApplication.clipboard().text() == text
             and platform.clipboard_change_count() == self._copy_change_count
@@ -1397,6 +1398,8 @@ class MainWindow(QMainWindow):
         deferred = self._deferred_paste
         self._cancel_deferred_paste()
         if deferred is None or platform.clipboard_change_count() != deferred.change_count:
+            return None
+        if platform.is_windows() and deferred.change_count in (None, 0):
             return None
         return deferred.shown
 

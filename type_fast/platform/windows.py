@@ -191,7 +191,9 @@ def activate_app(window: QWidget | None = None) -> None:
         return
     foreground = native.lib.GetForegroundWindow()
     pid = _window_pid(native.lib, foreground)
-    if pid is not None and pid != os.getpid():
+    if pid is None:
+        native.previous_window = None
+    elif pid != os.getpid():
         native.previous_window = foreground
     hwnd = int(window.winId())
     native.lib.ShowWindow(hwnd, 5)  # SW_SHOW
@@ -219,7 +221,13 @@ def hide_app() -> bool:
 
 def clipboard_change_count() -> int | None:
     native = _native()
-    return native.lib.GetClipboardSequenceNumber() if native is not None else None
+    if native is None:
+        return None
+    sequence = native.lib.GetClipboardSequenceNumber()
+    if not sequence:
+        _log.warning("Clipboard sequence number is unavailable; auto-paste skipped")
+        return None
+    return sequence
 
 
 def frontmost_app_pid() -> int | None:

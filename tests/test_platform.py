@@ -208,6 +208,26 @@ class WindowsNativeTests(unittest.TestCase):
         with self.assertLogs(windows.__name__, level="WARNING"):
             self.assertFalse(windows.hide_app())
 
+    def test_unknown_foreground_discards_prior_destination(self) -> None:
+        window = mock.Mock()
+        window.winId.return_value = 20
+        self.lib.SetForegroundWindow.return_value = 1
+        self.lib.IsWindow.return_value = 1
+        for hwnd in (None, 30):
+            with self.subTest(hwnd=hwnd):
+                self.native.previous_window = 10
+                self.lib.GetForegroundWindow.return_value = hwnd
+                self.lib.GetWindowThreadProcessId.return_value = 0
+                if hwnd:
+                    with self.assertLogs(windows.__name__, level="WARNING"):
+                        windows.activate_app(window)
+                else:
+                    windows.activate_app(window)
+                self.assertIsNone(self.native.previous_window)
+                self.lib.SetForegroundWindow.reset_mock()
+                self.assertFalse(windows.hide_app())
+                self.lib.SetForegroundWindow.assert_not_called()
+
     def test_clipboard_foreground_and_last_input_wrappers(self) -> None:
         self.lib.GetClipboardSequenceNumber.return_value = 0xFFFFFFFF
         self.lib.GetForegroundWindow.return_value = 10
@@ -221,6 +241,9 @@ class WindowsNativeTests(unittest.TestCase):
 
         self.lib.GetLastInputInfo.side_effect = last_input
         self.assertEqual(windows.clipboard_change_count(), 0xFFFFFFFF)
+        self.lib.GetClipboardSequenceNumber.return_value = 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.clipboard_change_count())
         self.assertEqual(windows.frontmost_app_pid(), 100)
         self.assertEqual(windows.input_event_count(), 0xFFFFFFFF)
         self.assertTrue(windows.paste_supported())
