@@ -123,7 +123,7 @@ layouts do not register a different key. Digit and OEM-key names use their
 canonical names (for example, German Ctrl+Shift+/ on the 7 key is saved and
 shown as **Ctrl+Shift+7**).
 
-The hotkey itself needs no Accessibility permission (only
+The hotkey itself needs no Accessibility permission (only macOS
 [auto-paste](#auto-paste) does). It is saved to
 `~/.type-fast/settings.json` as `"hotkey": "Shift+Cmd+Space"`; an empty string
 disables it.
@@ -132,12 +132,9 @@ disables it.
 
 ## Auto-paste
 
-**Windows:** automatic paste and returning focus to the previous app are not
-implemented yet. Hiding leaves the translation on the clipboard; return to
-your app and paste with **Ctrl+V**. The behavior below describes macOS.
-
 Hiding the window with the hotkey pastes the finished translation into the app
-you return to, as if you had pressed **⌘V**. To go back without pasting, press
+you return to, as if you had pressed **⌘V** on macOS or **Ctrl+V** on Windows.
+Windows auto-paste needs no permission. To go back without pasting, press
 **Esc** instead. The translation is on the clipboard either way.
 
 - It pastes the finished translation, and only once. If you hide the window
@@ -148,7 +145,12 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
   something else in the meantime; a finished translation is
   still copied to the clipboard. Opening and hiding the window again without
   typing anything pastes nothing.
-- Pasting into another app needs the **Accessibility** permission. If Type Fast
+- On Windows, release the hotkey keys to paste. Type Fast waits up to one
+  second for Shift, Ctrl, Alt, both Win keys, and registered hotkey keys to be
+  released. If they stay held, it skips the paste and leaves the text on the
+  clipboard. Clicking, typing, or changing focus after that baseline cancels
+  the paste, including when translation is still streaming.
+- On macOS, pasting into another app needs the **Accessibility** permission. If Type Fast
   doesn't have it, it tells you, at most once per launch, when you turn
   auto-paste on or when the hotkey would paste. Click **Open System Settings** and
   turn on Type Fast under **Privacy & Security → Accessibility** (add it with
@@ -160,6 +162,9 @@ you return to, as if you had pressed **⌘V**. To go back without pasting, press
 <details>
 <summary>If auto-paste doesn't work</summary>
 
+- **Windows administrator apps:** Windows blocks automatic paste into apps
+  running as administrator (UIPI). Type Fast does not try to bypass this;
+  the text remains on the clipboard for manual **Ctrl+V**.
 - **After updating Type Fast:** macOS may keep the old app's permission. In
   **Accessibility** settings, remove Type Fast with **−**, then allow it again.
 - **Running from source:** the permission belongs to the app that runs Python,
@@ -286,8 +291,9 @@ instruction, is saved to `~/.type-fast/settings.json` and restored on launch.
 On Windows, use **Ctrl+Shift+M** wherever **⇧⌘M** appears below, and
 **Ctrl+Shift+Space** for **⇧⌘Space**. The first voice press shows the window and
 starts recording; the second stops and transcribes, then hides the window
-when successful. The translation stays on the clipboard for manual **Ctrl+V**;
-returning focus and automatic paste into your previous app are not implemented.
+when successful, returning focus and pasting into your previous app under the
+same [auto-paste safety checks](#auto-paste). Release the voice hotkey keys
+within one second; otherwise the transcript stays in Type Fast for manual use.
 Turning voice input off releases **Ctrl+Shift+M**. Registration failures appear
 in the footer and microphone tooltip, so the button remains a fallback.
 

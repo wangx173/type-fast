@@ -729,6 +729,8 @@ class MainWindow(QMainWindow):
         # once noted, as long as you haven't clicked or typed since the hide.
         # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
+        self._windows_paste_ready = False
+        self._windows_pending_paste: tuple[str, int] | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._quitting = False
         self.global_hotkey = platform.GlobalHotkey(self)
@@ -799,6 +801,8 @@ class MainWindow(QMainWindow):
         self._voice_text = ""
         self._hide_after_voice: int | None = None
         self._voice_hide_input: int | None = None
+        self._windows_voice_waiting: int | None = None
+        self._windows_pending_transcript: tuple[int, str] | None = None
         self._mic_request: int | None = None
         self._register_voice_hotkey()
 
@@ -1160,6 +1164,8 @@ class MainWindow(QMainWindow):
             self._paste_text = ""
             self._cancel_deferred_paste()
             self._paste_target = None
+            self._windows_paste_ready = False
+            self._windows_pending_paste = None
             self._shown_count += 1
             self._clear_input()
             self._center_on_cursor_screen()
@@ -1167,6 +1173,9 @@ class MainWindow(QMainWindow):
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         if appearing:
             self.setWindowOpacity(0.0)
+        if platform.is_windows():
+            # Capture the other app before Qt show/activation changes foreground.
+            platform.activate_app(self)
         self.show()
         self.raise_()
         self.activateWindow()
@@ -1236,8 +1245,24 @@ class MainWindow(QMainWindow):
         # Hiding stops listening; a transcription still running is dropped.
         self._cancel_voice()
         self.hide()
-        platform.hide_app()
+        restored = platform.hide_app()
         shown = self._shown_count
+        if platform.is_windows() and (text or defer):
+            self._windows_paste_ready = False
+            self._paste_target = None
+            self._windows_pending_paste = (text, shown) if text else None
+            if not restored:
+                self._windows_pending_paste = None
+                self._cancel_deferred_paste()
+                return
+            if defer:
+                self._deferred_paste = _DeferredPaste(shown, platform.clipboard_change_count())
+                self._deferred_paste_timer.start()
+            pid = platform.frontmost_app_pid()
+            platform.wait_for_paste_keys(
+                lambda released: self._prepare_windows_paste(shown, pid, released)
+            )
+            return
         if text:
             self._schedule_paste(text, shown)
         elif defer:
@@ -1245,6 +1270,23 @@ class MainWindow(QMainWindow):
             self._deferred_paste_timer.start()
             self._paste_target = _PasteTarget(shown, None, platform.input_event_count())
             QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._remember_paste_target(shown))
+
+    def _prepare_windows_paste(self, shown: int, pid: int | None, released: bool) -> None:
+        if shown != self._shown_count or self.isVisible():
+            return
+        count = platform.input_event_count() if released else None
+        if (
+            not released or not self.prefs.auto_paste or count is None or not self._is_other_app(pid)
+            or platform.frontmost_app_pid() != pid
+        ):
+            self._windows_pending_paste = None
+            self._cancel_deferred_paste()
+            return
+        self._paste_target = _PasteTarget(shown, pid, count)
+        self._windows_paste_ready = True
+        pending, self._windows_pending_paste = self._windows_pending_paste, None
+        if pending is not None:
+            self._schedule_paste(*pending)
 
     def _take_paste_text(self) -> str:
         """Return the translation to paste, or "", and mark it as pasted.
@@ -1273,10 +1315,14 @@ class MainWindow(QMainWindow):
 
     def _schedule_paste(self, text: str, shown: int) -> None:
         """Paste ``text`` once the previous app has focus back."""
+        if platform.is_windows() and not self._windows_paste_ready:
+            self._windows_pending_paste = (text, shown)
+            return
         QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown))
 
     def _paste_into_previous_app(
-        self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES
+        self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES,
+        keys_released: bool = False,
     ) -> None:
         """Paste ``text`` into the app that got focus back after the hide with ``shown``.
 
@@ -1287,7 +1333,20 @@ class MainWindow(QMainWindow):
         """
         if shown != self._shown_count or self.isVisible() or not self._is_pasteable(text):
             return  # summoned again, or the clipboard changed, before the paste
+        if platform.is_windows() and not keys_released:
+            platform.wait_for_paste_keys(
+                lambda released: self._paste_into_previous_app(
+                    text, shown, tries, keys_released=True
+                ) if released else None
+            )
+            return
         target = self._paste_target
+        if platform.is_windows() and (
+            not self.prefs.auto_paste or not self._windows_paste_ready
+            or target is None or target.pid is None
+            or target.shown != shown
+        ):
+            return
         if target is not None and target.shown == shown:
             # A deferred paste: only into the app that got focus back.
             pid = platform.frontmost_app_pid()
@@ -1450,6 +1509,13 @@ class MainWindow(QMainWindow):
             self._summon_keeping_cursor()
             return
         if self.recorder.recording or self._transcribing:
+            if platform.is_windows():
+                voice_id = self._voice_id
+                self._windows_voice_waiting = voice_id
+                platform.wait_for_paste_keys(
+                    lambda released: self._finish_windows_voice_hotkey(voice_id, released)
+                )
+                return
             # Noted before the transcription can finish on its thread.
             self._voice_hide_input = platform.input_event_count()
         if self.recorder.recording:
@@ -1467,6 +1533,21 @@ class MainWindow(QMainWindow):
         else:
             self.summon(compact=True)
         self._start_recording()
+
+    def _finish_windows_voice_hotkey(self, voice_id: int, released: bool) -> None:
+        if voice_id != self._voice_id:
+            return
+        self._windows_voice_waiting = None
+        count = platform.input_event_count() if released else None
+        hide = count is not None and self.isActiveWindow()
+        self._voice_hide_input = count
+        if self.recorder.recording:
+            self._stop_recording(hide_after=hide)
+        elif self._transcribing:
+            self._hide_after_voice = voice_id if hide else None
+        pending, self._windows_pending_transcript = self._windows_pending_transcript, None
+        if pending is not None:
+            self._on_transcribed(*pending)
 
     def _summon_keeping_cursor(self) -> None:
         """Bring the shown window to the front without moving the text cursor."""
@@ -1582,6 +1663,9 @@ class MainWindow(QMainWindow):
     def _on_transcribed(self, voice_id: int, text: str) -> None:
         if voice_id != self._voice_id:
             return
+        if self._windows_voice_waiting == voice_id:
+            self._windows_pending_transcript = (voice_id, text)
+            return
         hide = self._hide_after_voice == voice_id
         self._hide_after_voice = None
         if hide and (
@@ -1659,6 +1743,8 @@ class MainWindow(QMainWindow):
         """Stop listening and drop a transcription or permission prompt pending."""
         self._voice_id += 1
         self._hide_after_voice = None
+        self._windows_voice_waiting = None
+        self._windows_pending_transcript = None
         if not (self.recorder.recording or self._transcribing):
             return
         self.recorder.cancel()

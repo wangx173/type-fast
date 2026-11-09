@@ -8,8 +8,9 @@ Offscreen and all other unsupported Qt platforms always use null.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 from types import ModuleType
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from PySide6.QtCore import QObject, Signal
 from PySide6.QtGui import QGuiApplication
@@ -17,6 +18,9 @@ from PySide6.QtGui import QGuiApplication
 from ..hotkey import Hotkey
 from . import null
 from .text import is_windows, ui_text
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QWidget
 
 _backend: ModuleType | None = None
 
@@ -88,12 +92,18 @@ class GlobalHotkey(QObject):
             self._impl.unregister()
 
 
-def activate_app() -> None:
-    _get_backend().activate_app()
+def activate_app(window: QWidget | None = None) -> None:
+    from . import windows
+
+    backend = _get_backend()
+    if window is not None and backend is windows:
+        backend.activate_app(window)
+    else:
+        backend.activate_app()
 
 
-def hide_app() -> None:
-    _get_backend().hide_app()
+def hide_app() -> bool | None:
+    return _get_backend().hide_app()
 
 
 def clipboard_change_count() -> int | None:
@@ -122,6 +132,16 @@ def input_event_count() -> int | None:
 
 def send_paste() -> bool:
     return _get_backend().send_paste()
+
+
+def wait_for_paste_keys(callback: Callable[[bool], None]) -> None:
+    from . import windows
+
+    backend = _get_backend()
+    if backend is windows:
+        backend.wait_for_paste_keys(callback)
+    else:
+        callback(True)
 
 
 def paste_settings_url() -> str | None:
