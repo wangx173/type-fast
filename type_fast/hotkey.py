@@ -68,6 +68,7 @@ VIRTUAL_KEYS: dict[str, int] = {
     ";": 0xBA, "=": 0xBB, ",": 0xBC, "-": 0xBD, ".": 0xBE,
     "/": 0xBF, "`": 0xC0, "[": 0xDB, "\\": 0xDC, "]": 0xDD, "'": 0xDE,
 }
+_KEY_FOR_VIRTUAL_KEY = {code: name for name, code in VIRTUAL_KEYS.items()}
 
 FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 21))
 _ARROW_KEYS = frozenset({"Left", "Right", "Up", "Down"})
@@ -279,6 +280,11 @@ def key_for_keycode(keycode: int) -> str | None:
     layout (Dvorak, AZERTY, ...) registers the key that was actually pressed.
     """
     return _KEY_FOR_KEYCODE.get(keycode)
+
+
+def key_for_virtual_key(vk: int) -> str | None:
+    """Return the canonical name of a Windows VK, independent of Qt's text."""
+    return _KEY_FOR_VIRTUAL_KEY.get(vk)
 
 
 def to_qt(hotkey: Hotkey) -> QKeySequence:

@@ -95,6 +95,10 @@ On macOS, hotkeys are tied to the physical key you press, so they keep working i
 switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
 is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
 On Windows, hotkeys use virtual keys and follow the active keyboard layout.
+The recorder captures the actual virtual key, so shifted characters on other
+layouts do not register a different key. Digit and OEM-key names use their
+canonical names (for example, German Ctrl+Shift+/ on the 7 key is saved and
+shown as **Ctrl+Shift+7**).
 
 The hotkey itself needs no Accessibility permission (only
 [auto-paste](#auto-paste) does). It is saved to

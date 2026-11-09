@@ -694,6 +694,33 @@ class WindowsWindowTests(unittest.TestCase):
         self.assertEqual(dialog.chosen, "Ctrl+Option+K")
         self.assertFalse(hotkey.uses_native_keycodes())
 
+    def test_recorder_preserves_windows_vk_on_other_layouts(self) -> None:
+        for qt_key, vk, expected in (
+            (Qt.Key_Slash, 0x37, "Ctrl+Shift+7"),  # German Shift+7
+            (Qt.Key_Ampersand, 0x31, "Ctrl+Shift+1"),  # AZERTY digit row
+        ):
+            with self.subTest(vk=vk):
+                dialog = self.app_module.HotkeyDialog("", self.window)
+                self.addCleanup(dialog.close)
+                WindowHotkeyTests._record(
+                    self, dialog, Qt.ControlModifier | Qt.ShiftModifier, qt_key, vk
+                )
+                dialog.accept()
+                self.assertEqual(dialog.chosen, expected)
+                with mock.patch.object(self.window.global_hotkey, "register",
+                                       return_value=True) as register:
+                    self.assertTrue(self.window._apply_hotkey(dialog.chosen))
+                self.assertEqual(register.call_args.args[0].vk, vk)
+
+    def test_recorder_rejects_unknown_windows_vk(self) -> None:
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        self.addCleanup(dialog.close)
+        WindowHotkeyTests._record(self, dialog, Qt.ControlModifier, Qt.Key_K, 0xFF)
+        with mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
+            dialog.accept()
+        warning.assert_called_once()
+        self.assertNotEqual(dialog.result(), dialog.DialogCode.Accepted)
+
     def test_apply_save_footer_conflict_restore_disable_and_quit(self) -> None:
         w = self.window
         with mock.patch.object(platform.GlobalHotkey, "is_supported", return_value=True), \
@@ -708,6 +735,8 @@ class WindowsWindowTests(unittest.TestCase):
                     mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
                 self.assertFalse(w._apply_hotkey("Ctrl+Option+J"))
             self.assertIn("Keeping Ctrl+Alt+K", warning.call_args.args[2])
+            self.assertIn("Windows or another app", warning.call_args.args[2])
+            self.assertNotIn("macOS", warning.call_args.args[2])
             self.assertEqual(settings.load().hotkey, "Ctrl+Option+K")
         with mock.patch.object(w.global_hotkey, "unregister") as unregister:
             self.assertTrue(w._apply_hotkey(""))
