@@ -386,12 +386,11 @@ class HotkeyDialog(QDialog):
         if sequence.isEmpty():
             self._finish("")
             return
-        parsed = hotkey.from_qt(sequence)
-        if parsed is not None and self._native_key is not None:
-            physical = (
-                hotkey.key_for_virtual_key(self._native_key)
-                if hotkey.is_windows() else hotkey.key_for_keycode(self._native_key)
-            )
+        parsed = hotkey.from_qt(
+            sequence, native_virtual_key=self._native_key if hotkey.is_windows() else None
+        )
+        if parsed is not None and self._native_key is not None and not hotkey.is_windows():
+            physical = hotkey.key_for_keycode(self._native_key)
             parsed = hotkey.Hotkey(parsed.modifiers, physical) if physical else None
         if parsed is None:
             QMessageBox.warning(

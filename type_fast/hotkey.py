@@ -247,10 +247,13 @@ def parse(text: str) -> Hotkey | None:
     return hotkey if hotkey.is_valid else None
 
 
-def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
+def from_qt(
+    combo: QKeyCombination | QKeySequence, *, native_virtual_key: int | None = None
+) -> Hotkey | None:
     """Convert a Qt key combination (or the first one in a sequence).
 
     Uses macOS's swapped Control/Meta mapping, or Windows's Ctrl/Win mapping.
+    A captured Windows VK takes precedence over layout-dependent Qt characters.
     Returns None for an empty sequence, a bare modifier, an
     unsupported key, or a numeric-keypad key. The result may still fail :attr:`Hotkey.is_valid` so that
     callers can explain why.
@@ -259,7 +262,16 @@ def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
         if combo.count() == 0:
             return None
         combo = combo[0]
-    name = _QT_KEYS.get(int(combo.key()))
+    qt_key = int(combo.key())
+    if qt_key in {
+        Qt.Key_Shift, Qt.Key_Control, Qt.Key_Meta, Qt.Key_Alt,
+        Qt.Key_AltGr, Qt.Key_CapsLock,
+    }:
+        return None
+    name = (
+        key_for_virtual_key(native_virtual_key)
+        if is_windows() and native_virtual_key is not None else _QT_KEYS.get(qt_key)
+    )
     if name is None:
         return None
     mods = combo.keyboardModifiers()

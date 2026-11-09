@@ -698,6 +698,8 @@ class WindowsWindowTests(unittest.TestCase):
         for qt_key, vk, expected in (
             (Qt.Key_Slash, 0x37, "Ctrl+Shift+7"),  # German Shift+7
             (Qt.Key_Ampersand, 0x31, "Ctrl+Shift+1"),  # AZERTY digit row
+            (Qt.Key_Udiaeresis, 0xBA, "Ctrl+Shift+;"),  # German OEM_1
+            (Qt.Key_Eacute, 0x32, "Ctrl+Shift+2"),  # AZERTY digit row
         ):
             with self.subTest(vk=vk):
                 dialog = self.app_module.HotkeyDialog("", self.window)
@@ -720,6 +722,15 @@ class WindowsWindowTests(unittest.TestCase):
             dialog.accept()
         warning.assert_called_once()
         self.assertNotEqual(dialog.result(), dialog.DialogCode.Accepted)
+
+    def test_native_vk_conversion_still_rejects_modifiers_and_keypad(self) -> None:
+        self.assertIsNone(hotkey.from_qt(
+            QKeyCombination(Qt.ControlModifier, Qt.Key_Shift), native_virtual_key=0x31
+        ))
+        self.assertIsNone(hotkey.from_qt(
+            QKeyCombination(Qt.ControlModifier | Qt.KeypadModifier, Qt.Key_1),
+            native_virtual_key=0x31,
+        ))
 
     def test_apply_save_footer_conflict_restore_disable_and_quit(self) -> None:
         w = self.window
