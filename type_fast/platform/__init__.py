@@ -58,9 +58,7 @@ class GlobalHotkey(QObject):
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
-        backend = _get_backend().GlobalHotkey(self)
-        backend.activated.connect(self.activated.emit)
-        self._impl: _HotkeyBackend = backend
+        self._impl: _HotkeyBackend | None = None
 
     @staticmethod
     def is_supported() -> bool:
@@ -68,17 +66,25 @@ class GlobalHotkey(QObject):
 
     @property
     def is_registered(self) -> bool:
-        return self._impl.is_registered
+        return self._impl is not None and self._impl.is_registered
 
     @property
     def hotkey(self) -> Hotkey | None:
-        return self._impl.hotkey
+        return self._impl.hotkey if self._impl is not None else None
 
     def register(self, hotkey: Hotkey) -> bool:
+        if self._impl is None:
+            backend_module = _get_backend()
+            if _backend is None:
+                return False
+            backend = backend_module.GlobalHotkey(self)
+            backend.activated.connect(self.activated.emit)
+            self._impl = backend
         return self._impl.register(hotkey)
 
     def unregister(self) -> None:
-        self._impl.unregister()
+        if self._impl is not None:
+            self._impl.unregister()
 
 
 def activate_app() -> None:

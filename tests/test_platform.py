@@ -105,12 +105,20 @@ class SelectionTests(unittest.TestCase):
             def unregister(self) -> None:
                 self.hotkey = None
 
-        with mock.patch.object(platform, "_backend", types.SimpleNamespace(GlobalHotkey=FakeHotkey)):
+        with mock.patch.object(platform.QGuiApplication, "instance", return_value=None):
             gh = platform.GlobalHotkey()
             callback = mock.Mock()
             gh.activated.connect(callback)
-            self.assertTrue(gh.is_supported())
             key = hotkey.parse("Option+Space")
+            self.assertFalse(gh.register(key))
+            self.assertFalse(gh.is_registered)
+            self.assertIsNone(gh.hotkey)
+            gh.unregister()
+            self.assertEqual(gh.children(), [])
+            self.assertIsNone(platform._backend)
+
+        with mock.patch.object(platform, "_backend", types.SimpleNamespace(GlobalHotkey=FakeHotkey)):
+            self.assertTrue(gh.is_supported())
             self.assertTrue(gh.register(key))
             self.assertEqual(gh.hotkey, key)
             self.assertTrue(gh.is_registered)
