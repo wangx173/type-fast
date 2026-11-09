@@ -206,10 +206,11 @@ def activate_app(window: QWidget | None = None) -> None:
         window.activateWindow()
 
 
-def hide_app() -> bool:
+def hide_app() -> int | None:
+    """Return the captured destination PID only after verified restoration."""
     native = _native()
     if native is None:
-        return False
+        return None
     window = native.app_window() if native.app_window is not None else None
     if window is not None:
         native.lib.ShowWindow(int(window.winId()), 0)  # SW_HIDE
@@ -218,15 +219,17 @@ def hide_app() -> bool:
     if previous and native.lib.IsWindow(previous):
         if previous_pid is None or _window_pid(native.lib, previous) != previous_pid:
             _log.warning("Previous app changed or is unknown; auto-paste skipped")
-            return False
+            return None
         if not native.lib.SetForegroundWindow(previous):
             _log.warning("SetForegroundWindow failed while restoring the previous app")
-            return False
-        return (
+            return None
+        if (
             native.lib.GetForegroundWindow() == previous
             and _window_pid(native.lib, previous) == previous_pid
-        )
-    return False
+        ):
+            return previous_pid
+        _log.warning("Previous app did not retain focus or identity; auto-paste skipped")
+    return None
 
 
 def clipboard_change_count() -> int | None:

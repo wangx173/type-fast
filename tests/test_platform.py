@@ -179,14 +179,14 @@ class WindowsNativeTests(unittest.TestCase):
         windows.activate_app()
         self.assertEqual(self.native.previous_window, 10)
         self.lib.GetForegroundWindow.return_value = 10
-        self.assertTrue(windows.hide_app())
+        self.assertEqual(windows.hide_app(), 100)
         self.assertIsNone(self.native.previous_window)
         self.assertIsNone(self.native.previous_pid)
         self.assertEqual(self.lib.ShowWindow.call_args_list,
                          [mock.call(20, 5), mock.call(20, 5), mock.call(20, 0)])
         self.assertEqual(self.lib.SetForegroundWindow.call_args_list,
                          [mock.call(20), mock.call(20), mock.call(10)])
-        self.assertFalse(windows.hide_app())
+        self.assertIsNone(windows.hide_app())
 
     def test_activation_falls_back_to_qt_and_invalid_restore_is_skipped(self) -> None:
         self.lib.GetWindowThreadProcessId.side_effect = self._pid
@@ -200,17 +200,17 @@ class WindowsNativeTests(unittest.TestCase):
         window.activateWindow.assert_called_once_with()
         self.lib.IsWindow.return_value = 0
         self.lib.SetForegroundWindow.reset_mock()
-        self.assertFalse(windows.hide_app())
+        self.assertIsNone(windows.hide_app())
         self.lib.SetForegroundWindow.assert_not_called()
 
-    def test_failed_restoration_returns_false(self) -> None:
+    def test_failed_restoration_returns_no_destination(self) -> None:
         self.native.previous_window = 10
         self.native.previous_pid = 100
         self.lib.GetWindowThreadProcessId.side_effect = self._pid
         self.lib.IsWindow.return_value = 1
         self.lib.SetForegroundWindow.return_value = 0
         with self.assertLogs(windows.__name__, level="WARNING"):
-            self.assertFalse(windows.hide_app())
+            self.assertIsNone(windows.hide_app())
 
     def test_unknown_foreground_discards_prior_destination(self) -> None:
         window = mock.Mock()
@@ -257,7 +257,7 @@ class WindowsNativeTests(unittest.TestCase):
                 self.assertIsNone(self.native.previous_window)
                 self.assertIsNone(self.native.previous_pid)
 
-    def test_destination_pid_changed_during_restore_returns_false(self) -> None:
+    def test_destination_pid_changed_during_restore_returns_no_destination(self) -> None:
         self.native.previous_window = 10
         self.native.previous_pid = 100
         self.lib.IsWindow.return_value = 1
@@ -270,7 +270,8 @@ class WindowsNativeTests(unittest.TestCase):
 
         self.lib.GetWindowThreadProcessId.side_effect = changing_pid
         self.lib.SetForegroundWindow.return_value = 1
-        self.assertFalse(windows.hide_app())
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.hide_app())
 
     def test_clipboard_foreground_and_last_input_wrappers(self) -> None:
         self.lib.GetClipboardSequenceNumber.return_value = 0xFFFFFFFF

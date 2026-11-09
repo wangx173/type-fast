@@ -102,7 +102,7 @@ def activate_app(window: QWidget | None = None) -> None:
         backend.activate_app()
 
 
-def hide_app() -> bool | None:
+def hide_app() -> int | None:
     return _get_backend().hide_app()
 
 

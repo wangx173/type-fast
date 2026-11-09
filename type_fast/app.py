@@ -1259,7 +1259,7 @@ class MainWindow(QMainWindow):
             if defer:
                 self._deferred_paste = _DeferredPaste(shown, platform.clipboard_change_count())
                 self._deferred_paste_timer.start()
-            pid = platform.frontmost_app_pid()
+            pid = restored
             platform.wait_for_paste_keys(
                 lambda released: self._prepare_windows_paste(shown, pid, released)
             )

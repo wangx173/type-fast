@@ -248,7 +248,9 @@ class WindowAutoPasteTests(unittest.TestCase):
         stack = ExitStack()
         stack.enter_context(mock.patch.object(platform, "is_windows", return_value=True))
         stack.enter_context(mock.patch.object(platform, "activate_app"))
-        stack.enter_context(mock.patch.object(platform, "hide_app", return_value=restored))
+        stack.enter_context(mock.patch.object(
+            platform, "hide_app", side_effect=lambda: self.frontmost_pid if restored else None
+        ))
         stack.enter_context(mock.patch.object(
             type(self.window.global_hotkey), "is_registered",
             new_callable=mock.PropertyMock, return_value=True,
@@ -386,6 +388,27 @@ class WindowAutoPasteTests(unittest.TestCase):
             self.frontmost_pid = 200
             callbacks.pop()(True)
             self.send_paste.assert_not_called()
+
+    def test_windows_focus_switch_immediately_after_restoration_drops_paste(self) -> None:
+        for finished in (False, True):
+            with self.subTest(finished=finished), self._windows():
+                self.window.summon()
+                self._type("Hello.")
+                if finished:
+                    self._finish()
+
+                def restore_then_switch():
+                    self.frontmost_pid = 200
+                    return 100
+
+                platform.hide_app.side_effect = restore_then_switch
+                self._hotkey()
+                if not finished:
+                    self._finish()
+                self.send_paste.assert_not_called()
+                self.assertIsNone(self.window._paste_target)
+                self.assertIsNone(self.window._deferred_paste)
+                self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
 
     def test_windows_failed_restore_never_pastes(self) -> None:
         with self._windows(restored=False):
