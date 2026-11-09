@@ -274,7 +274,10 @@ regenerate one while the other is in use.
 **Windows (PowerShell)**
 
 ```powershell
-az cognitiveservices account show --name $resource --resource-group $group --query 'properties.endpoints."AI Foundry API"' --output tsv
+$endpointsJson = az cognitiveservices account show --name $resource --resource-group $group --query properties.endpoints --output json
+if ($LASTEXITCODE -ne 0) { throw 'Could not retrieve the Foundry endpoint' }
+$endpoints = ($endpointsJson -join "`n") | ConvertFrom-Json
+$endpoints.'AI Foundry API'
 
 # Save the key without printing it; do not run while shell tracing is enabled
 $configDir = Join-Path $env:USERPROFILE '.type-fast'
