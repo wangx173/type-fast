@@ -378,6 +378,46 @@ with tempfile.TemporaryDirectory() as tmp, \\
             self.assertEqual(box.addButton.call_args_list[0].args[0], "Open Settings")
             self.assertEqual(open_url.call_args.args[0].toString(), "ms-settings:privacy-microphone")
 
+    def test_microphone_warning_escape_and_close_dismiss_without_opening_settings(self) -> None:
+        from PySide6.QtTest import QTest
+
+        w = self._window()
+        for dismissal in ("escape", "close"):
+            with self.subTest(dismissal=dismissal):
+                observed = {}
+
+                def dismiss() -> None:
+                    box = self.qt.activeModalWidget()
+                    observed["box"] = box
+                    observed["escape_button"] = box.escapeButton()
+                    observed["ok_button"] = box.button(self.module.QMessageBox.Ok)
+                    if dismissal == "escape":
+                        QTest.keyClick(box, self.module.Qt.Key_Escape)
+                    else:
+                        box.close()
+
+                def timeout() -> None:
+                    observed["timed_out"] = True
+                    box = self.qt.activeModalWidget()
+                    if box is not None:
+                        box.done(91)
+
+                watchdog = self.module.QTimer(w)
+                watchdog.setSingleShot(True)
+                watchdog.timeout.connect(timeout)
+                with mock.patch.object(self.module.QDesktopServices, "openUrl") as open_url:
+                    self.module.QTimer.singleShot(0, dismiss)
+                    watchdog.start(500)
+                    try:
+                        w._voice_failed(voice.permission_denied(), microphone_settings=True)
+                    finally:
+                        watchdog.stop()
+                    self.assertNotIn("timed_out", observed)
+                    self.assertIs(observed["escape_button"], observed["ok_button"])
+                    self.assertFalse(observed["box"].isVisible())
+                    self.assertIs(observed["box"].clickedButton(), observed["ok_button"])
+                    open_url.assert_not_called()
+
     def test_settings_link_failure_is_visible_and_transcription_errors_have_no_link(self) -> None:
         w = self._window()
         with (

@@ -1643,7 +1643,8 @@ class MainWindow(QMainWindow):
                 f"Check microphone access in {platform.ui_text().microphone_privacy}."
             )
             open_button = box.addButton("Open Settings", QMessageBox.AcceptRole)
-            box.addButton(QMessageBox.Ok)
+            ok_button = box.addButton(QMessageBox.Ok)
+            box.setEscapeButton(ok_button)
             box.exec()
             if box.clickedButton() is open_button:
                 if not QDesktopServices.openUrl(QUrl(url)):
