@@ -3,7 +3,7 @@
 - [Requirements](#requirements)
 - [Run from source](#run-from-source)
 - [Run tests](#run-tests)
-- [Build the macOS app](#build-the-macos-app)
+- [Build the app](#build-the-app)
 - [Update the app icon](#update-the-app-icon)
 - [Issues and pull requests](#issues-and-pull-requests)
 
@@ -70,7 +70,12 @@ Offscreen tests use the null platform backend on every OS and never register
 real global hotkeys. Remove the offscreen override before launching the app
 interactively.
 
-## Build the macOS app
+## Build the app
+
+Build on the target OS; PyInstaller does not cross-compile. The Windows release
+uses x64 Python 3.12 on Windows; the macOS release uses macos-14 (Apple Silicon).
+
+### macOS
 
 Package Type Fast as a standalone `.app` bundle, with no Python or terminal
 needed to run it, using PyInstaller:
@@ -87,22 +92,57 @@ The bundle is created at `dist/Type Fast.app`; drag it into `/Applications`.
 Put your key in `~/.type-fast/api_key` so the app can reach the API when
 launched from Finder.
 
+### Windows (PowerShell)
+
+With the virtual environment active:
+
+```powershell
+pip install pyinstaller
+pyinstaller --noconfirm "Type Fast.spec"
+Compress-Archive -Path "dist/Type Fast" -DestinationPath "dist/Type-Fast-windows-x64.zip" -Force
+```
+
+The one-folder app is at `dist\Type Fast\Type Fast.exe`. Distribute the entire
+folder, including `_internal`, not just the executable. It has the Type Fast
+icon and product version from the installed package's `pyproject.toml` metadata
+(`pip install -e .` before building). No Python is needed on the receiving PC.
+The Windows build is unsigned; see [Install](../README.md#windows) for SmartScreen.
+Save keys from the tray Settings menu or in `%USERPROFILE%\.type-fast\api_key`.
+
 Pushing a version tag (for example `v0.4.0`) runs the
 [release workflow](../.github/workflows/release.yml), which builds the app and
-attaches `Type-Fast-macos-arm64.zip` to a GitHub Release.
+attaches `Type-Fast-macos-arm64.zip` and `Type-Fast-windows-x64.zip` to the same
+GitHub Release. Manual `workflow_dispatch` runs upload both as Actions artifacts.
+The Windows job also launches `Type Fast.exe --smoke-test` offscreen with Python
+removed from `PATH`. This initializes the window, enters the Qt event loop,
+and exits successfully within 15 seconds. A startup-error dialog or hung
+process fails the check. This checks bundled-runtime startup, not real global
+hotkeys, microphone access or auto-paste; those still need a normal Windows
+desktop check. Normal launches do not enable smoke mode.
+Windows code signing, installers, auto-update and Arm builds are not included.
 
 ## Update the app icon
 
 The icon's master file is [`assets/icon/type-fast.svg`](../assets/icon/type-fast.svg):
 a keyboard key labeled "A" and "文" with speed lines, on a macOS-style rounded
-square. Two files are exported from it:
+square. Three files are exported from it:
 
 - `assets/icon/TypeFast.icns`, the `.app` bundle's Finder icon.
+- `assets/icon/TypeFast.ico`, the Windows executable's Explorer/taskbar icon,
+  with 16, 24, 32, 48, 64 and 256 px images.
 - `type_fast/resources/icon.png` (512 px), which the app sets as its Dock and
   window icon at runtime (this is what you see when running from source).
 
-If you edit the SVG, re-export both files: render it to an `.iconset` folder
-and convert that with `iconutil -c icns`. Commit all three files. Check the
+If you edit the SVG, re-export all three files: render it to an `.iconset` folder
+and convert that with `iconutil -c icns` on macOS, and export the 512 px PNG.
+For the Windows ICO, run this on either OS with the app dependencies installed:
+
+```sh
+python scripts/export-windows-icon.py
+```
+
+The same command works in PowerShell. Commit all four files (SVG, ICNS, ICO,
+and PNG). Check the
 result at small sizes (16 and 32 px), where only the white key on the indigo
 background stays readable.
 
