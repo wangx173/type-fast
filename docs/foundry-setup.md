@@ -23,6 +23,11 @@ doesn't match, see Microsoft's
 [Set up Microsoft Foundry resources](https://learn.microsoft.com/azure/foundry/tutorials/quickstart-create-foundry-resources)
 quickstart.
 
+Shell blocks labeled `sh` are for macOS/Bash only. Windows users can follow
+the portal steps or the **Windows (PowerShell)** equivalents below.
+Settings paths written `~/.type-fast/` mean `%USERPROFILE%\.type-fast\` on
+Windows. In Windows, open the app's Settings from the tray icon.
+
 ## 1. Before you start
 
 You need:
@@ -46,6 +51,11 @@ Type Fast signs in with an **API key**, so the resource must allow key
 authentication. This is the default for new resources.
 
 ### Set up with a script
+
+`scripts/setup-foundry.sh` is Bash-only, not a PowerShell script. On Windows,
+use the portal or PowerShell steps below to configure the Windows app. Running
+the script in WSL writes settings to the Linux home directory, not your
+Windows `%USERPROFILE%\.type-fast\` folder.
 
 If you have the Azure CLI, a script can do steps 2 to 5 for you. It asks a
 few questions, such as whether to use an existing resource group or create a
@@ -130,6 +140,20 @@ az cognitiveservices account project create \
 If the account command fails with `CustomDomainInUse`, the name is taken;
 choose another.
 
+**Windows (PowerShell)**
+
+Set your globally unique resource name first; use these same variables in the
+later commands:
+
+```powershell
+$resource = 'your-unique-resource-name'
+$group = 'type-fast-rg'
+$region = 'eastus2'
+az group create --name $group --location $region
+az cognitiveservices account create --name $resource --resource-group $group --kind AIServices --sku S0 --location $region --custom-domain $resource --assign-identity --allow-project-management true
+az cognitiveservices account project create --name $resource --resource-group $group --project-name type-fast --location $region
+```
+
 ## 3. Deploy a model
 
 Type Fast uses `gpt-5.4-mini` by default. It is fast and accurate, which
@@ -169,6 +193,16 @@ az cognitiveservices account deployment create \
 If the command fails with `DeploymentModelNotSupported`, that model, version,
 or deployment type isn't available in your region. Pick a combination from
 the list above.
+
+**Windows (PowerShell)**
+
+```powershell
+az cognitiveservices model list --location $region --query "[?model.name=='gpt-5.4-mini'].{version:model.version,skus:join(',',model.skus[].name)}" --output table
+az cognitiveservices account deployment create --name $resource --resource-group $group --deployment-name gpt-5.4-mini --model-name gpt-5.4-mini --model-version 2026-03-17 --model-format OpenAI --sku-name GlobalStandard --sku-capacity 50
+```
+
+As with the Bash example, replace the model version/type with an available
+combination from the list if necessary.
 
 **Deployment type and region**
 
@@ -237,6 +271,29 @@ Treat the API key like a password: don't paste it into chats or tickets, or
 show it while sharing your screen. Either key works; having two lets you
 regenerate one while the other is in use.
 
+**Windows (PowerShell)**
+
+```powershell
+az cognitiveservices account show --name $resource --resource-group $group --query 'properties.endpoints."AI Foundry API"' --output tsv
+
+# Save the key without printing it; do not run while shell tracing is enabled
+$configDir = Join-Path $env:USERPROFILE '.type-fast'
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+$utf8 = [Text.UTF8Encoding]::new($false)
+$key = az cognitiveservices account keys list --name $resource --resource-group $group --query key1 --output tsv
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($key)) { throw 'Could not retrieve the Foundry key' }
+try {
+    [IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_api_key'), $key.Trim(), $utf8)
+} finally {
+    Remove-Variable key
+}
+```
+
+Windows key files inherit your user-profile permissions. Keep the settings
+folder private; do not copy it into the app zip or a shared/synced folder.
+UTF-8 without BOM is explicit so these file commands work in both
+Windows PowerShell 5.1 and PowerShell 7.
+
 ## 5. Configure Type Fast
 
 Give Type Fast the endpoint and key, and the deployment name if it isn't
@@ -248,7 +305,8 @@ the endpoint, paste the API key, enter the deployment name, and click
 **Save**. When Type Fast asks whether to use Azure AI Foundry now, click
 **Yes**. You can also choose **Settings → Provider → Azure AI Foundry**, which
 opens the same window if Foundry isn't set up yet. The key is saved to
-`~/.type-fast/azure_ai_api_key`, readable only by your account, and the
+`~/.type-fast/azure_ai_api_key` (Windows:
+`%USERPROFILE%\.type-fast\azure_ai_api_key`), and the
 change applies right away.
 
 **With files.** An app opened from Finder or the Dock does not see variables
@@ -274,6 +332,28 @@ printf 'Foundry API key: '; read -rs KEY && [ -n "$KEY" ] && \
   printf '%s\n' "$KEY" > ~/.type-fast/azure_ai_api_key; echo; unset KEY
 ```
 
+**Windows (PowerShell), with files**
+
+```powershell
+$configDir = Join-Path $env:USERPROFILE '.type-fast'
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+$utf8 = [Text.UTF8Encoding]::new($false)
+[IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_endpoint'), "https://$resource.services.ai.azure.com", $utf8)
+# Only if your deployment has a different name:
+[IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_model'), '<deployment-name>', $utf8)
+
+# Skip this prompt if you saved the key in step 4
+$secureKey = Read-Host 'Foundry API key' -AsSecureString
+try {
+    $key = [Net.NetworkCredential]::new('', $secureKey).Password
+    if ([string]::IsNullOrWhiteSpace($key)) { throw 'The key cannot be empty' }
+    [IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_api_key'), $key.Trim(), $utf8)
+} finally {
+    $secureKey.Dispose()
+    Remove-Variable key, secureKey -ErrorAction SilentlyContinue
+}
+```
+
 **Running from a terminal.** Environment variables work too, and take
 precedence over the files:
 
@@ -286,6 +366,24 @@ export AZURE_AI_MODEL='<deployment-name>'  # optional
 ```
 
 Don't put the key in `~/.zshrc` or other dotfiles; use the key file instead.
+
+**Windows (PowerShell), terminal launches only**
+
+```powershell
+$env:AZURE_AI_ENDPOINT = "https://$resource.services.ai.azure.com"
+$secureKey = Read-Host 'Foundry API key' -AsSecureString
+try {
+    $env:AZURE_AI_API_KEY = [Net.NetworkCredential]::new('', $secureKey).Password
+} finally {
+    $secureKey.Dispose()
+    Remove-Variable secureKey
+}
+$env:AZURE_AI_MODEL = '<deployment-name>' # optional
+type-fast # from source with the virtual environment active
+```
+
+Explorer launches do not inherit variables from an existing PowerShell
+session; use Settings or the files instead. Do not put keys in `$PROFILE`.
 
 Notes:
 
@@ -303,7 +401,8 @@ Notes:
 - Changes made in the app apply right away. If you change the files, or run
   the [setup script](#set-up-with-a-script), while Type Fast is open, switch to
   Type Fast and it picks them up. After changing environment variables, quit
-  Type Fast (⌘Q) and start it again from that shell.
+  Type Fast (⌘Q on macOS; tray menu **Quit Type Fast** on Windows) and start
+  it again from that shell.
 
 ## 6. Check that it works
 
@@ -371,6 +470,12 @@ can't see those variables; set them in the app or use the
       --resource-group type-fast-rg --query "[].name" --output tsv
   ```
 
+  Windows (PowerShell):
+
+  ```powershell
+  az cognitiveservices account deployment list --name $resource --resource-group $group --query "[].name" --output tsv
+  ```
+
 - The deployment is brand new. Wait a few minutes and try again.
 
 ### 404 — "Resource not found", without `DeploymentNotFound`
@@ -429,6 +534,13 @@ az resource list --resource-group type-fast-rg --output table
 az group delete --name type-fast-rg
 ```
 
+Windows (PowerShell), only for a dedicated group:
+
+```powershell
+az resource list --resource-group $group --output table
+az group delete --name $group
+```
+
 If the resource group holds anything else, such as a group you picked in the
 portal, delete only the Foundry resource. Delete its projects first; the
 resource can't be deleted while it has any:
@@ -442,11 +554,25 @@ az cognitiveservices account delete --name <resource> --resource-group <group>
 The project list shows names as `<resource>/<project>`; pass only the part
 after the `/` to `--project-name`.
 
+Windows (PowerShell), when keeping the group:
+
+```powershell
+az cognitiveservices account project list --name $resource --resource-group $group --query "[].name" --output tsv
+az cognitiveservices account project delete --name $resource --resource-group $group --project-name type-fast
+az cognitiveservices account delete --name $resource --resource-group $group
+```
+
 Deleted Foundry resources are soft-deleted, and their name stays reserved
 until they're purged. To reuse the name, purge it:
 
 ```sh
 az cognitiveservices account purge --name <resource> --resource-group <group> --location <region>
+```
+
+Windows (PowerShell):
+
+```powershell
+az cognitiveservices account purge --name $resource --resource-group $group --location $region
 ```
 
 Then remove the Foundry settings and the provider choice so Type Fast goes
@@ -455,6 +581,17 @@ back to OpenAI:
 ```sh
 rm -f ~/.type-fast/azure_ai_endpoint ~/.type-fast/azure_ai_api_key ~/.type-fast/azure_ai_model ~/.type-fast/provider
 unset AZURE_AI_ENDPOINT AZURE_AI_API_KEY AZURE_AI_MODEL
+```
+
+Windows (PowerShell):
+
+```powershell
+$configDir = Join-Path $env:USERPROFILE '.type-fast'
+foreach ($name in 'azure_ai_endpoint', 'azure_ai_api_key', 'azure_ai_model', 'provider') {
+    $path = Join-Path $configDir $name
+    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path }
+}
+Remove-Item Env:AZURE_AI_ENDPOINT, Env:AZURE_AI_API_KEY, Env:AZURE_AI_MODEL -ErrorAction SilentlyContinue
 ```
 
 Remove those variables from your shell profile too, if you added them, then

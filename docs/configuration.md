@@ -8,6 +8,11 @@
 
 ## Choose a provider
 
+Paths written as `~/.type-fast/` below are `%USERPROFILE%\.type-fast\` on
+Windows. In PowerShell use `Join-Path $env:USERPROFILE '.type-fast'`.
+On Windows, open Settings from the tray icon's right-click menu; **Ctrl+,**
+opens Set API Key while the window has focus (macOS: **⌘,**).
+
 Type Fast translates with either **OpenAI** or **Azure AI Foundry**. The
 bottom of the window shows which one is in use, followed by the model, for
 example **OpenAI · gpt-5.4-mini** or **Azure · gpt-5.4-mini**. Hover over it
@@ -42,6 +47,21 @@ echo 'sk-...' > ~/.type-fast/api_key
 chmod 600 ~/.type-fast/api_key  # keep the key private to your account
 ```
 
+Windows (PowerShell):
+
+```powershell
+$env:OPENAI_API_KEY = 'sk-...' # terminal launches only
+
+# Or use the key file; explicit UTF-8 without BOM works in PowerShell 5.1 and 7
+$configDir = Join-Path $env:USERPROFILE '.type-fast'
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+[IO.File]::WriteAllText((Join-Path $configDir 'api_key'), 'sk-...', [Text.UTF8Encoding]::new($false))
+```
+
+Prefer entering real keys in the app instead of shell history. On Windows,
+key files inherit your user-profile folder's permissions; keep that folder
+private and do not place it in a shared or synced directory.
+
 ## Azure AI Foundry
 
 New to Foundry? The [Foundry setup guide](foundry-setup.md) walks through
@@ -49,8 +69,10 @@ creating a resource, deploying a model, and finding the endpoint and key.
 
 The easiest way is from the app: **Settings → Azure AI Foundry → Set Endpoint, Key & Deployment…**. Enter
 the endpoint, API key, and deployment name, then click **Save**. The settings
-are saved to the `~/.type-fast/` files below, with the key readable only by
-your account, and Type Fast asks whether to switch to Foundry.
+are saved to the `~/.type-fast/` files below (Windows:
+`%USERPROFILE%\.type-fast\`). On macOS the key file is readable only by your
+account; on Windows it inherits the user-profile permissions. Type Fast asks
+whether to switch to Foundry.
 
 You can also set the Foundry endpoint and API key yourself:
 
@@ -59,6 +81,14 @@ export AZURE_AI_ENDPOINT='https://<resource>.services.ai.azure.com'
 export AZURE_AI_API_KEY='<your-foundry-key>'
 # Optional: pick a specific model/deployment (defaults to gpt-5.4-mini)
 export AZURE_AI_MODEL='gpt-5.4-mini'
+```
+
+Windows (PowerShell):
+
+```powershell
+$env:AZURE_AI_ENDPOINT = 'https://<resource>.services.ai.azure.com'
+$env:AZURE_AI_API_KEY = '<your-foundry-key>'
+$env:AZURE_AI_MODEL = 'gpt-5.4-mini' # optional
 ```
 
 Unless you've picked OpenAI in [**Settings → Provider**](#choose-a-provider),
@@ -78,6 +108,20 @@ chmod 600 ~/.type-fast/azure_ai_api_key
 # Optional model/deployment override:
 echo 'gpt-5.4-mini' > ~/.type-fast/azure_ai_model
 ```
+
+Windows (PowerShell), for an app launched from Explorer:
+
+```powershell
+$configDir = Join-Path $env:USERPROFILE '.type-fast'
+New-Item -ItemType Directory -Force -Path $configDir | Out-Null
+$utf8 = [Text.UTF8Encoding]::new($false)
+[IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_endpoint'), 'https://<resource>.services.ai.azure.com', $utf8)
+[IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_api_key'), '<your-foundry-key>', $utf8)
+[IO.File]::WriteAllText((Join-Path $configDir 'azure_ai_model'), 'gpt-5.4-mini', $utf8)
+```
+
+Replace placeholders locally, never in shared commands or screenshots. The
+[Foundry guide](foundry-setup.md#5-configure-type-fast) shows a hidden key prompt.
 
 ## Model
 
@@ -148,7 +192,13 @@ provider once, and never saved to disk.
 
 ## Where settings are stored
 
-Everything lives in `~/.type-fast/`:
+Everything lives in `~/.type-fast/` on macOS or `%USERPROFILE%\.type-fast\` on
+Windows. Append the same file names from the table below on either platform.
+The environment variables in the model tables work in PowerShell as
+`$env:OPENAI_MODEL = '<model>'`, `$env:AZURE_AI_MODEL = '<deployment>'`,
+`$env:OPENAI_TRANSCRIBE_MODEL = '<model>'`, and
+`$env:AZURE_AI_TRANSCRIBE_MODEL = '<deployment>'`. Use `WriteAllText` with UTF-8
+without BOM as above for their fallback files.
 
 The `hotkey` field in `settings.json` accepts the same canonical text on both
 platforms: `Ctrl`, `Option`, `Shift`, and `Cmd`, plus a key (for example

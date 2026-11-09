@@ -14,6 +14,7 @@ _HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 ROOT = Path(__file__).resolve().parent.parent
 SVG_PATH = ROOT / "assets" / "icon" / "type-fast.svg"
 ICNS_PATH = ROOT / "assets" / "icon" / "TypeFast.icns"
+ICO_PATH = ROOT / "assets" / "icon" / "TypeFast.ico"
 PNG_PATH = ROOT / "type_fast" / "resources" / "icon.png"
 
 # icns element types for every size in a full .iconset (16 to 1024 px,
@@ -53,9 +54,29 @@ class IconAssetTests(unittest.TestCase):
         types = _icns_types(ICNS_PATH.read_bytes())
         self.assertLessEqual(_ICNS_TYPES, types)
 
+    def test_ico_has_every_size(self) -> None:
+        data = ICO_PATH.read_bytes()
+        reserved, kind, count = struct.unpack_from("<HHH", data)
+        self.assertEqual((reserved, kind, count), (0, 1, 6))
+        sizes = set()
+        for index in range(count):
+            width, height, _, _, planes, bits, length, offset = struct.unpack_from(
+                "<BBBBHHII", data, 6 + index * 16,
+            )
+            size = (width or 256, height or 256)
+            sizes.add(size)
+            self.assertEqual((planes, bits), (1, 32))
+            self.assertGreaterEqual(offset, 6 + count * 16)
+            self.assertGreater(length, 0)
+            self.assertLessEqual(offset + length, len(data))
+            self.assertEqual(data[offset:offset + 8], b"\x89PNG\r\n\x1a\n")
+            self.assertEqual(struct.unpack_from(">II", data, offset + 16), size)
+        self.assertEqual(sizes, {(size, size) for size in (16, 24, 32, 48, 64, 256)})
+
     def test_build_uses_the_icon(self) -> None:
         spec = (ROOT / "Type Fast.spec").read_text(encoding="utf-8")
         self.assertRegex(spec, r'icon="assets/icon/TypeFast\.icns"')
+        self.assertRegex(spec, r'icon="assets/icon/TypeFast\.ico"')
         self.assertIn('("type_fast/resources/icon.png", "type_fast/resources")', spec)
         pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
         self.assertTrue(
@@ -91,6 +112,16 @@ class IconRenderingTests(unittest.TestCase):
         icon = app.app_icon()
         self.assertFalse(icon.isNull())
         self.assertFalse(icon.pixmap(32, 32).isNull())
+
+    def test_windows_icon_small_sizes_load(self) -> None:
+        from PySide6.QtGui import QIcon
+
+        icon = QIcon(str(ICO_PATH))
+        self.assertFalse(icon.isNull())
+        for size in (16, 32, 256):
+            pixmap = icon.pixmap(size, size)
+            self.assertFalse(pixmap.isNull())
+            self.assertEqual((pixmap.width(), pixmap.height()), (size, size))
 
 
 if __name__ == "__main__":

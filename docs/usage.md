@@ -11,6 +11,11 @@
 
 ## The window
 
+Settings paths below use macOS notation: `~/.type-fast/` is
+`%USERPROFILE%\.type-fast\` on Windows (for example,
+`%USERPROFILE%\.type-fast\settings.json`). Both platforms keep settings outside
+the app folder, so replacing the app does not remove them.
+
 The full window has:
 
 - source and target language pickers with a **⇄** swap button,
@@ -170,7 +175,7 @@ Windows auto-paste needs no permission. To go back without pasting, press
 - **Running from source:** the permission belongs to the app that runs Python,
   such as Terminal. Allowing it lets *every* program you run there send
   keystrokes to other apps, so prefer the
-  [built app](development.md#build-the-macos-app) or paste with **⌘V**
+  [built app](development.md#build-the-app) or paste with **⌘V**
   yourself. If you do allow your terminal, remove it from **Accessibility**
   when you are done.
 - **Dvorak layouts:** auto-paste presses the key in the **V** position of a U.S.
