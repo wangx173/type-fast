@@ -416,12 +416,12 @@ class WindowHotkeyTests(unittest.TestCase):
         self.assertEqual(dialog.chosen, "Option+Cmd+K")
         self.assertEqual(dialog.result(), dialog.DialogCode.Accepted)
 
-    def _record(self, dialog, mods, key, native_key: int) -> None:
+    def _record(self, dialog, mods, key, native_key: int, text: str = "") -> None:
         from PySide6.QtGui import QKeyEvent
         from PySide6.QtWidgets import QApplication
 
         for kind in (QKeyEvent.KeyPress, QKeyEvent.KeyRelease):
-            event = QKeyEvent(kind, key, mods, 0, native_key, 0, "")
+            event = QKeyEvent(kind, key, mods, 0, native_key, 0, text)
             QApplication.sendEvent(dialog.editor, event)
 
     def test_dialog_registers_physical_key_on_other_layouts(self) -> None:
@@ -722,6 +722,40 @@ class WindowsWindowTests(unittest.TestCase):
             dialog.accept()
         warning.assert_called_once()
         self.assertNotEqual(dialog.result(), dialog.DialogCode.Accepted)
+
+    def test_recorder_preserves_event_shift_with_printable_punctuation(self) -> None:
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        self.addCleanup(dialog.close)
+        WindowHotkeyTests._record(
+            self, dialog, Qt.AltModifier | Qt.ShiftModifier, Qt.Key_Slash, 0x37, "/"
+        )
+        dialog.accept()
+        self.assertEqual(dialog.chosen, "Option+Shift+7")
+
+    def test_recorder_uses_event_modifiers_when_editor_omits_shift(self) -> None:
+        from PySide6.QtGui import QKeyEvent
+
+        dialog = self.app_module.HotkeyDialog("", self.window)
+        self.addCleanup(dialog.close)
+        event = QKeyEvent(
+            QKeyEvent.KeyPress, Qt.Key_Slash, Qt.AltModifier | Qt.ShiftModifier,
+            0, 0x37, 0, "/",
+        )
+        dialog.eventFilter(dialog.editor, event)
+        # Simulate Windows QKeySequenceEdit's printable-character normalization.
+        dialog.editor.setKeySequence(
+            QKeySequence(QKeyCombination(Qt.AltModifier, Qt.Key_Slash))
+        )
+        dialog.accept()
+        self.assertEqual(dialog.chosen, "Option+Shift+7")
+        with mock.patch.object(self.window.global_hotkey, "register",
+                               return_value=True) as register:
+            self.assertTrue(self.window._apply_hotkey(dialog.chosen))
+        self.assertEqual(register.call_args.args[0].vk, 0x37)
+        self.assertEqual(register.call_args.args[0].win32_modifiers, 0x0005)
+        dialog.editor.clear()
+        self.assertIsNone(dialog._windows_combo)
+        self.assertIsNone(dialog._native_key)
 
     def test_native_vk_conversion_still_rejects_modifiers_and_keypad(self) -> None:
         self.assertIsNone(hotkey.from_qt(

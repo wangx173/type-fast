@@ -65,6 +65,7 @@ from openai import OpenAI
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
+    QKeyCombination,
     QObject,
     QPropertyAnimation,
     Qt,
@@ -314,6 +315,8 @@ class HotkeyDialog(QDialog):
         # different US key on other layouts (e.g. German Shift+7 types "/").
         self._native_key: int | None = None
         self._pending_native_key: int | None = None
+        self._windows_combo: QKeyCombination | None = None
+        self._pending_windows_combo: QKeyCombination | None = None
 
         info = QLabel(
             "Press the key combination that shows and hides Type Fast from any "
@@ -371,11 +374,15 @@ class HotkeyDialog(QDialog):
             and (hotkey.is_windows() or hotkey.uses_native_keycodes())
         ):
             self._pending_native_key = event.nativeVirtualKey()
+            if hotkey.is_windows():
+                self._pending_windows_combo = event.keyCombination()
         return super().eventFilter(watched, event)
 
     def _on_sequence_changed(self, sequence: QKeySequence) -> None:
         self._native_key = None if sequence.isEmpty() else self._pending_native_key
         self._pending_native_key = None
+        self._windows_combo = None if sequence.isEmpty() else self._pending_windows_combo
+        self._pending_windows_combo = None
 
     def _finish(self, text: str) -> None:
         self.chosen = text
@@ -387,7 +394,9 @@ class HotkeyDialog(QDialog):
             self._finish("")
             return
         parsed = hotkey.from_qt(
-            sequence, native_virtual_key=self._native_key if hotkey.is_windows() else None
+            self._windows_combo if hotkey.is_windows() and self._windows_combo is not None
+            else sequence,
+            native_virtual_key=self._native_key if hotkey.is_windows() else None,
         )
         if parsed is not None and self._native_key is not None and not hotkey.is_windows():
             physical = hotkey.key_for_keycode(self._native_key)
