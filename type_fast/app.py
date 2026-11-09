@@ -76,6 +76,7 @@ from PySide6.QtCore import (
 from PySide6.QtGui import (
     QAction,
     QActionGroup,
+    QCloseEvent,
     QCursor,
     QDesktopServices,
     QGuiApplication,
@@ -96,8 +97,10 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
+    QSystemTrayIcon,
     QTextEdit,
     QToolButton,
     QVBoxLayout,
@@ -647,7 +650,9 @@ class MainWindow(QMainWindow):
         # Reachable with Tab, but clicking it doesn't pull focus from the input.
         self.pair_button.setFocusPolicy(Qt.TabFocus)
         self.pair_button.setCursor(Qt.PointingHandCursor)
-        self.pair_button.setToolTip("Show language and tone options (\u2318L)")
+        self.pair_button.setToolTip(
+            f"Show language and tone options ({platform.ui_text().options_shortcut})"
+        )
         self.pair_button.clicked.connect(lambda: self.set_compact(False))
         self.pair_button.hide()
         layout.addWidget(self.pair_button, 0, Qt.AlignLeft)
@@ -724,6 +729,8 @@ class MainWindow(QMainWindow):
         # once noted, as long as you haven't clicked or typed since the hide.
         # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
+        self.tray_icon: QSystemTrayIcon | None = None
+        self._quitting = False
         self.global_hotkey = platform.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         # Global voice hotkey (⇧⌘M), registered once the recorder exists (see
@@ -805,12 +812,14 @@ class MainWindow(QMainWindow):
         self.target_lang.activated.connect(self._on_target_activated)
         self.swap_button.clicked.connect(self._swap_languages)
         self.tone.activated.connect(self._on_tone_activated)
+        self._build_tray()
 
     def _build_menu(self) -> None:
         # On macOS this becomes part of the global menu bar at the top of the
         # screen. Each provider's own settings (credentials, model or
         # deployment) live in a submenu named after it; the rest are shared.
         menu = self.menuBar().addMenu("Settings")
+        self.settings_menu = menu
 
         # Which service translates; the checked item is the one in use.
         provider_menu = menu.addMenu("Provider")
@@ -860,7 +869,7 @@ class MainWindow(QMainWindow):
         # Keyboard route out of the compact layout (see set_compact).
         self.show_options_action = QAction("Show Language && Tone Options", self)
         self.show_options_action.setShortcut(QKeySequence("Ctrl+L"))  # ⌘L on macOS
-        self.show_options_action.triggered.connect(lambda: self.set_compact(False))
+        self.show_options_action.triggered.connect(self._show_options)
         menu.addAction(self.show_options_action)
 
         self.set_hotkey_action = QAction("Set Show/Hide Hotkey\u2026", self)
@@ -871,7 +880,8 @@ class MainWindow(QMainWindow):
         self.auto_paste_action.setChecked(self.prefs.auto_paste)
         self.auto_paste_action.setToolTip(
             "Hiding Type Fast with the show/hide hotkey pastes the translation "
-            "into your app (needs Accessibility permission)"
+            "into your app"
+            + ("" if platform.is_windows() else " (needs Accessibility permission)")
         )
         self.auto_paste_action.triggered.connect(self._set_auto_paste)
         menu.addAction(self.auto_paste_action)
@@ -919,6 +929,84 @@ class MainWindow(QMainWindow):
         self.transparency_group.triggered.connect(
             lambda action: self._apply_transparency(action.data())
         )
+
+    def _build_tray(self) -> None:
+        if not platform.is_windows():
+            return
+        self.quit_action = QAction("Quit Type Fast", self)
+        self.quit_action.triggered.connect(self._quit_app)
+        self._add_window_actions(self.settings_menu)
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self.settings_menu.addSeparator()
+            self.settings_menu.addAction(self.quit_action)
+            return
+        self.tray_menu = QMenu(self)
+        self.show_action = self.tray_menu.addAction("Show Type Fast")
+        self.show_action.triggered.connect(lambda: self.summon())
+        self.tray_menu.addMenu(self.settings_menu)
+        self.tray_menu.addSeparator()
+        self.tray_menu.addAction(self.quit_action)
+        self.tray_icon = QSystemTrayIcon(app_icon(), self)
+        self.tray_icon.setContextMenu(self.tray_menu)
+        self.tray_icon.activated.connect(self._on_tray_activated)
+        self._reflect_tray()
+        self.tray_icon.show()
+        self.menuBar().hide()
+
+    def _add_window_actions(self, menu: QMenu) -> None:
+        for action in menu.actions():
+            submenu = action.menu()
+            if submenu is not None:
+                self._add_window_actions(submenu)
+            elif not action.isSeparator():
+                self.addAction(action)
+
+    def _reflect_tray(self) -> None:
+        if self.tray_icon is not None:
+            registered = self.global_hotkey.hotkey if self.global_hotkey.is_registered else None
+            keys = f" ({registered.symbols()})" if registered is not None else ""
+            self.tray_icon.setToolTip(f"Type Fast{keys}")
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason != QSystemTrayIcon.Trigger or self._raise_open_dialog():
+            return
+        if self.isVisible() and not self.isMinimized():
+            self.dismiss()
+        else:
+            self.summon()
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        if not platform.is_windows() or self._quitting:
+            super().closeEvent(event)
+            return
+        if self.tray_icon is None:
+            event.accept()
+            self._quit_app()
+            return
+        event.ignore()
+        self.dismiss()
+        if not self.prefs.tray_close_notice_shown:
+            registered = self.global_hotkey.hotkey if self.global_hotkey.is_registered else None
+            route = f" or with {registered.symbols()}" if registered is not None else ""
+            self.tray_icon.showMessage(
+                "Type Fast",
+                f"Type Fast is still running. Open it from the tray{route}.",
+                QSystemTrayIcon.Information,
+            )
+            self.prefs.tray_close_notice_shown = True
+            self._save_prefs("Close to Tray", "tray notice setting")
+
+    def _quit_app(self) -> None:
+        self._quitting = True
+        self._cancel_voice()
+        self.hide()
+        self.global_hotkey.unregister()
+        self.voice_hotkey.unregister()
+        if self.tray_icon is not None:
+            self.tray_icon.hide()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
 
     # --- Appearance -------------------------------------------------------
 
@@ -1108,6 +1196,12 @@ class MainWindow(QMainWindow):
         for widget in (self.input_label, self.output_label, self.model_label, self.hotkey_label):
             widget.setVisible(not compact)
 
+    def _show_options(self) -> None:
+        if platform.is_windows() and (not self.isVisible() or self.isMinimized()):
+            self.summon()
+        else:
+            self.set_compact(False)
+
     def dismiss(self, paste: bool = False) -> None:
         """Hide the window and return focus to the previously active app.
 
@@ -1116,6 +1210,14 @@ class MainWindow(QMainWindow):
         the translation is still running, the window hides right away and the
         paste waits for it to finish (see :meth:`_on_finished`).
         """
+        if (
+            platform.is_windows()
+            and self.tray_icon is None
+            and not self.global_hotkey.is_registered
+            and not self.voice_hotkey.is_registered
+        ):
+            self._quit_app()
+            return
         paste = paste and self.prefs.auto_paste
         text = self._take_paste_text() if paste else ""
         if (
@@ -1254,10 +1356,16 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _needs_paste_permission() -> bool:
-        return platform.paste_supported() and not platform.paste_permission_granted()
+        return (
+            not platform.is_windows()
+            and platform.paste_supported()
+            and not platform.paste_permission_granted()
+        )
 
     def _ask_paste_permission(self) -> None:
         """Explain the Accessibility permission and offer to open its settings."""
+        if platform.is_windows():
+            return
         self._asked_paste_permission = True
         box = QMessageBox(self)
         box.setIcon(QMessageBox.Information)
@@ -1371,6 +1479,11 @@ class MainWindow(QMainWindow):
         if self.recorder.recording:
             self._stop_recording()
         elif self.prefs.voice_input and not self._transcribing:
+            if platform.is_windows():
+                if not self.isVisible():
+                    self.summon()
+                elif self.isMinimized():
+                    self._summon_keeping_cursor()
             self._start_recording()
         else:
             self._reflect_voice()  # undo the button's own check toggle
@@ -1395,12 +1508,12 @@ class MainWindow(QMainWindow):
         if voice_id != self._voice_id:
             return  # dismissed or cancelled while macOS was asking
         if not granted:
-            self._voice_failed(voice.PERMISSION_DENIED)
+            self._voice_failed(voice.permission_denied(), microphone_settings=True)
             return
         try:
             self.recorder.start()
         except voice.VoiceError as exc:
-            self._voice_failed(str(exc))
+            self._voice_failed(str(exc), microphone_settings=True)
             return
         stop = "click \U0001f399" if self._voice_hotkey_unavailable() else _VOICE_SHORTCUT_SYMBOLS
         self._set_status(f"Listening\u2026 ({stop} to stop)", "busy")
@@ -1418,7 +1531,7 @@ class MainWindow(QMainWindow):
         self._set_status("")
         self._reflect_voice()
         if voice.is_silent(recording.pcm):
-            self._voice_failed(voice.PERMISSION_HINT)
+            self._voice_failed(voice.permission_hint(), microphone_settings=True)
             return
         provider = providers.active_provider()
         try:
@@ -1517,9 +1630,29 @@ class MainWindow(QMainWindow):
             self._hide_after_voice = None
             self._voice_failed(message)
 
-    def _voice_failed(self, message: str) -> None:
+    def _voice_failed(self, message: str, microphone_settings: bool = False) -> None:
         self._set_status("")
         self._reflect_voice()
+        url = platform.ui_text().microphone_settings_url
+        if microphone_settings and url is not None:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Warning)
+            box.setWindowTitle("Voice Input")
+            box.setText(message)
+            box.setInformativeText(
+                f"Check microphone access in {platform.ui_text().microphone_privacy}."
+            )
+            open_button = box.addButton("Open Settings", QMessageBox.AcceptRole)
+            ok_button = box.addButton(QMessageBox.Ok)
+            box.setEscapeButton(ok_button)
+            box.exec()
+            if box.clickedButton() is open_button:
+                if not QDesktopServices.openUrl(QUrl(url)):
+                    QMessageBox.warning(
+                        self, "Voice Input",
+                        f"Could not open Settings. Open {platform.ui_text().microphone_privacy} manually.",
+                    )
+            return
         QMessageBox.warning(self, "Voice Input", message)
 
     def _cancel_voice(self) -> None:
@@ -1675,7 +1808,10 @@ class MainWindow(QMainWindow):
                 # Only display details (e.g. pinned vs automatic) may differ.
                 self._reflect_provider()
         # Reactivating the app (Dock icon, ⌘Tab) while dismissed shows the window.
-        if state == Qt.ApplicationActive and self._dismissed and not self.isVisible():
+        if (
+            not platform.is_windows()
+            and state == Qt.ApplicationActive and self._dismissed and not self.isVisible()
+        ):
             self.summon()
 
     # --- Hotkey settings --------------------------------------------------
@@ -1722,6 +1858,7 @@ class MainWindow(QMainWindow):
         self.hotkey_label.setText(text)
         self.hotkey_label.setToolTip(tip)
         self.set_hotkey_action.setToolTip(tip)
+        self._reflect_tray()
 
     def _set_hotkey(self) -> None:
         # Release the hotkeys while recording, or pressing one would act on
@@ -2486,6 +2623,8 @@ def main() -> None:
     app.setApplicationName("Type Fast")
     app.setApplicationDisplayName("Type Fast")
     app.setWindowIcon(app_icon())
+    if platform.is_windows():
+        app.setQuitOnLastWindowClosed(False)
     window = MainWindow()
     window.resize(460, 380)
     # Show on launch so first-time users see the window (and its hotkey hint).

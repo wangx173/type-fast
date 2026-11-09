@@ -1,6 +1,7 @@
 # Usage
 
 - [The window](#the-window)
+- [Windows tray icon](#windows-tray-icon)
 - [Show/hide hotkey](#showhide-hotkey)
 - [Auto-paste](#auto-paste)
 - [Transparency](#transparency)
@@ -31,6 +32,27 @@ The window is shown when the app launches. After that, summon and dismiss it
 with the [show/hide hotkey](#showhide-hotkey) so it stays out of the way while
 you are not using it.
 
+## Windows tray icon
+
+On Windows, **Settings** lives in the Type Fast tray icon's right-click menu,
+not inside the compact window. The menu includes **Show Type Fast**, every
+Settings item, and **Quit Type Fast**. Left-click the icon to show or hide the
+window without pasting. Its tooltip includes the show/hide hotkey when registered.
+
+Closing the window with **X** or **Alt+F4** hides it and stops any recording;
+Type Fast keeps running. Open it again from the tray or with the global hotkey.
+The first close shows a notification explaining this, remembered in
+`~/.type-fast/settings.json` as `"tray_close_notice_shown"`.
+Choose **Quit Type Fast** to exit and release the hotkeys.
+
+While the window has focus, **Ctrl+,** opens Set API Key, **Ctrl+L** opens
+the language and tone options, and **Ctrl+Shift+M** starts or stops recording.
+If Windows has no system tray, Settings stays in the window as a fallback.
+In that case, closing the window or choosing **Settings → Quit Type Fast** exits.
+If neither global hotkey is registered, **Esc** also exits instead of hiding a
+window that cannot be reopened.
+On macOS, the global menu bar and Dock behavior are unchanged.
+
 ## Show/hide hotkey
 
 <img src="images/hotkey.png" alt="Minimal window summoned with the hotkey" width="460">
@@ -53,9 +75,10 @@ by default.
 
 A window opened with the hotkey shows only the input and output boxes under a
 one-line direction such as **English → Japanese**. Click the direction, or press
-**⌘L** (**Settings → Show Language & Tone Options**), to show the pickers. When
-the window opens any other way (at launch, from the Dock, or with ⌘Tab), it
-shows the full layout.
+**⌘L** on macOS or **Ctrl+L** on Windows
+(**Settings → Show Language & Tone Options**), to show the pickers. When
+the window opens at launch or from the Windows tray, it shows the full layout;
+on macOS, opening from the Dock or with ⌘Tab also shows the full layout.
 
 ### Change the hotkey
 
@@ -302,6 +325,13 @@ The first time, macOS asks you to let Type Fast use the microphone. If you
 said no, or the recording comes out silent, allow it in **System Settings →
 Privacy & Security → Microphone** (when running from source, allow your
 terminal app) and check the input device in **System Settings → Sound**.
+
+On Windows, allow microphone access in **Settings → Privacy & security →
+Microphone**, including access for desktop apps, and select the input device in
+**Settings → System → Sound**. When microphone access is denied, a recording is
+silent, or the microphone cannot open, **Open Settings** opens the Windows
+microphone privacy page (`ms-settings:privacy-microphone`). Windows has no
+macOS Accessibility permission prompt.
 
 Speech is rarely as tidy as typing, so spoken input is cleaned up before it is
 translated: filler words (um, uh, えーと, 那个, …), stutters, repetitions, and

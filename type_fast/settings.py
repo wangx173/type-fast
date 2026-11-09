@@ -1,5 +1,5 @@
 """Persistent user preferences: languages, No translation mode, tone, hotkey,
-transparency, auto-paste, and voice input.
+transparency, auto-paste, voice input, and the Windows close-to-tray notice.
 
 Stored as JSON in ``~/.type-fast/settings.json`` so the chosen languages,
 whether No translation mode is on, the tone, any custom tone instruction, the
@@ -44,6 +44,8 @@ class Settings:
     # Clean up filler words and false starts in spoken / typed input.
     optimize_voice: bool = config.DEFAULT_OPTIMIZE_VOICE
     optimize_typed: bool = config.DEFAULT_OPTIMIZE_TYPED
+    # Explain close-to-tray only once across Windows launches.
+    tray_close_notice_shown: bool = False
 
     def instruction(self) -> str:
         """Return the prompt instruction for the selected tone."""
@@ -119,6 +121,7 @@ def load() -> Settings:
         optimize_typed=_pick_bool(
             data.get("optimize_typed"), config.DEFAULT_OPTIMIZE_TYPED
         ),
+        tray_close_notice_shown=_pick_bool(data.get("tray_close_notice_shown"), False),
     )
 
 

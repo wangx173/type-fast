@@ -16,6 +16,7 @@ from PySide6.QtGui import QGuiApplication
 
 from ..hotkey import Hotkey
 from . import null
+from .text import is_windows, ui_text
 
 _backend: ModuleType | None = None
 

@@ -233,6 +233,9 @@ class WindowHotkeyTests(unittest.TestCase):
         patcher = mock.patch.object(hotkey, "is_windows", return_value=False)
         patcher.start()
         self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(app.platform, "is_windows", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.app_module = app
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)

@@ -540,6 +540,7 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_record_transcribe_and_translate(self) -> None:
         w = self._window()
+        w.summon()
         w.input.setPlainText("Hello")
         w.input.moveCursor(w.input.textCursor().MoveOperation.End)
         with mock.patch.object(
@@ -578,11 +579,17 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_silent_recording_shows_permission_hint(self) -> None:
         w = self._window(pcm=_pcm(0, 0, 0))
-        with mock.patch.object(self.app_module.voice, "transcribe") as transcribe:
+        with (
+            mock.patch.object(self.app_module.voice, "transcribe") as transcribe,
+            mock.patch.object(self.app_module, "QMessageBox") as boxes,
+        ):
             w.toggle_recording()
             w.toggle_recording()
         transcribe.assert_not_called()
-        self.assertIn(self.app_module.voice.PERMISSION_HINT, self.warnings.call_args.args)
+        if self.app_module.platform.ui_text().microphone_settings_url is not None:
+            boxes.return_value.setText.assert_called_once_with(self.app_module.voice.PERMISSION_HINT)
+        else:
+            boxes.warning.assert_called_once_with(w, "Voice Input", self.app_module.voice.PERMISSION_HINT)
         self.assertEqual(self.calls, [])
 
     def test_transcription_error_is_shown(self) -> None:
@@ -693,13 +700,19 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_permission_denied(self) -> None:
         w = self._window()
-        with mock.patch.object(
-            self.app_module.voice, "request_permission",
-            side_effect=lambda ctx, cb: cb(False),
+        with (
+            mock.patch.object(
+                self.app_module.voice, "request_permission",
+                side_effect=lambda ctx, cb: cb(False),
+            ),
+            mock.patch.object(self.app_module, "QMessageBox") as boxes,
         ):
             w.toggle_recording()
         self.assertFalse(w.recorder.recording)
-        self.assertIn(self.app_module.voice.PERMISSION_DENIED, self.warnings.call_args.args)
+        if self.app_module.platform.ui_text().microphone_settings_url is not None:
+            boxes.return_value.setText.assert_called_once_with(self.app_module.voice.PERMISSION_DENIED)
+        else:
+            boxes.warning.assert_called_once_with(w, "Voice Input", self.app_module.voice.PERMISSION_DENIED)
 
     def test_recording_needs_a_configured_provider(self) -> None:
         w = self._window()
@@ -724,6 +737,9 @@ class WindowVoiceTests(unittest.TestCase):
     # --- Global voice hotkey (⇧⌘M) -----------------------------------------
 
     def _voice_window(self) -> MainWindow:
+        patcher = mock.patch.object(self.app_module.platform, "is_windows", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         w = self._window()
         patcher = mock.patch.object(w, "_needs_paste_permission", return_value=False)
         patcher.start()
