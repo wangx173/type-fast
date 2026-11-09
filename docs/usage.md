@@ -36,7 +36,8 @@ you are not using it.
 <img src="images/hotkey.png" alt="Minimal window summoned with the hotkey" width="460">
 
 Like Spotlight, Type Fast pops up from any app with a global hotkey:
-**⇧⌘Space** (Shift+Command+Space) by default.
+**⇧⌘Space** (Shift+Command+Space) on macOS or **Ctrl+Shift+Space** on Windows
+by default.
 
 - The window appears near the top of the screen the mouse pointer is on, stays
   on top, and puts the cursor in the input box. It opens empty each time; the
@@ -60,12 +61,18 @@ shows the full layout.
 
 Choose **Settings → Set Show/Hide Hotkey…** and press the new combination.
 
-- It must include ⌘ Command, ⌃ Control, or ⌥ Option. F-keys work on their own.
-- **Reset to Default** restores ⇧⌘Space, and **Disable** turns the hotkey off.
+- It must include ⌘ Command, ⌃ Control, or ⌥ Option on macOS; **Ctrl**, **Alt**,
+  or **Win** on Windows. F-keys work on their own.
+- **Reset to Default** restores ⇧⌘Space on macOS or **Ctrl+Shift+Space** on
+  Windows, and **Disable** turns the hotkey off.
+- On Windows, the recorder, footer and hints use names such as **Ctrl+Alt+K**.
+  Avoid Win shortcuts, since Windows reserves most of them. If another app
+  already registered the combination, Type Fast reports the failure and keeps
+  the previous hotkey. Quitting releases both global hotkeys.
 - If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type Fast tells you
   and keeps the previous one. Another app's global shortcut can't always be
   detected, so if the new hotkey does nothing, pick a different one.
-- While voice input is on, ⇧⌘M can't be the show/hide hotkey: it is the
+- While voice input is on, ⇧⌘M (Windows: **Ctrl+Shift+M**) can't be the show/hide hotkey: it is the
   [voice input](#voice-input) hotkey.
 
 <details>
@@ -84,9 +91,14 @@ shortcut in **System Settings → Keyboard → Keyboard Shortcuts → Spotlight*
 <details>
 <summary>Keyboard layouts, permissions, and storage</summary>
 
-Hotkeys are tied to the physical key you press, so they keep working if you
+On macOS, hotkeys are tied to the physical key you press, so they keep working if you
 switch keyboard layouts. On non-U.S. layouts such as Dvorak or AZERTY, the key
 is shown by its U.S. name (for example, the Dvorak "T" key appears as **K**).
+On Windows, hotkeys use virtual keys and follow the active keyboard layout.
+The recorder captures the actual virtual key and pressed modifiers, so shifted characters on other
+layouts do not register a different key. Digit and OEM-key names use their
+canonical names (for example, German Ctrl+Shift+/ on the 7 key is saved and
+shown as **Ctrl+Shift+7**).
 
 The hotkey itself needs no Accessibility permission (only
 [auto-paste](#auto-paste) does). It is saved to
@@ -96,6 +108,10 @@ disables it.
 </details>
 
 ## Auto-paste
+
+**Windows:** automatic paste and returning focus to the previous app are not
+implemented yet. Hiding leaves the translation on the clipboard; return to
+your app and paste with **Ctrl+V**. The behavior below describes macOS.
 
 Hiding the window with the hotkey pastes the finished translation into the app
 you return to, as if you had pressed **⌘V**. To go back without pasting, press
@@ -243,6 +259,14 @@ Changing the tone re-translates the current text. Your choice, and any custom
 instruction, is saved to `~/.type-fast/settings.json` and restored on launch.
 
 ## Voice input
+
+On Windows, use **Ctrl+Shift+M** wherever **⇧⌘M** appears below, and
+**Ctrl+Shift+Space** for **⇧⌘Space**. The first voice press shows the window and
+starts recording; the second stops and transcribes, then hides the window
+when successful. The translation stays on the clipboard for manual **Ctrl+V**;
+returning focus and automatic paste into your previous app are not implemented.
+Turning voice input off releases **Ctrl+Shift+M**. Registration failures appear
+in the footer and microphone tooltip, so the button remains a fallback.
 
 Press **⇧⌘M** in any app to show the minimal window and start recording right
 away. Speak, then press **⇧⌘M** again: the recording is transcribed by your

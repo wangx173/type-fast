@@ -65,6 +65,7 @@ from openai import OpenAI
 from PySide6.QtCore import (
     QEasingCurve,
     QEvent,
+    QKeyCombination,
     QObject,
     QPropertyAnimation,
     Qt,
@@ -310,13 +311,18 @@ class HotkeyDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Set Show/Hide Hotkey")
         self.chosen = current
-        # macOS virtual keycode of the last key pressed in the recorder. Carbon
-        # registers physical keys, while Qt reports layout-dependent keys, so
-        # this keeps non-U.S. layouts (Dvorak, AZERTY, ...) correct.
+        # Carbon physical keycode or Windows VK. Qt's character may describe a
+        # different US key on other layouts (e.g. German Shift+7 types "/").
         self._native_key: int | None = None
         self._pending_native_key: int | None = None
+        self._windows_combo: QKeyCombination | None = None
+        self._pending_windows_combo: QKeyCombination | None = None
 
         info = QLabel(
+            "Press the key combination that shows and hides Type Fast from any "
+            "app. Include Ctrl, Alt, or Win (or use an F-key).\n"
+            "Avoid Win shortcuts; Windows keeps most of them."
+            if hotkey.is_windows() else
             "Press the key combination that shows and hides Type Fast from any "
             "app. Include \u2318, \u2303, or \u2325 (or use an F-key).\n"
             "Avoid \u2318Space (Spotlight) and \u2303Space (switch input "
@@ -365,14 +371,18 @@ class HotkeyDialog(QDialog):
         if (
             event.type() == QEvent.KeyPress
             and event.key() not in self._MODIFIER_KEYS
-            and hotkey.uses_native_keycodes()
+            and (hotkey.is_windows() or hotkey.uses_native_keycodes())
         ):
             self._pending_native_key = event.nativeVirtualKey()
+            if hotkey.is_windows():
+                self._pending_windows_combo = event.keyCombination()
         return super().eventFilter(watched, event)
 
     def _on_sequence_changed(self, sequence: QKeySequence) -> None:
         self._native_key = None if sequence.isEmpty() else self._pending_native_key
         self._pending_native_key = None
+        self._windows_combo = None if sequence.isEmpty() else self._pending_windows_combo
+        self._pending_windows_combo = None
 
     def _finish(self, text: str) -> None:
         self.chosen = text
@@ -383,8 +393,12 @@ class HotkeyDialog(QDialog):
         if sequence.isEmpty():
             self._finish("")
             return
-        parsed = hotkey.from_qt(sequence)
-        if parsed is not None and self._native_key is not None:
+        parsed = hotkey.from_qt(
+            self._windows_combo if hotkey.is_windows() and self._windows_combo is not None
+            else sequence,
+            native_virtual_key=self._native_key if hotkey.is_windows() else None,
+        )
+        if parsed is not None and self._native_key is not None and not hotkey.is_windows():
             physical = hotkey.key_for_keycode(self._native_key)
             parsed = hotkey.Hotkey(parsed.modifiers, physical) if physical else None
         if parsed is None:
@@ -397,8 +411,10 @@ class HotkeyDialog(QDialog):
                 self,
                 "Set Show/Hide Hotkey",
                 f"{parsed.symbols()} would get in the way of normal typing. "
-                "Include \u2318 Command, \u2303 Control, or \u2325 Option "
-                "(or use an F-key).",
+                + ("Include Ctrl, Alt, or Win (or use an F-key)."
+                   if hotkey.is_windows() else
+                   "Include \u2318 Command, \u2303 Control, or \u2325 Option "
+                   "(or use an F-key)."),
             )
             return
         self._finish(str(parsed))
@@ -1557,7 +1573,8 @@ class MainWindow(QMainWindow):
             )
         return (
             f"{_VOICE_SHORTCUT_SYMBOLS} could not be registered for voice input (it may "
-            "be used by macOS or another app) \u2014 use the \U0001f399 button or "
+            f"be used by {'Windows' if hotkey.is_windows() else 'macOS'} or another app) "
+            "\u2014 use the \U0001f399 button or "
             "Settings \u203a Voice Input \u203a Start Recording instead"
         )
 
@@ -1687,12 +1704,17 @@ class MainWindow(QMainWindow):
             tip = f"Press {parsed.symbols()} in any app to show or hide Type Fast \u2014 change it in {where}"
         elif not platform.GlobalHotkey.is_supported():
             text = f"{parsed.symbols()} unavailable"
-            tip = "Global hotkeys are only available in the macOS app"
+            tip = (
+                "Global hotkeys need the native Windows app"
+                if hotkey.is_windows() else
+                "Global hotkeys are only available in the macOS app"
+            )
         else:
             text = f"{parsed.symbols()} unavailable"
             tip = (
                 f"{parsed.symbols()} could not be registered (it may be used by "
-                f"macOS or another app) \u2014 choose another in {where}"
+                f"{'Windows' if hotkey.is_windows() else 'macOS'} or another app) "
+                f"\u2014 choose another in {where}"
             )
         if self.prefs.voice_input and self._voice_hotkey_unavailable():
             text += f" \u00b7 {_VOICE_SHORTCUT_SYMBOLS} unavailable"
@@ -1717,7 +1739,7 @@ class MainWindow(QMainWindow):
         """Switch to hotkey ``text`` ("" disables it) and save it.
 
         Returns False, keeping the previous hotkey registered, if ``text`` is
-        invalid or macOS refuses to register it.
+        invalid or the OS refuses to register it.
         """
         title = "Set Show/Hide Hotkey"
         text = text.strip()
@@ -1755,7 +1777,7 @@ class MainWindow(QMainWindow):
                 self,
                 title,
                 f"{parsed.symbols()} could not be registered; it may already be used "
-                f"by macOS or another app. {keeping}",
+                f"by {'Windows' if hotkey.is_windows() else 'macOS'} or another app. {keeping}",
             )
             return False
         # Registration is skipped on unsupported platforms; still save the choice.
