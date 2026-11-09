@@ -10,4 +10,6 @@ if SMOKE_TEST:
 from type_fast.app import main
 
 if __name__ == "__main__":
-    main(smoke_test=SMOKE_TEST)
+    if SMOKE_TEST:
+        sys.exit(main(smoke_test=True))
+    main()

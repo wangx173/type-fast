@@ -2715,7 +2715,7 @@ def app_icon() -> QIcon:
     return QIcon(str(ICON_PATH))
 
 
-def main(*, smoke_test: bool = False) -> None:
+def main(*, smoke_test: bool = False) -> int | None:
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Type Fast")
     app.setApplicationDisplayName("Type Fast")
@@ -2728,7 +2728,9 @@ def main(*, smoke_test: bool = False) -> None:
     window.summon()
     if smoke_test:
         QTimer.singleShot(0, app.quit)
-    app.exec()
+    exit_code = app.exec()
+    if smoke_test:
+        return exit_code
 
 
 if __name__ == "__main__":

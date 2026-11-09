@@ -45,7 +45,10 @@ class PackagingTests(unittest.TestCase):
             patch.dict(os.environ, {}, clear=True),
             patch("type_fast.app.main") as main,
         ):
-            runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
+            main.return_value = 0
+            with self.assertRaises(SystemExit) as exit:
+                runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
+            self.assertEqual(exit.exception.code, 0)
             self.assertEqual(os.environ["QT_QPA_PLATFORM"], "offscreen")
             main.assert_called_once_with(smoke_test=True)
 
@@ -57,7 +60,17 @@ class PackagingTests(unittest.TestCase):
         ):
             runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
             self.assertEqual(os.environ["QT_QPA_PLATFORM"], "existing")
-            main.assert_called_once_with(smoke_test=False)
+            main.assert_called_once_with()
+
+    def test_packaged_smoke_propagates_event_loop_exit_code(self) -> None:
+        with (
+            patch("sys.argv", ["Type Fast.exe", "--smoke-test"]),
+            patch.dict(os.environ, {}, clear=True),
+            patch("type_fast.app.main", return_value=3),
+        ):
+            with self.assertRaises(SystemExit) as exit:
+                runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
+            self.assertEqual(exit.exception.code, 3)
 
     def test_smoke_quits_only_after_window_initialization(self) -> None:
         from type_fast import app
@@ -68,7 +81,8 @@ class PackagingTests(unittest.TestCase):
             patch.object(app, "QTimer") as timer,
             patch.object(app, "app_icon"),
         ):
-            app.main(smoke_test=True)
+            application.instance.return_value.exec.return_value = 0
+            self.assertEqual(app.main(smoke_test=True), 0)
             window.return_value.summon.assert_called_once_with()
             timer.singleShot.assert_called_once_with(
                 0, application.instance.return_value.quit,
