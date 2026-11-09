@@ -2715,7 +2715,7 @@ def app_icon() -> QIcon:
     return QIcon(str(ICON_PATH))
 
 
-def main() -> None:
+def main(*, smoke_test: bool = False) -> None:
     app = QApplication.instance() or QApplication([])
     app.setApplicationName("Type Fast")
     app.setApplicationDisplayName("Type Fast")
@@ -2726,6 +2726,8 @@ def main() -> None:
     window.resize(460, 380)
     # Show on launch so first-time users see the window (and its hotkey hint).
     window.summon()
+    if smoke_test:
+        QTimer.singleShot(0, app.quit)
     app.exec()
 
 

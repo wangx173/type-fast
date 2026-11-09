@@ -113,10 +113,12 @@ Pushing a version tag (for example `v0.4.0`) runs the
 [release workflow](../.github/workflows/release.yml), which builds the app and
 attaches `Type-Fast-macos-arm64.zip` and `Type-Fast-windows-x64.zip` to the same
 GitHub Release. Manual `workflow_dispatch` runs upload both as Actions artifacts.
-The Windows job also launches the frozen executable offscreen with Python
-removed from `PATH` and checks that it stays running during startup. This
-checks bundled-runtime startup, not real global hotkeys, microphone access or
-auto-paste; those still need a normal Windows desktop check.
+The Windows job also launches `Type Fast.exe --smoke-test` offscreen with Python
+removed from `PATH`. This initializes the window, enters the Qt event loop,
+and exits successfully within 15 seconds. A startup-error dialog or hung
+process fails the check. This checks bundled-runtime startup, not real global
+hotkeys, microphone access or auto-paste; those still need a normal Windows
+desktop check. Normal launches do not enable smoke mode.
 Windows code signing, installers, auto-update and Arm builds are not included.
 
 ## Update the app icon

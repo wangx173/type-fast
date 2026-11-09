@@ -2,6 +2,8 @@
 
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+import os
+import runpy
 import unittest
 from unittest.mock import Mock, patch
 
@@ -37,6 +39,68 @@ def run_spec(platform: str, product_version: str = "0.1.0") -> dict:
 
 
 class PackagingTests(unittest.TestCase):
+    def test_packaged_smoke_mode_sets_offscreen_before_startup(self) -> None:
+        with (
+            patch("sys.argv", ["Type Fast.exe", "--smoke-test"]),
+            patch.dict(os.environ, {}, clear=True),
+            patch("type_fast.app.main") as main,
+        ):
+            runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
+            self.assertEqual(os.environ["QT_QPA_PLATFORM"], "offscreen")
+            main.assert_called_once_with(smoke_test=True)
+
+    def test_normal_packaged_launch_preserves_qt_platform(self) -> None:
+        with (
+            patch("sys.argv", ["Type Fast.exe"]),
+            patch.dict(os.environ, {"QT_QPA_PLATFORM": "existing"}, clear=True),
+            patch("type_fast.app.main") as main,
+        ):
+            runpy.run_path(str(ROOT / "launch.py"), run_name="__main__")
+            self.assertEqual(os.environ["QT_QPA_PLATFORM"], "existing")
+            main.assert_called_once_with(smoke_test=False)
+
+    def test_smoke_quits_only_after_window_initialization(self) -> None:
+        from type_fast import app
+
+        with (
+            patch.object(app, "QApplication") as application,
+            patch.object(app, "MainWindow") as window,
+            patch.object(app, "QTimer") as timer,
+            patch.object(app, "app_icon"),
+        ):
+            app.main(smoke_test=True)
+            window.return_value.summon.assert_called_once_with()
+            timer.singleShot.assert_called_once_with(
+                0, application.instance.return_value.quit,
+            )
+            application.instance.return_value.exec.assert_called_once_with()
+
+    def test_smoke_initialization_failure_cannot_signal_success(self) -> None:
+        from type_fast import app
+
+        with (
+            patch.object(app, "QApplication") as application,
+            patch.object(app, "MainWindow", side_effect=ImportError("missing bundle")),
+            patch.object(app, "QTimer") as timer,
+            patch.object(app, "app_icon"),
+        ):
+            with self.assertRaisesRegex(ImportError, "missing bundle"):
+                app.main(smoke_test=True)
+            timer.singleShot.assert_not_called()
+            application.instance.return_value.exec.assert_not_called()
+
+    def test_normal_main_does_not_schedule_smoke_exit(self) -> None:
+        from type_fast import app
+
+        with (
+            patch.object(app, "QApplication"),
+            patch.object(app, "MainWindow"),
+            patch.object(app, "QTimer") as timer,
+            patch.object(app, "app_icon"),
+        ):
+            app.main()
+            timer.singleShot.assert_not_called()
+
     def test_macos_bundle_options_are_preserved(self) -> None:
         result = run_spec("darwin")
         options = result["EXE"].call_args.kwargs

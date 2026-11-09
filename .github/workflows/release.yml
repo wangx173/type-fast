@@ -80,13 +80,14 @@ jobs:
           $env:QT_QPA_PLATFORM = 'offscreen'
           $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
           Remove-Item Env:PYTHONHOME, Env:PYTHONPATH -ErrorAction SilentlyContinue
-          $process = Start-Process -FilePath "$PWD/dist/Type Fast/Type Fast.exe" -PassThru -RedirectStandardError "$env:RUNNER_TEMP/type-fast-stderr.log"
+          $process = Start-Process -FilePath "$PWD/dist/Type Fast/Type Fast.exe" -ArgumentList '--smoke-test' -PassThru -RedirectStandardError "$env:RUNNER_TEMP/type-fast-stderr.log"
           try {
-            Start-Sleep -Seconds 10
-            $process.Refresh()
-            if ($process.HasExited) {
+            if (-not $process.WaitForExit(15000)) {
+              throw 'The standalone app did not complete its startup smoke test'
+            }
+            if ($process.ExitCode -ne 0) {
               Get-Content "$env:RUNNER_TEMP/type-fast-stderr.log"
-              throw "The standalone app exited during startup (code $($process.ExitCode))"
+              throw "The standalone app failed its startup smoke test (code $($process.ExitCode))"
             }
           } finally {
             if (-not $process.HasExited) { Stop-Process -Id $process.Id -ErrorAction Stop }
