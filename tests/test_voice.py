@@ -540,6 +540,7 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_record_transcribe_and_translate(self) -> None:
         w = self._window()
+        w.summon()
         w.input.setPlainText("Hello")
         w.input.moveCursor(w.input.textCursor().MoveOperation.End)
         with mock.patch.object(
