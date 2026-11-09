@@ -1479,8 +1479,11 @@ class MainWindow(QMainWindow):
         if self.recorder.recording:
             self._stop_recording()
         elif self.prefs.voice_input and not self._transcribing:
-            if platform.is_windows() and (not self.isVisible() or self.isMinimized()):
-                self.summon()
+            if platform.is_windows():
+                if not self.isVisible():
+                    self.summon()
+                elif self.isMinimized():
+                    self._summon_keeping_cursor()
             self._start_recording()
         else:
             self._reflect_voice()  # undo the button's own check toggle

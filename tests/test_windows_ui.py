@@ -321,6 +321,33 @@ with tempfile.TemporaryDirectory() as tmp, \\
             start_recording.assert_called_once_with()
             self.assertFalse(w.isMinimized())
 
+    def test_minimized_tray_recording_preserves_cursor_and_selection(self) -> None:
+        for start, end, expected in (
+            (6, 9, "Hello new world"),
+            (6, 6, "Hello new old world"),
+        ):
+            with self.subTest(start=start, end=end):
+                w = self._window()
+                w.prefs.voice_input = True
+                w.summon(compact=True)
+                w.input.setPlainText("Hello old world")
+                cursor = w.input.textCursor()
+                cursor.setPosition(end)
+                cursor.setPosition(start, self.module.QTextCursor.KeepAnchor)
+                w.input.setTextCursor(cursor)
+                w.showMinimized()
+                with mock.patch.object(w, "_start_recording") as start_recording:
+                    w.record_action.trigger()
+                    start_recording.assert_called_once_with()
+                self.assertFalse(w.isMinimized())
+                self.assertTrue(w.isVisible())
+                self.assertTrue(w.compact)
+                restored = w.input.textCursor()
+                self.assertEqual(restored.position(), start)
+                self.assertEqual(restored.anchor(), end)
+                w._on_transcribed(w._voice_id, "new")
+                self.assertEqual(w.input.toPlainText(), expected)
+
     def test_activation_does_not_resurrect_dismissed_windows_window(self) -> None:
         w = self._window()
         w.summon()
