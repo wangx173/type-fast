@@ -318,6 +318,10 @@ class HotkeyDialog(QDialog):
 
         info = QLabel(
             "Press the key combination that shows and hides Type Fast from any "
+            "app. Include Ctrl, Alt, or Win (or use an F-key).\n"
+            "Avoid Win shortcuts; Windows keeps most of them."
+            if hotkey.is_windows() else
+            "Press the key combination that shows and hides Type Fast from any "
             "app. Include \u2318, \u2303, or \u2325 (or use an F-key).\n"
             "Avoid \u2318Space (Spotlight) and \u2303Space (switch input "
             "source); macOS keeps those for itself."
@@ -397,8 +401,10 @@ class HotkeyDialog(QDialog):
                 self,
                 "Set Show/Hide Hotkey",
                 f"{parsed.symbols()} would get in the way of normal typing. "
-                "Include \u2318 Command, \u2303 Control, or \u2325 Option "
-                "(or use an F-key).",
+                + ("Include Ctrl, Alt, or Win (or use an F-key)."
+                   if hotkey.is_windows() else
+                   "Include \u2318 Command, \u2303 Control, or \u2325 Option "
+                   "(or use an F-key)."),
             )
             return
         self._finish(str(parsed))
@@ -1557,7 +1563,8 @@ class MainWindow(QMainWindow):
             )
         return (
             f"{_VOICE_SHORTCUT_SYMBOLS} could not be registered for voice input (it may "
-            "be used by macOS or another app) \u2014 use the \U0001f399 button or "
+            f"be used by {'Windows' if hotkey.is_windows() else 'macOS'} or another app) "
+            "\u2014 use the \U0001f399 button or "
             "Settings \u203a Voice Input \u203a Start Recording instead"
         )
 

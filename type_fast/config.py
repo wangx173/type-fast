@@ -11,6 +11,7 @@ Provider-specific credential handling and client construction live in
 from __future__ import annotations
 
 from typing import Optional
+import sys
 
 # Default model for both providers: the OpenAI model, and the Azure AI Foundry
 # deployment name the setup script and guide create. With reasoning turned off
@@ -216,12 +217,12 @@ DEBOUNCE_MS = 500
 # input-source switching (⌃Space, ⌃⌥Space), and ⌥Space, which types a
 # non-breaking space and is claimed by launchers such as Alfred, Raycast, and
 # ChatGPT. Users can pick any combination in Settings › Set Show/Hide Hotkey….
-DEFAULT_HOTKEY = "Shift+Cmd+Space"
+DEFAULT_HOTKEY = "Ctrl+Shift+Space" if sys.platform == "win32" else "Shift+Cmd+Space"
 
 # Global voice hotkey, registered while voice input is on: it shows the window
 # and starts recording, and pressed again it stops, hides the window, and
 # pastes the result, like the show/hide hotkey.
-VOICE_HOTKEY = "Shift+Cmd+M"
+VOICE_HOTKEY = "Ctrl+Shift+M" if sys.platform == "win32" else "Shift+Cmd+M"
 
 # Window transparency presets: name -> (opacity while you are using Type Fast,
 # opacity while it sits in the background). The window stays on top of other

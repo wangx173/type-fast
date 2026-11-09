@@ -973,15 +973,16 @@ class WindowVoiceTests(unittest.TestCase):
             hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(w.voice_hotkey, "register", return_value=False):
             w.voice_input_action.trigger()  # on
-            self.assertIn("\u21e7\u2318M unavailable", w.hotkey_label.text())
+            keys = self.app_module._VOICE_SHORTCUT_SYMBOLS
+            self.assertIn(f"{keys} unavailable", w.hotkey_label.text())
             self.assertIn("could not be registered", w.hotkey_label.toolTip())
             # The footer is hidden in compact mode, so the mic button says so too.
             self.assertIn("could not be registered", w.mic_button.toolTip())
-            self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+            self.assertNotIn(f"{keys})", w.mic_button.toolTip())
             with mock.patch.object(self.app_module.voice, "transcribe", return_value=""):
                 w.toggle_recording()
-                self.assertNotIn("\u21e7\u2318M", w.status.text())
-                self.assertNotIn("\u21e7\u2318M)", w.mic_button.toolTip())
+                self.assertNotIn(keys, w.status.text())
+                self.assertNotIn(f"{keys})", w.mic_button.toolTip())
                 w.toggle_recording()
         self.assertIn("could not be registered", self.warnings.call_args.args[2])
         self.assertTrue(settings.load().voice_input)
@@ -996,17 +997,18 @@ class WindowVoiceTests(unittest.TestCase):
         ):
             w._reflect_voice()
             w._reflect_hotkey()
-        self.assertIn("\u21e7\u2318M in any app", w.mic_button.toolTip())
-        self.assertNotIn("\u21e7\u2318M unavailable", w.hotkey_label.text())
+        keys = self.app_module._VOICE_SHORTCUT_SYMBOLS
+        self.assertIn(f"{keys} in any app", w.mic_button.toolTip())
+        self.assertNotIn(f"{keys} unavailable", w.hotkey_label.text())
 
     def test_show_hide_hotkey_cannot_take_voice_keys(self) -> None:
         w = self._voice_window()
-        self.assertFalse(w._apply_hotkey("Shift+Cmd+M"))
+        self.assertFalse(w._apply_hotkey(config.VOICE_HOTKEY))
         self.assertIn("voice input hotkey", self.warnings.call_args.args[2])
         self.assertEqual(w.prefs.hotkey, config.DEFAULT_HOTKEY)
         # Allowed with voice input off; turning it back on reports the clash.
         w.voice_input_action.trigger()
-        self.assertTrue(w._apply_hotkey("Shift+Cmd+M"))
+        self.assertTrue(w._apply_hotkey(config.VOICE_HOTKEY))
         hk = self.app_module.platform
         with mock.patch.object(
             hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)

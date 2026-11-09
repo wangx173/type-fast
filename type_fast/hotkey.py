@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import sys
 
 from PySide6.QtCore import QKeyCombination, Qt
 from PySide6.QtGui import QKeySequence
@@ -18,6 +19,13 @@ MODIFIER_SYMBOLS = {CTRL: "\u2303", OPTION: "\u2325", SHIFT: "\u21e7", CMD: "\u2
 
 # Carbon modifier masks (Events.h).
 CARBON_MODIFIERS = {CMD: 0x0100, SHIFT: 0x0200, OPTION: 0x0800, CTRL: 0x1000}
+WIN32_MODIFIERS = {CTRL: 0x0002, OPTION: 0x0001, SHIFT: 0x0004, CMD: 0x0008}
+_WINDOWS_LABELS = {CTRL: "Ctrl", OPTION: "Alt", SHIFT: "Shift", CMD: "Win"}
+
+
+def is_windows() -> bool:
+    """Select Windows names and Qt mappings, including before Qt starts."""
+    return sys.platform == "win32"
 
 _MODIFIER_ALIASES = {
     "ctrl": CTRL, "control": CTRL, "ctl": CTRL, "\u2303": CTRL, "^": CTRL,
@@ -49,6 +57,17 @@ KEYCODES: dict[str, int] = {
 }
 
 _KEY_FOR_KEYCODE = {code: name for name, code in KEYCODES.items()}
+
+VIRTUAL_KEYS: dict[str, int] = {
+    **{c: ord(c) for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"},
+    **{f"F{n}": 0x70 + n - 1 for n in range(1, 21)},
+    "Space": 0x20, "Return": 0x0D, "Escape": 0x1B, "Tab": 0x09,
+    "Delete": 0x08, "Home": 0x24, "End": 0x23,
+    "PageUp": 0x21, "PageDown": 0x22,
+    "Left": 0x25, "Up": 0x26, "Right": 0x27, "Down": 0x28,
+    ";": 0xBA, "=": 0xBB, ",": 0xBC, "-": 0xBD, ".": 0xBE,
+    "/": 0xBF, "`": 0xC0, "[": 0xDB, "\\": 0xDC, "]": 0xDD, "'": 0xDE,
+}
 
 FUNCTION_KEYS = frozenset(f"F{n}" for n in range(1, 21))
 _ARROW_KEYS = frozenset({"Left", "Right", "Up", "Down"})
@@ -115,6 +134,16 @@ _QT_MODIFIERS = (
     (Qt.KeyboardModifier.ShiftModifier, SHIFT),
     (Qt.KeyboardModifier.ControlModifier, CMD),
 )
+_WINDOWS_QT_MODIFIERS = (
+    (Qt.KeyboardModifier.ControlModifier, CTRL),
+    (Qt.KeyboardModifier.AltModifier, OPTION),
+    (Qt.KeyboardModifier.ShiftModifier, SHIFT),
+    (Qt.KeyboardModifier.MetaModifier, CMD),
+)
+
+
+def _qt_modifiers() -> tuple[tuple[Qt.KeyboardModifier, str], ...]:
+    return _WINDOWS_QT_MODIFIERS if is_windows() else _QT_MODIFIERS
 
 
 @dataclass(frozen=True)
@@ -143,6 +172,8 @@ class Hotkey:
 
         It needs ⌘, ⌃ or ⌥ (Shift alone is not enough), except for F-keys.
         """
+        if is_windows() and self.vk is None:
+            return False
         if self.key in FUNCTION_KEYS:
             return True
         return bool({CTRL, OPTION, CMD} & set(self.modifiers))
@@ -160,8 +191,21 @@ class Hotkey:
             mask |= CARBON_MODIFIERS[modifier]
         return mask
 
+    @property
+    def vk(self) -> int | None:
+        """Win32 virtual key; canonical Delete means Backspace on both OSes."""
+        return VIRTUAL_KEYS.get(self.key)
+
+    @property
+    def win32_modifiers(self) -> int:
+        """Win32 MOD_* flags, excluding registration-only MOD_NOREPEAT."""
+        return sum(WIN32_MODIFIERS[m] for m in self.modifiers)
+
     def symbols(self) -> str:
-        """Compact macOS display form, e.g. ``"⌥Space"`` or ``"⌃⌥⇧⌘T"``."""
+        """OS display form: macOS symbols or Windows Ctrl+Alt+Shift+Win."""
+        if is_windows():
+            key = "Backspace" if self.key == "Delete" else self.key
+            return "+".join((*(_WINDOWS_LABELS[m] for m in self.modifiers), key))
         mods = "".join(MODIFIER_SYMBOLS[m] for m in self.modifiers)
         return mods + _KEY_SYMBOLS.get(self.key, self.key)
 
@@ -205,8 +249,8 @@ def parse(text: str) -> Hotkey | None:
 def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
     """Convert a Qt key combination (or the first one in a sequence).
 
-    Applies the macOS Qt mapping (ControlModifier = ⌘, MetaModifier = ⌃,
-    AltModifier = ⌥). Returns None for an empty sequence, a bare modifier, an
+    Uses macOS's swapped Control/Meta mapping, or Windows's Ctrl/Win mapping.
+    Returns None for an empty sequence, a bare modifier, an
     unsupported key, or a numeric-keypad key. The result may still fail :attr:`Hotkey.is_valid` so that
     callers can explain why.
     """
@@ -222,8 +266,9 @@ def from_qt(combo: QKeyCombination | QKeySequence) -> Hotkey | None:
     # ⌘+keypad-1 onto ⌘1. macOS also flags the arrow keys as keypad keys.
     if mods & Qt.KeyboardModifier.KeypadModifier and name not in _ARROW_KEYS:
         return None
-    modifiers = tuple(m for flag, m in _QT_MODIFIERS if mods & flag)
-    return Hotkey(modifiers, name)
+    modifiers = tuple(m for flag, m in _qt_modifiers() if mods & flag)
+    result = Hotkey(modifiers, name)
+    return None if is_windows() and result.vk is None else result
 
 
 def key_for_keycode(keycode: int) -> str | None:
@@ -239,7 +284,7 @@ def key_for_keycode(keycode: int) -> str | None:
 def to_qt(hotkey: Hotkey) -> QKeySequence:
     """Return a :class:`QKeySequence` for ``hotkey`` (inverse of :func:`from_qt`)."""
     mods = Qt.KeyboardModifier.NoModifier
-    for flag, modifier in _QT_MODIFIERS:
+    for flag, modifier in _qt_modifiers():
         if modifier in hotkey.modifiers:
             mods |= flag
     return QKeySequence(QKeyCombination(mods, Qt.Key(_QT_KEY_FOR_NAME[hotkey.key])))

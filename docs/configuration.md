@@ -150,6 +150,14 @@ provider once, and never saved to disk.
 
 Everything lives in `~/.type-fast/`:
 
+The `hotkey` field in `settings.json` accepts the same canonical text on both
+platforms: `Ctrl`, `Option`, `Shift`, and `Cmd`, plus a key (for example
+`"Ctrl+Option+K"`). On Windows, `Option` means **Alt** and `Cmd` means **Win**;
+an existing saved `Cmd` combination is retained without migration. The
+show/hide default is `"Ctrl+Shift+Space"` on Windows and `"Shift+Cmd+Space"` on
+macOS. An empty string disables the show/hide hotkey. The fixed voice hotkey
+is **Ctrl+Shift+M** on Windows and **⇧⌘M** on macOS.
+
 | File                        | Contents                                                                                            |
 |-----------------------------|-----------------------------------------------------------------------------------------------------|
 | `settings.json`             | Language pair, No translation mode, tone, custom tone, hotkey, transparency, auto-paste, voice input, and clean-up switches |
