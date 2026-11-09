@@ -169,11 +169,13 @@ class Hotkey:
 
     @property
     def is_valid(self) -> bool:
-        """True unless the hotkey would swallow ordinary typing.
+        """True unless the hotkey would swallow typing or Windows auto-paste.
 
         It needs ⌘, ⌃ or ⌥ (Shift alone is not enough), except for F-keys.
         """
         if is_windows() and self.vk is None:
+            return False
+        if is_windows() and self.vk == 0x56 and self.win32_modifiers == 0x0002:
             return False
         if self.key in FUNCTION_KEYS:
             return True

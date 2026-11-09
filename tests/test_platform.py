@@ -174,12 +174,14 @@ class WindowsNativeTests(unittest.TestCase):
         window.winId.return_value = 20
         windows.activate_app(window)
         self.assertEqual(self.native.previous_window, 10)
+        self.assertEqual(self.native.previous_pid, 100)
         self.lib.GetForegroundWindow.return_value = 20
         windows.activate_app()
         self.assertEqual(self.native.previous_window, 10)
         self.lib.GetForegroundWindow.return_value = 10
         self.assertTrue(windows.hide_app())
         self.assertIsNone(self.native.previous_window)
+        self.assertIsNone(self.native.previous_pid)
         self.assertEqual(self.lib.ShowWindow.call_args_list,
                          [mock.call(20, 5), mock.call(20, 5), mock.call(20, 0)])
         self.assertEqual(self.lib.SetForegroundWindow.call_args_list,
@@ -203,6 +205,8 @@ class WindowsNativeTests(unittest.TestCase):
 
     def test_failed_restoration_returns_false(self) -> None:
         self.native.previous_window = 10
+        self.native.previous_pid = 100
+        self.lib.GetWindowThreadProcessId.side_effect = self._pid
         self.lib.IsWindow.return_value = 1
         self.lib.SetForegroundWindow.return_value = 0
         with self.assertLogs(windows.__name__, level="WARNING"):
@@ -216,6 +220,7 @@ class WindowsNativeTests(unittest.TestCase):
         for hwnd in (None, 30):
             with self.subTest(hwnd=hwnd):
                 self.native.previous_window = 10
+                self.native.previous_pid = 100
                 self.lib.GetForegroundWindow.return_value = hwnd
                 self.lib.GetWindowThreadProcessId.return_value = 0
                 if hwnd:
@@ -224,9 +229,48 @@ class WindowsNativeTests(unittest.TestCase):
                 else:
                     windows.activate_app(window)
                 self.assertIsNone(self.native.previous_window)
+                self.assertIsNone(self.native.previous_pid)
                 self.lib.SetForegroundWindow.reset_mock()
                 self.assertFalse(windows.hide_app())
                 self.lib.SetForegroundWindow.assert_not_called()
+
+    def test_reused_or_unknown_destination_pid_skips_restoration(self) -> None:
+        for pid in (0, 200):
+            with self.subTest(pid=pid):
+                self.lib.GetWindowThreadProcessId.side_effect = self._pid
+                self.lib.GetForegroundWindow.return_value = 10
+                self.lib.SetForegroundWindow.return_value = 1
+                self.lib.IsWindow.return_value = 1
+                window = mock.Mock()
+                window.winId.return_value = 20
+                windows.activate_app(window)
+
+                def replacement(hwnd, pointer):
+                    ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint32)).contents.value = pid
+                    return 1
+
+                self.lib.GetWindowThreadProcessId.side_effect = replacement
+                self.lib.SetForegroundWindow.reset_mock()
+                with self.assertLogs(windows.__name__, level="WARNING"):
+                    self.assertFalse(windows.hide_app())
+                self.lib.SetForegroundWindow.assert_not_called()
+                self.assertIsNone(self.native.previous_window)
+                self.assertIsNone(self.native.previous_pid)
+
+    def test_destination_pid_changed_during_restore_returns_false(self) -> None:
+        self.native.previous_window = 10
+        self.native.previous_pid = 100
+        self.lib.IsWindow.return_value = 1
+        self.lib.GetForegroundWindow.return_value = 10
+        pids = iter((100, 200))
+
+        def changing_pid(hwnd, pointer):
+            ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint32)).contents.value = next(pids)
+            return 1
+
+        self.lib.GetWindowThreadProcessId.side_effect = changing_pid
+        self.lib.SetForegroundWindow.return_value = 1
+        self.assertFalse(windows.hide_app())
 
     def test_clipboard_foreground_and_last_input_wrappers(self) -> None:
         self.lib.GetClipboardSequenceNumber.return_value = 0xFFFFFFFF
@@ -290,6 +334,12 @@ class WindowsNativeTests(unittest.TestCase):
                     self.assertFalse(windows.send_paste())
         self.lib.SendInput.assert_not_called()
 
+    def test_send_input_skips_physically_held_v_without_key_cleanup(self) -> None:
+        self.lib.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == 0x56 else 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertFalse(windows.send_paste())
+        self.lib.SendInput.assert_not_called()
+
     def test_partial_send_reports_incomplete_cleanup(self) -> None:
         for released in (0, 1, 2):
             with self.subTest(released=released):
@@ -319,7 +369,7 @@ class WindowsNativeTests(unittest.TestCase):
             callbacks.pop()[1]()
         result.assert_called_once_with(True)
         queried = {call.args[0] for call in self.lib.GetAsyncKeyState.call_args_list}
-        self.assertEqual(queried, {*windows._MODIFIER_KEYS, 0x7B})
+        self.assertEqual(queried, {*windows._MODIFIER_KEYS, 0x56, 0x7B})
 
     def test_key_wait_timeout_is_one_second_even_if_timer_is_late(self) -> None:
         self.lib.GetAsyncKeyState.return_value = 0x8000

@@ -92,6 +92,8 @@ Choose **Settings → Set Show/Hide Hotkey…** and press the new combination.
   Avoid Win shortcuts, since Windows reserves most of them. If another app
   already registered the combination, Type Fast reports the failure and keeps
   the previous hotkey. Quitting releases both global hotkeys.
+- **Ctrl+V** cannot be a Windows global hotkey because it would intercept
+  auto-paste. A previously saved Ctrl+V setting falls back to the default.
 - If macOS reserves a combination (such as ⌘Space or ⌘Tab), Type Fast tells you
   and keeps the previous one. Another app's global shortcut can't always be
   detected, so if the new hotkey does nothing, pick a different one.
@@ -146,7 +148,7 @@ Windows auto-paste needs no permission. To go back without pasting, press
   still copied to the clipboard. Opening and hiding the window again without
   typing anything pastes nothing.
 - On Windows, release the hotkey keys to paste. Type Fast waits up to one
-  second for Shift, Ctrl, Alt, both Win keys, and registered hotkey keys to be
+  second for Shift, Ctrl, Alt, both Win keys, V, and registered hotkey keys to be
   released. If they stay held, it skips the paste and leaves the text on the
   clipboard. Clicking, typing, or changing focus after that baseline cancels
   the paste, including when translation is still streaming.

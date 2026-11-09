@@ -123,6 +123,7 @@ class _Win32(QAbstractNativeEventFilter):
             function.restype = result
         self.lib = lib
         self.previous_window: int | None = None
+        self.previous_pid: int | None = None
         self.app_window: weakref.ReferenceType[QWidget] | None = None
         self.targets: dict[int, weakref.ReferenceType[GlobalHotkey]] = {}
         self.installed = False
@@ -193,8 +194,10 @@ def activate_app(window: QWidget | None = None) -> None:
     pid = _window_pid(native.lib, foreground)
     if pid is None:
         native.previous_window = None
+        native.previous_pid = None
     elif pid != os.getpid():
         native.previous_window = foreground
+        native.previous_pid = pid
     hwnd = int(window.winId())
     native.lib.ShowWindow(hwnd, 5)  # SW_SHOW
     if not native.lib.SetForegroundWindow(hwnd):
@@ -211,11 +214,18 @@ def hide_app() -> bool:
     if window is not None:
         native.lib.ShowWindow(int(window.winId()), 0)  # SW_HIDE
     previous, native.previous_window = native.previous_window, None
+    previous_pid, native.previous_pid = native.previous_pid, None
     if previous and native.lib.IsWindow(previous):
+        if previous_pid is None or _window_pid(native.lib, previous) != previous_pid:
+            _log.warning("Previous app changed or is unknown; auto-paste skipped")
+            return False
         if not native.lib.SetForegroundWindow(previous):
             _log.warning("SetForegroundWindow failed while restoring the previous app")
             return False
-        return native.lib.GetForegroundWindow() == previous
+        return (
+            native.lib.GetForegroundWindow() == previous
+            and _window_pid(native.lib, previous) == previous_pid
+        )
     return False
 
 
@@ -258,7 +268,7 @@ def paste_permission_granted() -> bool:
 
 
 def _paste_keys(native: _Win32) -> tuple[int, ...]:
-    keys = set(_MODIFIER_KEYS)
+    keys = {*_MODIFIER_KEYS, 0x56}  # Injection must not release a physically held V.
     for ref in native.targets.values():
         target = ref()
         if target is not None and target.hotkey is not None:
