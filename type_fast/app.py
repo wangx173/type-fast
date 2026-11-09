@@ -802,6 +802,7 @@ class MainWindow(QMainWindow):
         self._hide_after_voice: int | None = None
         self._voice_hide_input: int | None = None
         self._windows_voice_waiting: int | None = None
+        self._windows_voice_can_hide = False
         self._windows_pending_transcript: tuple[int, str] | None = None
         self._mic_request: int | None = None
         self._register_voice_hotkey()
@@ -1512,6 +1513,7 @@ class MainWindow(QMainWindow):
             if platform.is_windows():
                 voice_id = self._voice_id
                 self._windows_voice_waiting = voice_id
+                self._windows_voice_can_hide = True
                 platform.wait_for_paste_keys(
                     lambda released: self._finish_windows_voice_hotkey(voice_id, released)
                 )
@@ -1535,11 +1537,12 @@ class MainWindow(QMainWindow):
         self._start_recording()
 
     def _finish_windows_voice_hotkey(self, voice_id: int, released: bool) -> None:
-        if voice_id != self._voice_id:
+        if voice_id != self._voice_id or voice_id != self._windows_voice_waiting:
             return
         self._windows_voice_waiting = None
         count = platform.input_event_count() if released else None
-        hide = count is not None and self.isActiveWindow()
+        hide = self._windows_voice_can_hide and count is not None and self.isActiveWindow()
+        self._windows_voice_can_hide = False
         self._voice_hide_input = count
         if self.recorder.recording:
             self._stop_recording(hide_after=hide)
@@ -1712,6 +1715,9 @@ class MainWindow(QMainWindow):
         if voice_id == self._voice_id:
             self._transcribing = False
             self._hide_after_voice = None
+            self._windows_voice_waiting = None
+            self._windows_voice_can_hide = False
+            self._windows_pending_transcript = None
             self._voice_failed(message)
 
     def _voice_failed(self, message: str, microphone_settings: bool = False) -> None:
@@ -1744,6 +1750,7 @@ class MainWindow(QMainWindow):
         self._voice_id += 1
         self._hide_after_voice = None
         self._windows_voice_waiting = None
+        self._windows_voice_can_hide = False
         self._windows_pending_transcript = None
         if not (self.recorder.recording or self._transcribing):
             return
@@ -1885,6 +1892,7 @@ class MainWindow(QMainWindow):
             # Another app came forward while ⇧⌘M's transcription ran: don't
             # hide and paste into it, even if Type Fast is back by then.
             self._hide_after_voice = None
+            self._windows_voice_can_hide = False
         if state == Qt.ApplicationActive:
             # Settings may have changed outside the app (e.g. the setup script);
             # if so, apply them to the current text too, not just the footer.

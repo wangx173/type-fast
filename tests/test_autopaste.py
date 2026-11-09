@@ -12,7 +12,7 @@ from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
 from type_fast import config, platform, settings
@@ -249,6 +249,10 @@ class WindowAutoPasteTests(unittest.TestCase):
         stack.enter_context(mock.patch.object(platform, "activate_app"))
         stack.enter_context(mock.patch.object(platform, "hide_app", return_value=restored))
         stack.enter_context(mock.patch.object(
+            type(self.window.global_hotkey), "is_registered",
+            new_callable=mock.PropertyMock, return_value=True,
+        ))
+        stack.enter_context(mock.patch.object(
             platform, "wait_for_paste_keys", side_effect=wait or (lambda cb: cb(True))
         ))
         return stack
@@ -426,6 +430,43 @@ class WindowAutoPasteTests(unittest.TestCase):
             insert.assert_called_once_with("Hello.")
             dismiss.assert_called_once_with(paste=True)
             self.assertFalse(w._transcribing)
+
+    def test_windows_voice_focus_loss_stays_cancelled_after_focus_returns(self) -> None:
+        w = self.window
+        for buffered in (False, True):
+            callbacks = []
+            with self.subTest(buffered=buffered), self._windows(wait=callbacks.append), \
+                    mock.patch.object(w, "isActiveWindow", return_value=True), \
+                    mock.patch.object(w, "_insert_transcript") as insert, \
+                    mock.patch.object(w, "dismiss") as dismiss:
+                w.summon()
+                w._transcribing = True
+                w.toggle_voice()
+                w._on_app_state_changed(Qt.ApplicationInactive)
+                w._on_app_state_changed(Qt.ApplicationActive)
+                if buffered:
+                    w._on_transcribed(w._voice_id, "Hello.")
+                callbacks.pop()(True)
+                if not buffered:
+                    w._on_transcribed(w._voice_id, "Hello.")
+                insert.assert_called_once_with("Hello.")
+                dismiss.assert_not_called()
+
+    def test_windows_voice_error_invalidates_pending_release(self) -> None:
+        w = self.window
+        callbacks = []
+        with self._windows(wait=callbacks.append), \
+                mock.patch.object(w, "isActiveWindow", return_value=True), \
+                mock.patch.object(w, "_voice_failed"), \
+                mock.patch.object(w, "dismiss") as dismiss:
+            w.summon()
+            w._transcribing = True
+            w.toggle_voice()
+            w._on_voice_error(w._voice_id, "Failed")
+            callbacks.pop()(True)
+            self.assertIsNone(w._windows_voice_waiting)
+            self.assertIsNone(w._hide_after_voice)
+            dismiss.assert_not_called()
 
     def test_hotkey_hide_pastes_finished_translation_once(self) -> None:
         w = self.window

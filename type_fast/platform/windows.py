@@ -304,7 +304,12 @@ def send_paste() -> bool:
         _log.warning("SendInput inserted %s of 4 paste events; text remains on the clipboard", sent)
         # A partial insertion may have left Ctrl or V down. Release only our keys.
         releases = (_INPUT * 2)(events[2], events[3])
-        native.lib.SendInput(2, releases, ctypes.sizeof(_INPUT))
+        released = native.lib.SendInput(2, releases, ctypes.sizeof(_INPUT))
+        if released != 2:
+            _log.warning(
+                "SendInput cleanup inserted %s of 2 key-up events; Ctrl/V release was not confirmed",
+                released,
+            )
         return False
     return True
 

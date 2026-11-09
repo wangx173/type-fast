@@ -267,6 +267,15 @@ class WindowsNativeTests(unittest.TestCase):
                     self.assertFalse(windows.send_paste())
         self.lib.SendInput.assert_not_called()
 
+    def test_partial_send_reports_incomplete_cleanup(self) -> None:
+        for released in (0, 1, 2):
+            with self.subTest(released=released):
+                self.lib.SendInput.side_effect = [1, released]
+                with self.assertLogs(windows.__name__, level="WARNING") as logs:
+                    self.assertFalse(windows.send_paste())
+                cleanup_logs = [line for line in logs.output if "cleanup inserted" in line]
+                self.assertEqual(len(cleanup_logs), 0 if released == 2 else 1)
+
     def test_key_wait_polls_registered_trigger_and_all_modifiers(self) -> None:
         import weakref
 
