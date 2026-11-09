@@ -33,7 +33,7 @@ Issues = "https://github.com/wangx173/type-fast/issues"
 type-fast = "type_fast.app:main"
 
 [tool.setuptools]
-packages = ["type_fast", "type_fast.providers"]
+packages = ["type_fast", "type_fast.providers", "type_fast.platform"]
 
 [tool.setuptools.package-data]
 type_fast = ["resources/*.png"]

@@ -103,7 +103,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from . import autopaste, config, hotkey, providers, settings, voice
+from . import config, hotkey, platform, providers, settings, voice
 from .providers import azure as azure_provider, openai as openai_provider
 from .translator import translate_stream
 
@@ -708,11 +708,11 @@ class MainWindow(QMainWindow):
         # once noted, as long as you haven't clicked or typed since the hide.
         # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
-        self.global_hotkey = hotkey.GlobalHotkey(self)
+        self.global_hotkey = platform.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         # Global voice hotkey (⇧⌘M), registered once the recorder exists (see
         # _register_voice_hotkey).
-        self.voice_hotkey = hotkey.GlobalHotkey(self)
+        self.voice_hotkey = platform.GlobalHotkey(self)
         self.voice_hotkey.activated.connect(self.toggle_voice)
         self._register_hotkey()
         app = QGuiApplication.instance()
@@ -765,7 +765,7 @@ class MainWindow(QMainWindow):
         # ``_hide_after_voice`` is the _voice_id of a transcription that, once
         # inserted, hides the window and pastes (the voice hotkey), provided
         # you haven't clicked or typed since pressing it (``_voice_hide_input``
-        # is autopaste.input_event_count() then). The time limit stops a
+        # is platform.input_event_count() then). The time limit stops a
         # recording without hiding: nobody asked to paste. ``_mic_request`` is
         # the _voice_id of a recording waiting for macOS's microphone prompt.
         self.recorder = voice.Recorder(self)
@@ -1035,7 +1035,7 @@ class MainWindow(QMainWindow):
         modal = QApplication.activeModalWidget()
         if modal is None:
             return False
-        hotkey.activate_app()
+        platform.activate_app()
         modal.raise_()
         modal.activateWindow()
         return True
@@ -1066,7 +1066,7 @@ class MainWindow(QMainWindow):
         self.show()
         self.raise_()
         self.activateWindow()
-        hotkey.activate_app()
+        platform.activate_app()
         self.input.setFocus()
         self.input.moveCursor(QTextCursor.End)
         # Fade in, Spotlight-style. Activation may land a moment later; the
@@ -1118,14 +1118,14 @@ class MainWindow(QMainWindow):
         # Hiding stops listening; a transcription still running is dropped.
         self._cancel_voice()
         self.hide()
-        hotkey.hide_app()
+        platform.hide_app()
         shown = self._shown_count
         if text:
             self._schedule_paste(text, shown)
         elif defer:
-            self._deferred_paste = _DeferredPaste(shown, hotkey.pasteboard_change_count())
+            self._deferred_paste = _DeferredPaste(shown, platform.clipboard_change_count())
             self._deferred_paste_timer.start()
-            self._paste_target = _PasteTarget(shown, None, autopaste.input_event_count())
+            self._paste_target = _PasteTarget(shown, None, platform.input_event_count())
             QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._remember_paste_target(shown))
 
     def _take_paste_text(self) -> str:
@@ -1150,7 +1150,7 @@ class MainWindow(QMainWindow):
             bool(text)
             and self.output.toPlainText().rstrip() == text.rstrip()
             and QApplication.clipboard().text() == text
-            and hotkey.pasteboard_change_count() == self._copy_change_count
+            and platform.clipboard_change_count() == self._copy_change_count
         )
 
     def _schedule_paste(self, text: str, shown: int) -> None:
@@ -1172,7 +1172,7 @@ class MainWindow(QMainWindow):
         target = self._paste_target
         if target is not None and target.shown == shown:
             # A deferred paste: only into the app that got focus back.
-            pid = hotkey.frontmost_app_pid()
+            pid = platform.frontmost_app_pid()
             if not self._is_other_app(pid):
                 if tries > 1:  # macOS may not have handed focus back yet
                     QTimer.singleShot(
@@ -1182,9 +1182,9 @@ class MainWindow(QMainWindow):
                 return
             if target.pid not in (None, pid):
                 return  # you switched apps
-            if autopaste.input_event_count() != target.input_count:
+            if platform.input_event_count() != target.input_count:
                 return  # you clicked or typed, maybe somewhere else
-        autopaste.send_paste()
+        platform.send_paste()
 
     def _remember_paste_target(self, shown: int, tries: int = _PASTE_TARGET_TRIES) -> None:
         """Note the app that got focus back after the hide with ``shown``.
@@ -1196,7 +1196,7 @@ class MainWindow(QMainWindow):
         target = self._paste_target
         if target is None or target.shown != shown or self.isVisible():
             return
-        pid = hotkey.frontmost_app_pid()
+        pid = platform.frontmost_app_pid()
         if self._is_other_app(pid):
             self._paste_target = target._replace(pid=pid)
         elif tries > 1:
@@ -1218,7 +1218,7 @@ class MainWindow(QMainWindow):
         """
         deferred = self._deferred_paste
         self._cancel_deferred_paste()
-        if deferred is None or hotkey.pasteboard_change_count() != deferred.change_count:
+        if deferred is None or platform.clipboard_change_count() != deferred.change_count:
             return None
         return deferred.shown
 
@@ -1238,7 +1238,7 @@ class MainWindow(QMainWindow):
 
     @staticmethod
     def _needs_paste_permission() -> bool:
-        return autopaste.is_supported() and not autopaste.has_permission()
+        return platform.paste_supported() and not platform.paste_permission_granted()
 
     def _ask_paste_permission(self) -> None:
         """Explain the Accessibility permission and offer to open its settings."""
@@ -1257,7 +1257,9 @@ class MainWindow(QMainWindow):
         box.setDefaultButton(open_button)
         box.exec()
         if box.clickedButton() is open_button:
-            QDesktopServices.openUrl(QUrl(autopaste.SETTINGS_URL))
+            url = platform.paste_settings_url()
+            if url is not None:
+                QDesktopServices.openUrl(QUrl(url))
 
     def _set_auto_paste(self, enabled: bool) -> None:
         self.prefs.auto_paste = enabled
@@ -1297,7 +1299,7 @@ class MainWindow(QMainWindow):
 
     def _voice_hotkey_unavailable(self) -> bool:
         """True when ⇧⌘M could be global here but isn't registered."""
-        return not self.voice_hotkey.is_registered and hotkey.GlobalHotkey.is_supported()
+        return not self.voice_hotkey.is_registered and platform.GlobalHotkey.is_supported()
 
     def toggle_voice(self) -> None:
         """Handle the global voice hotkey, from any app.
@@ -1325,7 +1327,7 @@ class MainWindow(QMainWindow):
             return
         if self.recorder.recording or self._transcribing:
             # Noted before the transcription can finish on its thread.
-            self._voice_hide_input = autopaste.input_event_count()
+            self._voice_hide_input = platform.input_event_count()
         if self.recorder.recording:
             self._stop_recording(hide_after=True)
             return
@@ -1454,7 +1456,7 @@ class MainWindow(QMainWindow):
         hide = self._hide_after_voice == voice_id
         self._hide_after_voice = None
         if hide and (
-            autopaste.input_event_count() != self._voice_hide_input
+            platform.input_event_count() != self._voice_hide_input
             or QApplication.activeModalWidget() is not None
             or not self.isActiveWindow()
         ):
@@ -1519,7 +1521,7 @@ class MainWindow(QMainWindow):
         self.prefs.voice_input = enabled
         if not enabled:
             self._cancel_voice()
-        if not self._register_voice_hotkey() and hotkey.GlobalHotkey.is_supported():
+        if not self._register_voice_hotkey() and platform.GlobalHotkey.is_supported():
             QMessageBox.warning(self, "Voice Input", self._voice_hotkey_problem())
         self._save_prefs("Voice Input", "voice input setting")
 
@@ -1683,8 +1685,8 @@ class MainWindow(QMainWindow):
         elif self.global_hotkey.is_registered:
             text = f"{parsed.symbols()} to show/hide"
             tip = f"Press {parsed.symbols()} in any app to show or hide Type Fast \u2014 change it in {where}"
-        elif not hotkey.GlobalHotkey.is_supported():
-            text = f"{parsed.symbols()} (inactive)"
+        elif not platform.GlobalHotkey.is_supported():
+            text = f"{parsed.symbols()} unavailable"
             tip = "Global hotkeys are only available in the macOS app"
         else:
             text = f"{parsed.symbols()} unavailable"
@@ -1735,7 +1737,7 @@ class MainWindow(QMainWindow):
             return False
         if parsed is None:
             self.global_hotkey.unregister()
-        elif not self.global_hotkey.register(parsed) and hotkey.GlobalHotkey.is_supported():
+        elif not self.global_hotkey.register(parsed) and platform.GlobalHotkey.is_supported():
             # The previous hotkey was released while recording; restore it first
             # so the message reports what is actually active.
             restored = self._register_hotkey()
@@ -2442,7 +2444,7 @@ class MainWindow(QMainWindow):
         text = self.output.toPlainText()
         if text:
             QApplication.clipboard().setText(text)
-            self._copy_change_count = hotkey.pasteboard_change_count()
+            self._copy_change_count = platform.clipboard_change_count()
             self._paste_text = text
             self._set_status("Copied to clipboard \u2713", "done")
 

@@ -9,12 +9,14 @@
 
 ## Requirements
 
-- macOS
+- macOS or Windows 10/11
 - Python 3.10 or newer
 - An OpenAI API key, or an Azure AI Foundry endpoint and API key (see
   [Configuration](configuration.md))
 
 ## Run from source
+
+### macOS
 
 ```sh
 # Create and activate a virtual environment
@@ -31,11 +33,40 @@ export OPENAI_API_KEY='sk-...'
 type-fast            # or: python -m type_fast.app
 ```
 
+### Windows (PowerShell)
+
+```powershell
+py -m venv .venv
+.venv\Scripts\activate
+pip install -e .
+$env:OPENAI_API_KEY = 'sk-...'
+type-fast            # or: python -m type_fast.app
+```
+
+You can also save OpenAI or Azure settings from the app's Settings menu.
+Typing, live translation, clipboard copying, and in-window voice input work
+on Windows. Global hotkeys and auto-paste are not available there yet; the
+footer shows the hotkey as unavailable. Press Esc to hide the window.
+
 ## Run tests
+
+macOS:
 
 ```sh
 QT_QPA_PLATFORM=offscreen python -m unittest discover -s tests -v
 ```
+
+Windows (PowerShell, with the virtual environment active):
+
+```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+python -m unittest discover -s tests -v
+Remove-Item Env:QT_QPA_PLATFORM
+```
+
+Offscreen tests use the null platform backend on every OS and never register
+real global hotkeys. Remove the offscreen override before launching the app
+interactively.
 
 ## Build the macOS app
 

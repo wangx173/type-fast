@@ -14,21 +14,22 @@ from unittest import mock
 from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
-from type_fast import autopaste, config, settings
+from type_fast import config, platform, settings
+from type_fast.platform import macos
 
 _HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 
 
 class AutopasteModuleTests(unittest.TestCase):
     def test_no_op_off_cocoa(self) -> None:
-        with mock.patch.object(autopaste.hotkey, "is_cocoa", return_value=False), \
-                mock.patch.object(autopaste.ctypes, "CDLL") as cdll:
-            self.assertFalse(autopaste.is_supported())
-            self.assertFalse(autopaste.has_permission())
-            self.assertFalse(autopaste.send_paste())
-            self.assertIsNone(autopaste.hotkey.pasteboard_change_count())
-            self.assertIsNone(autopaste.hotkey.frontmost_app_pid())
-            self.assertIsNone(autopaste.input_event_count())
+        with mock.patch.object(macos, "is_cocoa", return_value=False), \
+                mock.patch.object(macos.ctypes, "CDLL") as cdll:
+            self.assertFalse(macos.paste_supported())
+            self.assertFalse(macos.paste_permission_granted())
+            self.assertFalse(macos.send_paste())
+            self.assertIsNone(macos.clipboard_change_count())
+            self.assertIsNone(macos.frontmost_app_pid())
+            self.assertIsNone(macos.input_event_count())
         cdll.assert_not_called()
 
     def _fake_lib(self, permitted: bool = True) -> mock.MagicMock:
@@ -40,50 +41,50 @@ class AutopasteModuleTests(unittest.TestCase):
 
     def test_send_paste_posts_command_v_down_and_up(self) -> None:
         lib = self._fake_lib()
-        with mock.patch.object(autopaste, "_load", return_value=lib):
-            self.assertTrue(autopaste.send_paste())
+        with mock.patch.object(macos, "_load", return_value=lib):
+            self.assertTrue(macos.send_paste())
         self.assertEqual(
             [c.args for c in lib.CGEventCreateKeyboardEvent.call_args_list],
             [(1, 0x09, True), (1, 0x09, False)],
         )
         self.assertEqual(
             [c.args for c in lib.CGEventSetFlags.call_args_list],
-            [(2, autopaste._COMMAND_FLAGS), (3, autopaste._COMMAND_FLAGS)],
+            [(2, macos._COMMAND_FLAGS), (3, macos._COMMAND_FLAGS)],
         )
-        self.assertTrue(autopaste._COMMAND_FLAGS & 0x00100000)  # ⌘
+        self.assertTrue(macos._COMMAND_FLAGS & 0x00100000)  # ⌘
         self.assertEqual(
             [c.args for c in lib.CGEventPost.call_args_list],
-            [(autopaste._kCGSessionEventTap, 2), (autopaste._kCGSessionEventTap, 3)],
+            [(macos._kCGSessionEventTap, 2), (macos._kCGSessionEventTap, 3)],
         )
         self.assertCountEqual([c.args[0] for c in lib.CFRelease.call_args_list], [1, 2, 3])
 
     def test_input_event_count_sums_hardware_clicks_and_key_presses(self) -> None:
         lib = self._fake_lib()
         lib.CGEventSourceCounterForEventType.side_effect = lambda state, kind: kind
-        with mock.patch.object(autopaste, "_load", return_value=lib):
-            self.assertEqual(autopaste.input_event_count(), 1 + 3 + 10 + 25)
+        with mock.patch.object(macos, "_load", return_value=lib):
+            self.assertEqual(macos.input_event_count(), 1 + 3 + 10 + 25)
         states = {c.args[0] for c in lib.CGEventSourceCounterForEventType.call_args_list}
-        self.assertEqual(states, {autopaste._kCGEventSourceStateHIDSystemState})
+        self.assertEqual(states, {macos._kCGEventSourceStateHIDSystemState})
 
     def test_send_paste_needs_permission(self) -> None:
         lib = self._fake_lib(permitted=False)
-        with mock.patch.object(autopaste, "_load", return_value=lib):
-            self.assertFalse(autopaste.send_paste())
+        with mock.patch.object(macos, "_load", return_value=lib):
+            self.assertFalse(macos.send_paste())
         lib.CGEventPost.assert_not_called()
 
     def test_permission_is_checked_live(self) -> None:
         lib = self._fake_lib(permitted=False)
-        with mock.patch.object(autopaste, "_load", return_value=lib):
-            self.assertFalse(autopaste.has_permission())
+        with mock.patch.object(macos, "_load", return_value=lib):
+            self.assertFalse(macos.paste_permission_granted())
             lib.AXIsProcessTrusted.return_value = True  # allowed in System Settings
-            self.assertTrue(autopaste.has_permission())
-            self.assertTrue(autopaste.send_paste())
+            self.assertTrue(macos.paste_permission_granted())
+            self.assertTrue(macos.send_paste())
 
     def test_send_paste_never_leaves_a_key_down(self) -> None:
         lib = self._fake_lib()
         lib.CGEventCreateKeyboardEvent.side_effect = [2, None]
-        with mock.patch.object(autopaste, "_load", return_value=lib):
-            self.assertFalse(autopaste.send_paste())
+        with mock.patch.object(macos, "_load", return_value=lib):
+            self.assertFalse(macos.send_paste())
         lib.CGEventPost.assert_not_called()
         self.assertCountEqual([c.args[0] for c in lib.CFRelease.call_args_list], [1, 2])
 
@@ -152,11 +153,12 @@ class WindowAutoPasteTests(unittest.TestCase):
         self.input_count = 0
         for name, value in (
             ("send_paste", self.send_paste),
-            ("is_supported", mock.MagicMock(return_value=True)),
-            ("has_permission", self.has_permission),
+            ("paste_supported", mock.MagicMock(return_value=True)),
+            ("paste_permission_granted", self.has_permission),
             ("input_event_count", lambda: self.input_count),
+            ("paste_settings_url", lambda: macos.PASTE_SETTINGS_URL),
         ):
-            patcher = mock.patch.object(autopaste, name, value)
+            patcher = mock.patch.object(platform, name, value)
             patcher.start()
             self.addCleanup(patcher.stop)
         # Answer the permission alert instead of showing it: by default with
@@ -186,14 +188,14 @@ class WindowAutoPasteTests(unittest.TestCase):
         clipboard.dataChanged.connect(count_change)
         self.addCleanup(clipboard.dataChanged.disconnect, count_change)
         patcher = mock.patch.object(
-            app.hotkey, "pasteboard_change_count", lambda: self.change_count
+            app.platform, "clipboard_change_count", lambda: self.change_count
         )
         patcher.start()
         self.addCleanup(patcher.stop)
         # Stand in for the frontmost app: the one you go back to.
         self.frontmost_pid = 100
         patcher = mock.patch.object(
-            app.hotkey, "frontmost_app_pid", lambda: self.frontmost_pid
+            app.platform, "frontmost_app_pid", lambda: self.frontmost_pid
         )
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -811,7 +813,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         self._translate()
         self._hotkey()
         self.open_url.assert_called_once()
-        self.assertEqual(self.open_url.call_args.args[0].toString(), autopaste.SETTINGS_URL)
+        self.assertEqual(self.open_url.call_args.args[0].toString(), macos.PASTE_SETTINGS_URL)
 
     def test_permission_granted_while_running_pastes_without_relaunch(self) -> None:
         self.has_permission.return_value = False

@@ -13,7 +13,8 @@ from unittest import mock
 from PySide6.QtCore import QKeyCombination, Qt
 from PySide6.QtGui import QKeySequence
 
-from type_fast import config, hotkey, settings
+from type_fast import config, hotkey, platform, settings
+from type_fast.platform import macos
 
 _HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 
@@ -124,16 +125,16 @@ class GlobalHotkeyTests(unittest.TestCase):
 
     @unittest.skipUnless(_HEADLESS, "registration is only skipped headless")
     def test_register_is_safe_noop_when_unsupported(self) -> None:
-        gh = hotkey.GlobalHotkey()
+        gh = platform.GlobalHotkey()
         self.assertFalse(gh.is_supported())
         self.assertFalse(gh.register(hotkey.parse("Ctrl+Option+Cmd+F12")))
         self.assertFalse(gh.is_registered)
         gh.unregister()  # no-op, no raise
-        hotkey.activate_app()
-        hotkey.hide_app()
+        platform.activate_app()
+        platform.hide_app()
 
     def test_register_rejects_invalid_hotkey(self) -> None:
-        gh = hotkey.GlobalHotkey()
+        gh = platform.GlobalHotkey()
         self.assertFalse(gh.register(hotkey.Hotkey(("Shift",), "A")))
         self.assertFalse(gh.is_registered)
 
@@ -151,10 +152,10 @@ class GlobalHotkeyTests(unittest.TestCase):
         lib.RegisterEventHotKey.side_effect = register
         carbon = mock.Mock(lib=lib, targets={})
         carbon.ensure_handler.return_value = True
-        gh = hotkey.GlobalHotkey()
-        with mock.patch.object(hotkey, "_load_carbon", return_value=carbon), \
-                mock.patch.object(hotkey, "is_cocoa", return_value=True), \
-                mock.patch.object(hotkey, "_carbon", carbon):
+        gh = macos.GlobalHotkey()
+        with mock.patch.object(macos, "_load_carbon", return_value=carbon), \
+                mock.patch.object(macos, "is_cocoa", return_value=True), \
+                mock.patch.object(macos, "_carbon", carbon):
             self.assertTrue(gh.register(hotkey.parse("Option+Space")))
             gh.unregister()
         self.assertEqual(calls, [(0x31, 0x0800, 1)])
@@ -236,7 +237,7 @@ class WindowHotkeyTests(unittest.TestCase):
 
     def test_owns_hotkey_and_shows_hint(self) -> None:
         w = self.window
-        self.assertIsInstance(w.global_hotkey, hotkey.GlobalHotkey)
+        self.assertIsInstance(w.global_hotkey, platform.GlobalHotkey)
         self.assertFalse(w.global_hotkey.is_registered)  # never grabbed headless
         self.assertIn("\u21e7\u2318Space", w.hotkey_label.text())
 
@@ -357,7 +358,7 @@ class WindowHotkeyTests(unittest.TestCase):
         w = self.window
         previous = w.prefs.hotkey
         with mock.patch.object(
-            hotkey.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+            platform.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(
             w.global_hotkey, "register", side_effect=[False, True]
         ) as register, mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
@@ -373,7 +374,7 @@ class WindowHotkeyTests(unittest.TestCase):
     def test_registration_failure_reports_failed_restore(self) -> None:
         w = self.window
         with mock.patch.object(
-            hotkey.GlobalHotkey, "is_supported", staticmethod(lambda: True)
+            platform.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(
             w.global_hotkey, "register", return_value=False
         ), mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
@@ -467,10 +468,10 @@ class WindowHotkeyTests(unittest.TestCase):
 
     def test_owns_voice_hotkey(self) -> None:
         w = self.window
-        self.assertIsInstance(w.voice_hotkey, hotkey.GlobalHotkey)
+        self.assertIsInstance(w.voice_hotkey, platform.GlobalHotkey)
         self.assertIsNot(w.voice_hotkey, w.global_hotkey)
         self.assertFalse(w.voice_hotkey.is_registered)  # never grabbed headless
-        self.assertNotIn("unavailable", w.hotkey_label.text())
+        self.assertIn("unavailable", w.hotkey_label.text())
 
 
 if __name__ == "__main__":
