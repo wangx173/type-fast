@@ -49,6 +49,8 @@ While the window has focus, **Ctrl+,** opens Set API Key, **Ctrl+L** opens
 the language and tone options, and **Ctrl+Shift+M** starts or stops recording.
 If Windows has no system tray, Settings stays in the window as a fallback.
 In that case, closing the window or choosing **Settings → Quit Type Fast** exits.
+If neither global hotkey is registered, **Esc** also exits instead of hiding a
+window that cannot be reopened.
 On macOS, the global menu bar and Dock behavior are unchanged.
 
 ## Show/hide hotkey

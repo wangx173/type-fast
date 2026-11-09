@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 import tempfile
 import types
 import unittest
@@ -196,6 +198,76 @@ class WindowsWindowTests(unittest.TestCase):
         self.quit.assert_called_once()
         self.balloon.assert_not_called()
         self.assertFalse(w.prefs.tray_close_notice_shown)
+
+    def test_no_tray_esc_exits_without_a_registered_recovery_hotkey(self) -> None:
+        from PySide6.QtTest import QTest
+
+        self.tray_available.return_value = False
+        w = self._window()
+        w.summon()
+        self.qt.processEvents()
+        QTest.keySequence(w.input, w.dismiss_shortcut.key())
+        self.quit.assert_called_once()
+        self.assertTrue(w._quitting)
+
+    def test_no_tray_can_hide_when_a_registered_hotkey_can_restore_it(self) -> None:
+        self.tray_available.return_value = False
+        w = self._window()
+        w.global_hotkey = mock.Mock(is_registered=True)
+        w.summon()
+        w.dismiss()
+        self.assertFalse(w.isVisible())
+        self.quit.assert_not_called()
+
+    def test_quitting_accepts_visible_window_close_without_balloon(self) -> None:
+        w = self._window()
+        w.summon()
+        w.quit_action.trigger()
+        self.assertTrue(w.close())
+        self.assertFalse(w.isVisible())
+        self.balloon.assert_not_called()
+
+    def test_visible_tray_quit_exits_the_real_application_event_loop(self) -> None:
+        code = """
+import tempfile
+import types
+from pathlib import Path
+from unittest import mock
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QApplication
+from type_fast import app, platform, settings
+qt = QApplication([])
+qt.setQuitOnLastWindowClosed(False)
+with tempfile.TemporaryDirectory() as tmp, \\
+     mock.patch.object(platform, "is_windows", return_value=True), \\
+     mock.patch.object(settings, "SETTINGS_FILE", Path(tmp) / "settings.json"), \\
+     mock.patch.object(app, "threading", types.SimpleNamespace(Thread=mock.MagicMock())), \\
+     mock.patch.object(app.QSystemTrayIcon, "isSystemTrayAvailable", return_value=True):
+    window = app.MainWindow()
+    window.summon()
+    QTimer.singleShot(0, window.quit_action.trigger)
+    QTimer.singleShot(500, lambda: qt.exit(91))
+    raise SystemExit(qt.exec())
+"""
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_show_options_from_tray_restores_hidden_and_minimized_window(self) -> None:
+        w = self._window()
+        w.summon(compact=True)
+        w.dismiss()
+        w.show_options_action.trigger()
+        self.assertTrue(w.isVisible())
+        self.assertFalse(w.compact)
+        w.input.setPlainText("Keep current text")
+        w.showMinimized()
+        w.show_options_action.trigger()
+        self.assertFalse(w.isMinimized())
+        self.assertFalse(w.compact)
+        self.assertEqual(w.input.toPlainText(), "Keep current text")
 
     def test_quit_cancels_recording_releases_hotkeys_and_hides_tray(self) -> None:
         w = self._window()

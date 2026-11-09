@@ -737,6 +737,9 @@ class WindowVoiceTests(unittest.TestCase):
     # --- Global voice hotkey (⇧⌘M) -----------------------------------------
 
     def _voice_window(self) -> MainWindow:
+        patcher = mock.patch.object(self.app_module.platform, "is_windows", return_value=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
         w = self._window()
         patcher = mock.patch.object(w, "_needs_paste_permission", return_value=False)
         patcher.start()

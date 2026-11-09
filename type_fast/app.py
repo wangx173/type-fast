@@ -730,6 +730,7 @@ class MainWindow(QMainWindow):
         # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
         self.tray_icon: QSystemTrayIcon | None = None
+        self._quitting = False
         self.global_hotkey = platform.GlobalHotkey(self)
         self.global_hotkey.activated.connect(self.toggle_visibility)
         # Global voice hotkey (⇧⌘M), registered once the recorder exists (see
@@ -868,7 +869,7 @@ class MainWindow(QMainWindow):
         # Keyboard route out of the compact layout (see set_compact).
         self.show_options_action = QAction("Show Language && Tone Options", self)
         self.show_options_action.setShortcut(QKeySequence("Ctrl+L"))  # ⌘L on macOS
-        self.show_options_action.triggered.connect(lambda: self.set_compact(False))
+        self.show_options_action.triggered.connect(self._show_options)
         menu.addAction(self.show_options_action)
 
         self.set_hotkey_action = QAction("Set Show/Hide Hotkey\u2026", self)
@@ -975,7 +976,7 @@ class MainWindow(QMainWindow):
             self.summon()
 
     def closeEvent(self, event: QCloseEvent) -> None:
-        if not platform.is_windows():
+        if not platform.is_windows() or self._quitting:
             super().closeEvent(event)
             return
         if self.tray_icon is None:
@@ -996,7 +997,9 @@ class MainWindow(QMainWindow):
             self._save_prefs("Close to Tray", "tray notice setting")
 
     def _quit_app(self) -> None:
+        self._quitting = True
         self._cancel_voice()
+        self.hide()
         self.global_hotkey.unregister()
         self.voice_hotkey.unregister()
         if self.tray_icon is not None:
@@ -1193,6 +1196,12 @@ class MainWindow(QMainWindow):
         for widget in (self.input_label, self.output_label, self.model_label, self.hotkey_label):
             widget.setVisible(not compact)
 
+    def _show_options(self) -> None:
+        if platform.is_windows() and (not self.isVisible() or self.isMinimized()):
+            self.summon()
+        else:
+            self.set_compact(False)
+
     def dismiss(self, paste: bool = False) -> None:
         """Hide the window and return focus to the previously active app.
 
@@ -1201,6 +1210,14 @@ class MainWindow(QMainWindow):
         the translation is still running, the window hides right away and the
         paste waits for it to finish (see :meth:`_on_finished`).
         """
+        if (
+            platform.is_windows()
+            and self.tray_icon is None
+            and not self.global_hotkey.is_registered
+            and not self.voice_hotkey.is_registered
+        ):
+            self._quit_app()
+            return
         paste = paste and self.prefs.auto_paste
         text = self._take_paste_text() if paste else ""
         if (
