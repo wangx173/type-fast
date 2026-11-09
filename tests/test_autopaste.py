@@ -152,6 +152,7 @@ class WindowAutoPasteTests(unittest.TestCase):
         # Stand in for your clicks and key presses: none unless a test adds some.
         self.input_count = 0
         for name, value in (
+            ("is_windows", lambda: False),
             ("send_paste", self.send_paste),
             ("paste_supported", mock.MagicMock(return_value=True)),
             ("paste_permission_granted", self.has_permission),

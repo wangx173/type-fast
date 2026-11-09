@@ -36,7 +36,7 @@ from PySide6.QtCore import (
 )
 from PySide6.QtMultimedia import QAudioFormat, QAudioSource, QMediaDevices, QtAudio
 
-from . import config
+from . import config, platform
 
 SAMPLE_RATE = 16000
 # Peak 16-bit amplitude at or below which a recording counts as silent. Real
@@ -44,15 +44,26 @@ SAMPLE_RATE = 16000
 SILENCE_PEAK = 64
 
 TRANSCRIBE_MENU_PATH = "Settings \u203a Voice Input \u203a Set Transcription Model\u2026"
-PERMISSION_HINT = (
-    "No sound was recorded. Check that Type Fast may use the microphone in "
-    "System Settings \u203a Privacy & Security \u203a Microphone, and that the "
-    "right input device is selected in System Settings \u203a Sound."
-)
-PERMISSION_DENIED = (
-    "Type Fast doesn't have access to the microphone. Allow it in System "
-    "Settings \u203a Privacy & Security \u203a Microphone, then try again."
-)
+
+
+def permission_hint() -> str:
+    text = platform.ui_text()
+    return (
+        "No sound was recorded. Check that Type Fast may use the microphone in "
+        f"{text.microphone_privacy}, and that the "
+        f"right input device is selected in {text.input_device}."
+    )
+
+
+def permission_denied() -> str:
+    return (
+        "Type Fast doesn't have access to the microphone. Allow it in "
+        f"{platform.ui_text().microphone_privacy}, then try again."
+    )
+
+
+PERMISSION_HINT = permission_hint()
+PERMISSION_DENIED = permission_denied()
 
 
 class VoiceError(RuntimeError):
@@ -157,7 +168,7 @@ def request_permission(context: QObject, callback: Callable[[bool], None]) -> No
     and macOS asks on behalf of the terminal app instead.
     """
     app = QCoreApplication.instance()
-    if app is None or not getattr(sys, "frozen", False):
+    if platform.is_windows() or app is None or not getattr(sys, "frozen", False):
         callback(True)
         return
     permission = QMicrophonePermission()
@@ -205,7 +216,7 @@ class Recorder(QObject):
         if device.isNull():
             raise VoiceError(
                 "No microphone found. Connect one or pick an input device in "
-                "System Settings \u203a Sound."
+                f"{platform.ui_text().input_device}."
             )
         fmt = QAudioFormat()
         fmt.setSampleRate(SAMPLE_RATE)
