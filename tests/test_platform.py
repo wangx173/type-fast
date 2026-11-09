@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ctypes
 import types
 import unittest
 from unittest import mock
@@ -143,6 +144,249 @@ class SelectionTests(unittest.TestCase):
             self.assertIs(platform.paste_settings_url(), backend.PASTE_SETTINGS_URL)
         backend.activate_app.assert_called_once_with()
         backend.hide_app.assert_called_once_with()
+
+
+class WindowsNativeTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.lib = mock.Mock()
+        self.lib.GetAsyncKeyState.return_value = 0
+        with mock.patch.object(ctypes, "WinDLL", return_value=self.lib, create=True):
+            self.native = windows._Win32()
+        for patcher in (
+            mock.patch.object(windows, "_win32", self.native),
+            mock.patch.object(windows, "is_windows", return_value=True),
+        ):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def _pid(self, hwnd, pointer):
+        ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint32)).contents.value = (
+            os.getpid() if hwnd == 20 else 100
+        )
+        return 1
+
+    def test_activation_remembers_external_window_and_restore_consumes_it(self) -> None:
+        self.lib.GetWindowThreadProcessId.side_effect = self._pid
+        self.lib.GetForegroundWindow.return_value = 10
+        self.lib.SetForegroundWindow.return_value = 1
+        self.lib.IsWindow.return_value = 1
+        window = mock.Mock()
+        window.winId.return_value = 20
+        windows.activate_app(window)
+        self.assertEqual(self.native.previous_window, 10)
+        self.assertEqual(self.native.previous_pid, 100)
+        self.lib.GetForegroundWindow.return_value = 20
+        windows.activate_app()
+        self.assertEqual(self.native.previous_window, 10)
+        self.lib.GetForegroundWindow.return_value = 10
+        self.assertEqual(windows.hide_app(), 100)
+        self.assertIsNone(self.native.previous_window)
+        self.assertIsNone(self.native.previous_pid)
+        self.assertEqual(self.lib.ShowWindow.call_args_list,
+                         [mock.call(20, 5), mock.call(20, 5), mock.call(20, 0)])
+        self.assertEqual(self.lib.SetForegroundWindow.call_args_list,
+                         [mock.call(20), mock.call(20), mock.call(10)])
+        self.assertIsNone(windows.hide_app())
+
+    def test_activation_falls_back_to_qt_and_invalid_restore_is_skipped(self) -> None:
+        self.lib.GetWindowThreadProcessId.side_effect = self._pid
+        self.lib.GetForegroundWindow.return_value = 10
+        self.lib.SetForegroundWindow.return_value = 0
+        window = mock.Mock()
+        window.winId.return_value = 20
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            windows.activate_app(window)
+        window.raise_.assert_called_once_with()
+        window.activateWindow.assert_called_once_with()
+        self.lib.IsWindow.return_value = 0
+        self.lib.SetForegroundWindow.reset_mock()
+        self.assertIsNone(windows.hide_app())
+        self.lib.SetForegroundWindow.assert_not_called()
+
+    def test_failed_restoration_returns_no_destination(self) -> None:
+        self.native.previous_window = 10
+        self.native.previous_pid = 100
+        self.lib.GetWindowThreadProcessId.side_effect = self._pid
+        self.lib.IsWindow.return_value = 1
+        self.lib.SetForegroundWindow.return_value = 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.hide_app())
+
+    def test_unknown_foreground_discards_prior_destination(self) -> None:
+        window = mock.Mock()
+        window.winId.return_value = 20
+        self.lib.SetForegroundWindow.return_value = 1
+        self.lib.IsWindow.return_value = 1
+        for hwnd in (None, 30):
+            with self.subTest(hwnd=hwnd):
+                self.native.previous_window = 10
+                self.native.previous_pid = 100
+                self.lib.GetForegroundWindow.return_value = hwnd
+                self.lib.GetWindowThreadProcessId.return_value = 0
+                if hwnd:
+                    with self.assertLogs(windows.__name__, level="WARNING"):
+                        windows.activate_app(window)
+                else:
+                    windows.activate_app(window)
+                self.assertIsNone(self.native.previous_window)
+                self.assertIsNone(self.native.previous_pid)
+                self.lib.SetForegroundWindow.reset_mock()
+                self.assertFalse(windows.hide_app())
+                self.lib.SetForegroundWindow.assert_not_called()
+
+    def test_reused_or_unknown_destination_pid_skips_restoration(self) -> None:
+        for pid in (0, 200):
+            with self.subTest(pid=pid):
+                self.lib.GetWindowThreadProcessId.side_effect = self._pid
+                self.lib.GetForegroundWindow.return_value = 10
+                self.lib.SetForegroundWindow.return_value = 1
+                self.lib.IsWindow.return_value = 1
+                window = mock.Mock()
+                window.winId.return_value = 20
+                windows.activate_app(window)
+
+                def replacement(hwnd, pointer):
+                    ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint32)).contents.value = pid
+                    return 1
+
+                self.lib.GetWindowThreadProcessId.side_effect = replacement
+                self.lib.SetForegroundWindow.reset_mock()
+                with self.assertLogs(windows.__name__, level="WARNING"):
+                    self.assertFalse(windows.hide_app())
+                self.lib.SetForegroundWindow.assert_not_called()
+                self.assertIsNone(self.native.previous_window)
+                self.assertIsNone(self.native.previous_pid)
+
+    def test_destination_pid_changed_during_restore_returns_no_destination(self) -> None:
+        self.native.previous_window = 10
+        self.native.previous_pid = 100
+        self.lib.IsWindow.return_value = 1
+        self.lib.GetForegroundWindow.return_value = 10
+        pids = iter((100, 200))
+
+        def changing_pid(hwnd, pointer):
+            ctypes.cast(pointer, ctypes.POINTER(ctypes.c_uint32)).contents.value = next(pids)
+            return 1
+
+        self.lib.GetWindowThreadProcessId.side_effect = changing_pid
+        self.lib.SetForegroundWindow.return_value = 1
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.hide_app())
+
+    def test_clipboard_foreground_and_last_input_wrappers(self) -> None:
+        self.lib.GetClipboardSequenceNumber.return_value = 0xFFFFFFFF
+        self.lib.GetForegroundWindow.return_value = 10
+        self.lib.GetWindowThreadProcessId.side_effect = self._pid
+
+        def last_input(pointer):
+            info = ctypes.cast(pointer, ctypes.POINTER(windows._LASTINPUTINFO)).contents
+            self.assertEqual(info.cbSize, 8)
+            info.dwTime = 0xFFFFFFFF
+            return 1
+
+        self.lib.GetLastInputInfo.side_effect = last_input
+        self.assertEqual(windows.clipboard_change_count(), 0xFFFFFFFF)
+        self.lib.GetClipboardSequenceNumber.return_value = 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.clipboard_change_count())
+        self.assertEqual(windows.frontmost_app_pid(), 100)
+        self.assertEqual(windows.input_event_count(), 0xFFFFFFFF)
+        self.assertTrue(windows.paste_supported())
+        self.assertTrue(windows.paste_permission_granted())
+        self.lib.GetForegroundWindow.return_value = None
+        self.assertIsNone(windows.frontmost_app_pid())
+        self.lib.GetLastInputInfo.side_effect = None
+        self.lib.GetLastInputInfo.return_value = 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertIsNone(windows.input_event_count())
+
+    def test_send_input_sequence_and_native_layout(self) -> None:
+        self.lib.SendInput.return_value = 4
+        self.assertTrue(windows.send_paste())
+        count, events, size = self.lib.SendInput.call_args.args
+        self.assertEqual(count, 4)
+        self.assertEqual(size, 40 if ctypes.sizeof(ctypes.c_void_p) == 8 else 28)
+        self.assertEqual([(e.type, e.ki.wVk, e.ki.dwFlags) for e in events],
+                         [(1, 0x11, 0), (1, 0x56, 0), (1, 0x56, 2), (1, 0x11, 2)])
+        self.assertTrue(all(e.ki.wScan == e.ki.time == e.ki.dwExtraInfo == 0
+                            for e in events))
+        self.assertIs(self.lib.GetForegroundWindow.restype, ctypes.c_void_p)
+        self.assertEqual(self.lib.SendInput.argtypes,
+                         [ctypes.c_uint32, ctypes.POINTER(windows._INPUT), ctypes.c_int])
+
+    def test_blocked_or_partial_send_input_releases_keys_and_keeps_clipboard(self) -> None:
+        for sent in (0, 1, 2, 3):
+            with self.subTest(sent=sent):
+                self.lib.SendInput.reset_mock()
+                self.lib.SendInput.return_value = sent
+                with self.assertLogs(windows.__name__, level="WARNING"):
+                    self.assertFalse(windows.send_paste())
+                count, events, _ = self.lib.SendInput.call_args.args
+                self.assertEqual(count, 2)
+                self.assertEqual([(e.ki.wVk, e.ki.dwFlags) for e in events],
+                                 [(0x56, 2), (0x11, 2)])
+        self.lib.SetClipboardData.assert_not_called()
+
+    def test_send_input_skips_each_held_modifier(self) -> None:
+        for key in windows._MODIFIER_KEYS:
+            with self.subTest(key=key):
+                self.lib.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == key else 0
+                with self.assertLogs(windows.__name__, level="WARNING"):
+                    self.assertFalse(windows.send_paste())
+        self.lib.SendInput.assert_not_called()
+
+    def test_send_input_skips_physically_held_v_without_key_cleanup(self) -> None:
+        self.lib.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk == 0x56 else 0
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertFalse(windows.send_paste())
+        self.lib.SendInput.assert_not_called()
+
+    def test_partial_send_reports_incomplete_cleanup(self) -> None:
+        for released in (0, 1, 2):
+            with self.subTest(released=released):
+                self.lib.SendInput.side_effect = [1, released]
+                with self.assertLogs(windows.__name__, level="WARNING") as logs:
+                    self.assertFalse(windows.send_paste())
+                cleanup_logs = [line for line in logs.output if "cleanup inserted" in line]
+                self.assertEqual(len(cleanup_logs), 0 if released == 2 else 1)
+
+    def test_key_wait_polls_registered_trigger_and_all_modifiers(self) -> None:
+        import weakref
+
+        target = mock.Mock()
+        target.hotkey.vk = 0x7B  # custom F12 hotkey
+        self.native.targets[1] = weakref.ref(target)
+        down = {0x7B}
+        self.lib.GetAsyncKeyState.side_effect = lambda vk: 0x8000 if vk in down else 1
+        callbacks = []
+        result = mock.Mock()
+        with mock.patch.object(windows.QTimer, "singleShot",
+                               side_effect=lambda delay, cb: callbacks.append((delay, cb))), \
+                mock.patch.object(windows.time, "monotonic", return_value=0):
+            windows.wait_for_paste_keys(result)
+            result.assert_not_called()
+            self.assertEqual(callbacks[0][0], 20)
+            down.clear()
+            callbacks.pop()[1]()
+        result.assert_called_once_with(True)
+        queried = {call.args[0] for call in self.lib.GetAsyncKeyState.call_args_list}
+        self.assertEqual(queried, {*windows._MODIFIER_KEYS, 0x56, 0x7B})
+
+    def test_key_wait_timeout_is_one_second_even_if_timer_is_late(self) -> None:
+        self.lib.GetAsyncKeyState.return_value = 0x8000
+        callbacks = []
+        now = [0.0]
+        result = mock.Mock()
+        with mock.patch.object(windows.QTimer, "singleShot",
+                               side_effect=lambda delay, cb: callbacks.append((delay, cb))), \
+                mock.patch.object(windows.time, "monotonic", side_effect=lambda: now[0]):
+            windows.wait_for_paste_keys(result)
+            self.assertEqual(callbacks[0][0], 20)
+            now[0] = 1.02
+            self.lib.GetAsyncKeyState.return_value = 0
+            with self.assertLogs(windows.__name__, level="WARNING"):
+                callbacks.pop()[1]()
+        result.assert_called_once_with(False)
 
 
 @unittest.skipUnless(os.environ.get("QT_QPA_PLATFORM") == "offscreen", "headless window tests")

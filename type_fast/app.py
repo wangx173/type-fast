@@ -729,6 +729,8 @@ class MainWindow(QMainWindow):
         # once noted, as long as you haven't clicked or typed since the hide.
         # Until an app is noted, the first one other than Type Fast counts.
         self._paste_target: _PasteTarget | None = None
+        self._windows_paste_ready = False
+        self._windows_pending_paste: tuple[str, int] | None = None
         self.tray_icon: QSystemTrayIcon | None = None
         self._quitting = False
         self.global_hotkey = platform.GlobalHotkey(self)
@@ -799,6 +801,9 @@ class MainWindow(QMainWindow):
         self._voice_text = ""
         self._hide_after_voice: int | None = None
         self._voice_hide_input: int | None = None
+        self._windows_voice_waiting: int | None = None
+        self._windows_voice_can_hide = False
+        self._windows_pending_transcript: tuple[int, str] | None = None
         self._mic_request: int | None = None
         self._register_voice_hotkey()
 
@@ -1160,9 +1165,14 @@ class MainWindow(QMainWindow):
             self._paste_text = ""
             self._cancel_deferred_paste()
             self._paste_target = None
+            self._windows_paste_ready = False
+            self._windows_pending_paste = None
             self._shown_count += 1
             self._clear_input()
             self._center_on_cursor_screen()
+        if platform.is_windows():
+            # Restoring a minimized Qt window can also change foreground.
+            platform.activate_app(self)
         if self.isMinimized():
             self.setWindowState(self.windowState() & ~Qt.WindowMinimized)
         if appearing:
@@ -1236,8 +1246,24 @@ class MainWindow(QMainWindow):
         # Hiding stops listening; a transcription still running is dropped.
         self._cancel_voice()
         self.hide()
-        platform.hide_app()
+        restored = platform.hide_app()
         shown = self._shown_count
+        if platform.is_windows() and (text or defer):
+            self._windows_paste_ready = False
+            self._paste_target = None
+            self._windows_pending_paste = (text, shown) if text else None
+            if not restored:
+                self._windows_pending_paste = None
+                self._cancel_deferred_paste()
+                return
+            if defer:
+                self._deferred_paste = _DeferredPaste(shown, platform.clipboard_change_count())
+                self._deferred_paste_timer.start()
+            pid = restored
+            platform.wait_for_paste_keys(
+                lambda released: self._prepare_windows_paste(shown, pid, released)
+            )
+            return
         if text:
             self._schedule_paste(text, shown)
         elif defer:
@@ -1245,6 +1271,23 @@ class MainWindow(QMainWindow):
             self._deferred_paste_timer.start()
             self._paste_target = _PasteTarget(shown, None, platform.input_event_count())
             QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._remember_paste_target(shown))
+
+    def _prepare_windows_paste(self, shown: int, pid: int | None, released: bool) -> None:
+        if shown != self._shown_count or self.isVisible():
+            return
+        count = platform.input_event_count() if released else None
+        if (
+            not released or not self.prefs.auto_paste or count is None or not self._is_other_app(pid)
+            or platform.frontmost_app_pid() != pid
+        ):
+            self._windows_pending_paste = None
+            self._cancel_deferred_paste()
+            return
+        self._paste_target = _PasteTarget(shown, pid, count)
+        self._windows_paste_ready = True
+        pending, self._windows_pending_paste = self._windows_pending_paste, None
+        if pending is not None:
+            self._schedule_paste(*pending)
 
     def _take_paste_text(self) -> str:
         """Return the translation to paste, or "", and mark it as pasted.
@@ -1266,6 +1309,7 @@ class MainWindow(QMainWindow):
         # same text. The window may also show blank lines typed after it.
         return (
             bool(text)
+            and (not platform.is_windows() or self._copy_change_count not in (None, 0))
             and self.output.toPlainText().rstrip() == text.rstrip()
             and QApplication.clipboard().text() == text
             and platform.clipboard_change_count() == self._copy_change_count
@@ -1273,10 +1317,14 @@ class MainWindow(QMainWindow):
 
     def _schedule_paste(self, text: str, shown: int) -> None:
         """Paste ``text`` once the previous app has focus back."""
+        if platform.is_windows() and not self._windows_paste_ready:
+            self._windows_pending_paste = (text, shown)
+            return
         QTimer.singleShot(_PASTE_DELAY_MS, lambda: self._paste_into_previous_app(text, shown))
 
     def _paste_into_previous_app(
-        self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES
+        self, text: str, shown: int, tries: int = _PASTE_TARGET_TRIES,
+        keys_released: bool = False,
     ) -> None:
         """Paste ``text`` into the app that got focus back after the hide with ``shown``.
 
@@ -1287,7 +1335,20 @@ class MainWindow(QMainWindow):
         """
         if shown != self._shown_count or self.isVisible() or not self._is_pasteable(text):
             return  # summoned again, or the clipboard changed, before the paste
+        if platform.is_windows() and not keys_released:
+            platform.wait_for_paste_keys(
+                lambda released: self._paste_into_previous_app(
+                    text, shown, tries, keys_released=True
+                ) if released else None
+            )
+            return
         target = self._paste_target
+        if platform.is_windows() and (
+            not self.prefs.auto_paste or not self._windows_paste_ready
+            or target is None or target.pid is None
+            or target.shown != shown
+        ):
+            return
         if target is not None and target.shown == shown:
             # A deferred paste: only into the app that got focus back.
             pid = platform.frontmost_app_pid()
@@ -1337,6 +1398,8 @@ class MainWindow(QMainWindow):
         deferred = self._deferred_paste
         self._cancel_deferred_paste()
         if deferred is None or platform.clipboard_change_count() != deferred.change_count:
+            return None
+        if platform.is_windows() and deferred.change_count in (None, 0):
             return None
         return deferred.shown
 
@@ -1450,6 +1513,14 @@ class MainWindow(QMainWindow):
             self._summon_keeping_cursor()
             return
         if self.recorder.recording or self._transcribing:
+            if platform.is_windows():
+                voice_id = self._voice_id
+                self._windows_voice_waiting = voice_id
+                self._windows_voice_can_hide = True
+                platform.wait_for_paste_keys(
+                    lambda released: self._finish_windows_voice_hotkey(voice_id, released)
+                )
+                return
             # Noted before the transcription can finish on its thread.
             self._voice_hide_input = platform.input_event_count()
         if self.recorder.recording:
@@ -1467,6 +1538,22 @@ class MainWindow(QMainWindow):
         else:
             self.summon(compact=True)
         self._start_recording()
+
+    def _finish_windows_voice_hotkey(self, voice_id: int, released: bool) -> None:
+        if voice_id != self._voice_id or voice_id != self._windows_voice_waiting:
+            return
+        self._windows_voice_waiting = None
+        count = platform.input_event_count() if released else None
+        hide = self._windows_voice_can_hide and count is not None and self.isActiveWindow()
+        self._windows_voice_can_hide = False
+        self._voice_hide_input = count
+        if self.recorder.recording:
+            self._stop_recording(hide_after=hide)
+        elif self._transcribing:
+            self._hide_after_voice = voice_id if hide else None
+        pending, self._windows_pending_transcript = self._windows_pending_transcript, None
+        if pending is not None:
+            self._on_transcribed(*pending)
 
     def _summon_keeping_cursor(self) -> None:
         """Bring the shown window to the front without moving the text cursor."""
@@ -1582,6 +1669,9 @@ class MainWindow(QMainWindow):
     def _on_transcribed(self, voice_id: int, text: str) -> None:
         if voice_id != self._voice_id:
             return
+        if self._windows_voice_waiting == voice_id:
+            self._windows_pending_transcript = (voice_id, text)
+            return
         hide = self._hide_after_voice == voice_id
         self._hide_after_voice = None
         if hide and (
@@ -1628,6 +1718,9 @@ class MainWindow(QMainWindow):
         if voice_id == self._voice_id:
             self._transcribing = False
             self._hide_after_voice = None
+            self._windows_voice_waiting = None
+            self._windows_voice_can_hide = False
+            self._windows_pending_transcript = None
             self._voice_failed(message)
 
     def _voice_failed(self, message: str, microphone_settings: bool = False) -> None:
@@ -1659,6 +1752,9 @@ class MainWindow(QMainWindow):
         """Stop listening and drop a transcription or permission prompt pending."""
         self._voice_id += 1
         self._hide_after_voice = None
+        self._windows_voice_waiting = None
+        self._windows_voice_can_hide = False
+        self._windows_pending_transcript = None
         if not (self.recorder.recording or self._transcribing):
             return
         self.recorder.cancel()
@@ -1799,6 +1895,7 @@ class MainWindow(QMainWindow):
             # Another app came forward while ⇧⌘M's transcription ran: don't
             # hide and paste into it, even if Type Fast is back by then.
             self._hide_after_voice = None
+            self._windows_voice_can_hide = False
         if state == Qt.ApplicationActive:
             # Settings may have changed outside the app (e.g. the setup script);
             # if so, apply them to the current text too, not just the footer.

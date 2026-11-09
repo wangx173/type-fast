@@ -543,6 +543,17 @@ class WindowsMappingTests(unittest.TestCase):
             self.assertFalse(hotkey.Hotkey(("Ctrl",), "K").is_valid)
             self.assertIsNone(hotkey.from_qt(QKeyCombination(Qt.ControlModifier, Qt.Key_K)))
 
+    def test_windows_ctrl_v_is_reserved_for_paste(self) -> None:
+        self.assertFalse(hotkey.Hotkey(("Ctrl",), "V").is_valid)
+        self.assertIsNone(hotkey.parse("Ctrl+V"))
+        self.assertFalse(
+            hotkey.from_qt(QKeyCombination(Qt.ControlModifier, Qt.Key_V)).is_valid
+        )
+        self.assertIsNotNone(hotkey.parse("Ctrl+Shift+V"))
+        self.assertEqual(settings._pick_hotkey("Ctrl+V"), config.DEFAULT_HOTKEY)
+        with mock.patch.object(hotkey, "is_windows", return_value=False):
+            self.assertIsNotNone(hotkey.parse("Ctrl+V"))
+
     def test_platform_defaults(self) -> None:
         for os_name, show, voice in (
             ("win32", "Ctrl+Shift+Space", "Ctrl+Shift+M"),
@@ -650,6 +661,12 @@ class WindowsRegistrationTests(unittest.TestCase):
             with self.assertLogs(windows.__name__, level="ERROR"):
                 self.assertFalse(self.show.register(hotkey.parse("Ctrl+K")))
         self.lib.RegisterHotKey.assert_not_called()
+
+    def test_ctrl_v_cannot_be_registered_as_a_windows_global_hotkey(self) -> None:
+        with self.assertLogs(windows.__name__, level="WARNING"):
+            self.assertFalse(self.show.register(hotkey.Hotkey(("Ctrl",), "V")))
+        self.lib.RegisterHotKey.assert_not_called()
+        self.assertFalse(self.show.is_registered)
 
 
 @unittest.skipUnless(_HEADLESS, "set QT_QPA_PLATFORM=offscreen for window tests")

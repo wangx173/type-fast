@@ -45,8 +45,10 @@ type-fast            # or: python -m type_fast.app
 
 You can also save OpenAI or Azure settings from the app's Settings menu.
 Typing, live translation, clipboard copying, and in-window voice input work
-on Windows. Global hotkeys and auto-paste are not available there yet; the
-footer shows the hotkey as unavailable. Press Esc to hide the window.
+on Windows. **Ctrl+Shift+Space** shows or hides the window and auto-pastes into
+the previous app; **Ctrl+Shift+M** starts or stops voice input. Auto-paste needs
+no permission, but Windows blocks it into apps running as administrator.
+Press Esc to hide without pasting; use the tray menu for Settings and Quit.
 
 ## Run tests
 

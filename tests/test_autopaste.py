@@ -8,10 +8,11 @@ import tempfile
 import types
 import unittest
 from collections.abc import Callable
+from contextlib import ExitStack
 from pathlib import Path
 from unittest import mock
 
-from PySide6.QtCore import QEvent
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
 
 from type_fast import config, platform, settings
@@ -241,6 +242,295 @@ class WindowAutoPasteTests(unittest.TestCase):
         w = self.window
         with mock.patch.object(w, "isActiveWindow", return_value=True):
             w.toggle_visibility()
+
+    def _windows(self, wait=None, restored=True) -> ExitStack:
+        self.change_count = max(self.change_count, 1)
+        stack = ExitStack()
+        stack.enter_context(mock.patch.object(platform, "is_windows", return_value=True))
+        stack.enter_context(mock.patch.object(platform, "activate_app"))
+        stack.enter_context(mock.patch.object(
+            platform, "hide_app", side_effect=lambda: self.frontmost_pid if restored else None
+        ))
+        stack.enter_context(mock.patch.object(
+            type(self.window.global_hotkey), "is_registered",
+            new_callable=mock.PropertyMock, return_value=True,
+        ))
+        stack.enter_context(mock.patch.object(
+            platform, "wait_for_paste_keys", side_effect=wait or (lambda cb: cb(True))
+        ))
+        return stack
+
+    def test_windows_finished_and_deferred_paste_once_with_target_baseline(self) -> None:
+        with self._windows():
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            self.send_paste.assert_called_once_with()
+            self.assertEqual(self.window._paste_target.pid, 100)
+            self.window.summon()
+            self._type("Hello.")
+            self._hotkey()
+            self._finish()
+            self.assertEqual(self.send_paste.call_count, 2)
+
+    def test_windows_destination_capture_precedes_minimized_restore(self) -> None:
+        events = []
+        with self._windows(), \
+                mock.patch.object(self.window, "isMinimized", return_value=True), \
+                mock.patch.object(self.window, "setWindowState",
+                                  side_effect=lambda state: events.append("restore")):
+            platform.activate_app.side_effect = lambda *args: events.append(
+                "capture" if args else "activate"
+            )
+            self.window.summon()
+        self.assertEqual(events, ["capture", "restore", "activate"])
+
+    def test_windows_unknown_clipboard_sequence_never_allows_paste(self) -> None:
+        for sequence in (None, 0):
+            for finished in (False, True):
+                with self.subTest(sequence=sequence, finished=finished), self._windows():
+                    self.window.summon()
+                    with mock.patch.object(platform, "clipboard_change_count",
+                                           return_value=sequence):
+                        self._type("Hello.")
+                        if finished:
+                            self._finish()
+                            self.assertFalse(self.window._is_pasteable("Bonjour."))
+                        self._hotkey()
+                        if not finished:
+                            self._finish()
+                    self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+                    self.send_paste.assert_not_called()
+
+    def test_windows_unavailable_clipboard_after_release_skips_paste(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            callbacks.pop(0)(True)
+            with mock.patch.object(platform, "clipboard_change_count", return_value=None):
+                callbacks.pop(0)(True)
+            self.send_paste.assert_not_called()
+
+    def test_windows_key_release_precedes_baseline_even_if_translation_finishes(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._type("Hello.")
+            self._hotkey()
+            self.assertFalse(self.window.isVisible())
+            self.assertIsNone(self.window._paste_target)
+            self._finish()
+            self.input_count = 7  # hotkey releases
+            self.send_paste.assert_not_called()
+            callbacks.pop(0)(True)
+            self.assertEqual(self.window._paste_target.input_count, 7)
+            self.send_paste.assert_not_called()  # second release check still pending
+            callbacks.pop(0)(True)
+            self.send_paste.assert_called_once_with()
+
+    def test_windows_key_timeout_drops_finished_and_deferred_paste(self) -> None:
+        for finished in (False, True):
+            with self.subTest(finished=finished), self._windows(wait=lambda cb: cb(False)):
+                self.window.summon()
+                self._type("Hello.")
+                if finished:
+                    self._finish()
+                self._hotkey()
+                if not finished:
+                    self._finish()
+                self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+                self.assertIsNone(self.window._deferred_paste)
+                self.send_paste.assert_not_called()
+
+    def test_windows_safety_rechecked_after_second_key_wait(self) -> None:
+        for change in ("input", "focus", "clipboard", "summon", "disabled"):
+            with self.subTest(change=change):
+                callbacks = []
+                with self._windows(wait=callbacks.append):
+                    self.window.prefs.auto_paste = True
+                    self.frontmost_pid = 100
+                    self.window.summon()
+                    self._translate()
+                    self._hotkey()
+                    callbacks.pop(0)(True)
+                    if change == "input":
+                        self.input_count += 1
+                    elif change == "focus":
+                        self.frontmost_pid = 200
+                    elif change == "clipboard":
+                        QApplication.clipboard().setText("Other copy")
+                    elif change == "disabled":
+                        self.window.prefs.auto_paste = False
+                    else:
+                        self.window.summon()
+                        self.window.dismiss()
+                    callbacks.pop(0)(True)
+                    self.send_paste.assert_not_called()
+
+    def test_windows_invalid_initial_target_or_input_drops_paste(self) -> None:
+        for pid, count in ((None, 0), (os.getpid(), 0), (100, None)):
+            with self.subTest(pid=pid, count=count), self._windows():
+                self.window.summon()
+                self._translate()
+                self.frontmost_pid = pid
+                self.input_count = count
+                self._hotkey()
+                self.send_paste.assert_not_called()
+
+    def test_windows_focus_switch_while_releasing_keys_drops_paste(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            self.frontmost_pid = 200
+            callbacks.pop()(True)
+            self.send_paste.assert_not_called()
+
+    def test_windows_focus_switch_immediately_after_restoration_drops_paste(self) -> None:
+        for finished in (False, True):
+            with self.subTest(finished=finished), self._windows():
+                self.window.summon()
+                self._type("Hello.")
+                if finished:
+                    self._finish()
+
+                def restore_then_switch():
+                    self.frontmost_pid = 200
+                    return 100
+
+                platform.hide_app.side_effect = restore_then_switch
+                self._hotkey()
+                if not finished:
+                    self._finish()
+                self.send_paste.assert_not_called()
+                self.assertIsNone(self.window._paste_target)
+                self.assertIsNone(self.window._deferred_paste)
+                self.assertEqual(QApplication.clipboard().text(), "Bonjour.")
+
+    def test_windows_failed_restore_never_pastes(self) -> None:
+        with self._windows(restored=False):
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            self.send_paste.assert_not_called()
+
+    def test_windows_auto_paste_off_still_returns_focus(self) -> None:
+        with self._windows():
+            self.window.prefs.auto_paste = False
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            platform.hide_app.assert_called_once_with()
+            platform.wait_for_paste_keys.assert_not_called()
+            self.send_paste.assert_not_called()
+
+    def test_windows_deferred_timeout_while_keys_held_stays_cancelled(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._type("Hello.")
+            self._hotkey()
+            self.window._deferred_paste_timer.timeout.emit()
+            self._finish()
+            callbacks.pop()(True)
+            self.send_paste.assert_not_called()
+
+    def test_windows_summon_cancels_initial_release_callback(self) -> None:
+        callbacks = []
+        with self._windows(wait=callbacks.append):
+            self.window.summon()
+            self._translate()
+            self._hotkey()
+            self.window.summon()
+            self.window.dismiss()
+            callbacks.pop()(True)
+            self.assertIsNone(self.window._paste_target)
+            self.send_paste.assert_not_called()
+
+    def test_windows_voice_baseline_ignores_own_key_releases(self) -> None:
+        callbacks = []
+        w = self.window
+        with self._windows(wait=callbacks.append), \
+                mock.patch.object(w, "isActiveWindow", return_value=True), \
+                mock.patch.object(type(w.recorder), "recording",
+                                  new_callable=mock.PropertyMock, return_value=True), \
+                mock.patch.object(w, "_stop_recording") as stop:
+            w.summon()
+            w.toggle_voice()
+            stop.assert_not_called()
+            self.input_count = 9
+            callbacks.pop()(True)
+            self.assertEqual(w._voice_hide_input, 9)
+            stop.assert_called_once_with(hide_after=True)
+
+    def test_windows_voice_timeout_transcribes_without_auto_hide(self) -> None:
+        w = self.window
+        with self._windows(wait=lambda cb: cb(False)), \
+                mock.patch.object(w, "isActiveWindow", return_value=True), \
+                mock.patch.object(type(w.recorder), "recording",
+                                  new_callable=mock.PropertyMock, return_value=True), \
+                mock.patch.object(w, "_stop_recording") as stop:
+            w.summon()
+            w.toggle_voice()
+            stop.assert_called_once_with(hide_after=False)
+
+    def test_windows_transcript_finishing_during_key_wait_is_inserted_then_hidden(self) -> None:
+        w = self.window
+        callbacks = []
+        with self._windows(wait=callbacks.append), \
+                mock.patch.object(w, "isActiveWindow", return_value=True), \
+                mock.patch.object(w, "_insert_transcript") as insert, \
+                mock.patch.object(w, "dismiss") as dismiss:
+            w.summon()
+            w._transcribing = True
+            w.toggle_voice()
+            w._on_transcribed(w._voice_id, "Hello.")
+            insert.assert_not_called()
+            self.input_count = 8
+            callbacks.pop()(True)
+            insert.assert_called_once_with("Hello.")
+            dismiss.assert_called_once_with(paste=True)
+            self.assertFalse(w._transcribing)
+
+    def test_windows_voice_focus_loss_stays_cancelled_after_focus_returns(self) -> None:
+        w = self.window
+        for buffered in (False, True):
+            callbacks = []
+            with self.subTest(buffered=buffered), self._windows(wait=callbacks.append), \
+                    mock.patch.object(w, "isActiveWindow", return_value=True), \
+                    mock.patch.object(w, "_insert_transcript") as insert, \
+                    mock.patch.object(w, "dismiss") as dismiss:
+                w.summon()
+                w._transcribing = True
+                w.toggle_voice()
+                w._on_app_state_changed(Qt.ApplicationInactive)
+                w._on_app_state_changed(Qt.ApplicationActive)
+                if buffered:
+                    w._on_transcribed(w._voice_id, "Hello.")
+                callbacks.pop()(True)
+                if not buffered:
+                    w._on_transcribed(w._voice_id, "Hello.")
+                insert.assert_called_once_with("Hello.")
+                dismiss.assert_not_called()
+
+    def test_windows_voice_error_invalidates_pending_release(self) -> None:
+        w = self.window
+        callbacks = []
+        with self._windows(wait=callbacks.append), \
+                mock.patch.object(w, "isActiveWindow", return_value=True), \
+                mock.patch.object(w, "_voice_failed"), \
+                mock.patch.object(w, "dismiss") as dismiss:
+            w.summon()
+            w._transcribing = True
+            w.toggle_voice()
+            w._on_voice_error(w._voice_id, "Failed")
+            callbacks.pop()(True)
+            self.assertIsNone(w._windows_voice_waiting)
+            self.assertIsNone(w._hide_after_voice)
+            dismiss.assert_not_called()
 
     def test_hotkey_hide_pastes_finished_translation_once(self) -> None:
         w = self.window
