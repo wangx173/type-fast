@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import stat
+import sys
 import tempfile
 import types
 import unittest
@@ -12,10 +13,38 @@ from unittest import mock
 
 from type_fast import config, providers, settings
 from type_fast.providers import azure as azure_provider, openai as openai_provider
+from type_fast.providers import _common
 
 _HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen"
 
 ENDPOINT = "https://example.services.ai.azure.com"
+
+
+def _os_without_fchmod() -> types.SimpleNamespace:
+    return types.SimpleNamespace(**{
+        name: getattr(os, name)
+        for name in ("environ", "open", "close", "write", "ftruncate", "O_WRONLY", "O_CREAT")
+    })
+
+
+class PrivateWriteTests(unittest.TestCase):
+    def test_write_without_fchmod_creates_and_truncates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(_common, "os", _os_without_fchmod()):
+            path = Path(tmp) / "config" / "key"
+            _common.write_private(path, " old longer value ")
+            _common.write_private(path, " new ")
+            self.assertEqual(path.read_text(encoding="utf-8"), "new")
+
+    def test_write_without_fchmod_closes_descriptor_after_error(self) -> None:
+        portable_os = _os_without_fchmod()
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(_common, "os", portable_os), \
+                mock.patch.object(portable_os, "write", side_effect=OSError("disk full")), \
+                mock.patch.object(portable_os, "close", wraps=os.close) as close:
+            with self.assertRaisesRegex(OSError, "disk full"):
+                _common.write_private(Path(tmp) / "key", "new")
+            close.assert_called_once()
 
 
 class _IsolatedProviders(unittest.TestCase):
@@ -105,6 +134,15 @@ class ProviderChoiceTests(_IsolatedProviders):
 
 
 class AzureSettingsTests(_IsolatedProviders):
+    def test_provider_settings_save_without_fchmod(self) -> None:
+        with mock.patch.object(_common, "os", _os_without_fchmod()):
+            self.set_up_openai()
+            self.set_up_azure("translate")
+        self.assertEqual(openai_provider.get_api_key(), "sk-test")
+        self.assertEqual(azure_provider.get_api_key(), "azure-key")
+        self.assertEqual(azure_provider.get_endpoint(), ENDPOINT)
+        self.assertEqual(azure_provider.get_model(), "translate")
+
     def test_save_settings_round_trip(self) -> None:
         self.set_up_azure("translate")
         self.assertEqual(azure_provider.get_endpoint(), ENDPOINT)
@@ -125,6 +163,7 @@ class AzureSettingsTests(_IsolatedProviders):
             azure_provider.build_client()
         self.assertIn(azure_provider.SETUP_PATH, str(cm.exception))
 
+    @unittest.skipUnless(sys.platform != "win32", "POSIX modes do not describe Windows ACLs")
     def test_key_file_is_private_even_if_it_existed(self) -> None:
         azure_provider.API_KEY_FILE.write_text("old")
         azure_provider.API_KEY_FILE.chmod(0o644)
@@ -133,6 +172,7 @@ class AzureSettingsTests(_IsolatedProviders):
         self.assertEqual(mode, 0o600)
         self.assertEqual(azure_provider.API_KEY_FILE.read_text(), "azure-key")
 
+    @unittest.skipUnless(sys.platform != "win32", "POSIX modes do not describe Windows ACLs")
     def test_openai_key_file_is_private(self) -> None:
         openai_provider.API_KEY_FILE.write_text("a much longer old key")
         openai_provider.API_KEY_FILE.chmod(0o644)
@@ -238,6 +278,19 @@ class WindowProviderTests(_IsolatedProviders):
         window = self.app_module.MainWindow()
         self.addCleanup(window.close)
         return window
+
+    def test_settings_ui_saves_without_fchmod(self) -> None:
+        w = self.make_window()
+        with mock.patch.object(_common, "os", _os_without_fchmod()), \
+                mock.patch.object(self.app_module.QInputDialog, "getText", return_value=("sk-test", True)), \
+                mock.patch.object(w, "_ask_azure_settings", return_value=(ENDPOINT, "azure-key", "translate")), \
+                mock.patch.object(self.app_module.QMessageBox, "warning") as warning:
+            self.assertTrue(w._set_api_key(switch=False))
+            self.assertTrue(w._set_up_azure(switch=False))
+        self.assertEqual(openai_provider.get_api_key(), "sk-test")
+        self.assertEqual(azure_provider.get_api_key(), "azure-key")
+        self.assertEqual(azure_provider.get_model(), "translate")
+        warning.assert_not_called()
 
     def checked_provider(self, window) -> str:
         return window.provider_group.checkedAction().data()
@@ -453,9 +506,11 @@ class WindowProviderTests(_IsolatedProviders):
         confirm.assert_not_called()
         self.assertEqual(providers.get_choice(), "azure")
         self.assertEqual(w.model_label.text(), "Azure \u00b7 translate")
-        self.assertEqual(
-            stat.S_IMODE(azure_provider.API_KEY_FILE.stat().st_mode), 0o600
-        )
+        self.assertEqual(azure_provider.API_KEY_FILE.read_text(), "azure-key")
+        if sys.platform != "win32":
+            self.assertEqual(
+                stat.S_IMODE(azure_provider.API_KEY_FILE.stat().st_mode), 0o600
+            )
 
     def test_setting_up_other_provider_asks_before_switching(self) -> None:
         self.set_up_openai()

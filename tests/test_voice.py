@@ -786,7 +786,7 @@ class WindowVoiceTests(unittest.TestCase):
         w = self._voice_window()
         counts = iter([5, 7])  # a click or key press while transcribing
         with mock.patch.object(
-            self.app_module.autopaste, "input_event_count",
+            self.app_module.platform, "input_event_count",
             side_effect=lambda: next(counts, 7),
         ), mock.patch.object(self.app_module.voice, "transcribe", return_value="hi"):
             w.toggle_voice()
@@ -952,7 +952,7 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_voice_hotkey_follows_voice_input_setting(self) -> None:
         w = self._voice_window()
-        hk = self.app_module.hotkey
+        hk = self.app_module.platform
         with mock.patch.object(
             hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(
@@ -967,7 +967,7 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_voice_hotkey_failure_is_reported(self) -> None:
         w = self._voice_window()
-        hk = self.app_module.hotkey
+        hk = self.app_module.platform
         w.voice_input_action.trigger()  # off
         with mock.patch.object(
             hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
@@ -989,7 +989,7 @@ class WindowVoiceTests(unittest.TestCase):
 
     def test_registered_voice_hotkey_is_in_tooltip(self) -> None:
         w = self._voice_window()
-        hk = self.app_module.hotkey
+        hk = self.app_module.platform
         with mock.patch.object(
             hk.GlobalHotkey, "is_registered", new_callable=mock.PropertyMock,
             return_value=True,
@@ -997,7 +997,7 @@ class WindowVoiceTests(unittest.TestCase):
             w._reflect_voice()
             w._reflect_hotkey()
         self.assertIn("\u21e7\u2318M in any app", w.mic_button.toolTip())
-        self.assertNotIn("unavailable", w.hotkey_label.text())
+        self.assertNotIn("\u21e7\u2318M unavailable", w.hotkey_label.text())
 
     def test_show_hide_hotkey_cannot_take_voice_keys(self) -> None:
         w = self._voice_window()
@@ -1007,7 +1007,7 @@ class WindowVoiceTests(unittest.TestCase):
         # Allowed with voice input off; turning it back on reports the clash.
         w.voice_input_action.trigger()
         self.assertTrue(w._apply_hotkey("Shift+Cmd+M"))
-        hk = self.app_module.hotkey
+        hk = self.app_module.platform
         with mock.patch.object(
             hk.GlobalHotkey, "is_supported", staticmethod(lambda: True)
         ), mock.patch.object(w.voice_hotkey, "register") as register:
